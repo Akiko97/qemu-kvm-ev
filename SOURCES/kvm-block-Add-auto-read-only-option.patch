@@ -1,0 +1,201 @@
+From c42a88a203211360e20281a8f6bd554f46062178 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:44 +0100
+Subject: [PATCH 03/34] block: Add auto-read-only option
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-3-kwolf@redhat.com>
+Patchwork-id: 83111
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 02/12] block: Add auto-read-only option
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If a management application builds the block graph node by node, the
+protocol layer doesn't inherit its read-only option from the format
+layer any more, so it must be set explicitly.
+
+Backing files should work on read-only storage, but at the same time, a
+block job like commit should be able to reopen them read-write if they
+are on read-write storage. However, without option inheritance, reopen
+only changes the read-only option for the root node (typically the
+format layer), but not the protocol layer, so reopening fails (the
+format layer wants to get write permissions, but the protocol layer is
+still read-only).
+
+A simple workaround for the problem in the management tool would be to
+open the protocol layer always read-write and to make only the format
+layer read-only for backing files. However, sometimes the file is
+actually stored on read-only storage and we don't know whether the image
+can be opened read-write (for example, for NBD it depends on the server
+we're trying to connect to). This adds an option that makes QEMU try to
+open the image read-write, but allows it to degrade to a read-only mode
+without returning an error.
+
+The documentation for this option is consciously phrased in a way that
+allows QEMU to switch to a better model eventually: Instead of trying
+when the image is first opened, making the read-only flag dynamic and
+changing it automatically whenever the first BLK_PERM_WRITE user is
+attached or the last one is detached would be much more useful
+behaviour.
+
+Unfortunately, this more useful behaviour is also a lot harder to
+implement, and libvirt needs a solution now before it can switch to
+-blockdev, so let's start with this easier approach for now.
+
+Instead of adding a new auto-read-only option, turning the existing
+read-only into an enum (with a bool alternate for compatibility) was
+considered, but it complicated the implementation to the point that it
+didn't seem to be worth it.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit e35bdc123a4ace9f4d3fccaaf88907014e2438cd)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c               | 17 +++++++++++++++++
+ block/vvfat.c         |  1 +
+ blockdev.c            |  2 +-
+ include/block/block.h |  2 ++
+ qapi/block-core.json  |  7 +++++++
+ 5 files changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/block.c b/block.c
+index d3ea21a..ff3ea92 100644
+--- a/block.c
++++ b/block.c
+@@ -905,6 +905,7 @@ static void bdrv_inherited_options(int *child_flags, QDict *child_options,
+ 
+     /* Inherit the read-only option from the parent if it's not set */
+     qdict_copy_default(child_options, parent_options, BDRV_OPT_READ_ONLY);
++    qdict_copy_default(child_options, parent_options, BDRV_OPT_AUTO_READ_ONLY);
+ 
+     /* Our block drivers take care to send flushes and respect unmap policy,
+      * so we can default to enable both on lower layers regardless of the
+@@ -1028,6 +1029,7 @@ static void bdrv_backing_options(int *child_flags, QDict *child_options,
+ 
+     /* backing files always opened read-only */
+     qdict_set_default_str(child_options, BDRV_OPT_READ_ONLY, "on");
++    qdict_set_default_str(child_options, BDRV_OPT_AUTO_READ_ONLY, "off");
+     flags &= ~BDRV_O_COPY_ON_READ;
+ 
+     /* snapshot=on is handled on the top layer */
+@@ -1117,6 +1119,10 @@ static void update_flags_from_options(int *flags, QemuOpts *opts)
+         *flags |= BDRV_O_RDWR;
+     }
+ 
++    assert(qemu_opt_find(opts, BDRV_OPT_AUTO_READ_ONLY));
++    if (qemu_opt_get_bool_del(opts, BDRV_OPT_AUTO_READ_ONLY, false)) {
++        *flags |= BDRV_O_AUTO_RDONLY;
++    }
+ }
+ 
+ static void update_options_from_flags(QDict *options, int flags)
+@@ -1131,6 +1137,10 @@ static void update_options_from_flags(QDict *options, int flags)
+     if (!qdict_haskey(options, BDRV_OPT_READ_ONLY)) {
+         qdict_put_bool(options, BDRV_OPT_READ_ONLY, !(flags & BDRV_O_RDWR));
+     }
++    if (!qdict_haskey(options, BDRV_OPT_AUTO_READ_ONLY)) {
++        qdict_put_bool(options, BDRV_OPT_AUTO_READ_ONLY,
++                       flags & BDRV_O_AUTO_RDONLY);
++    }
+ }
+ 
+ static void bdrv_assign_node_name(BlockDriverState *bs,
+@@ -1304,6 +1314,11 @@ QemuOptsList bdrv_runtime_opts = {
+             .help = "Node is opened in read-only mode",
+         },
+         {
++            .name = BDRV_OPT_AUTO_READ_ONLY,
++            .type = QEMU_OPT_BOOL,
++            .help = "Node can become read-only if opening read-write fails",
++        },
++        {
+             .name = "detect-zeroes",
+             .type = QEMU_OPT_STRING,
+             .help = "try to optimize zero writes (off, on, unmap)",
+@@ -2490,6 +2505,8 @@ BlockDriverState *bdrv_open_blockdev_ref(BlockdevRef *ref, Error **errp)
+         qdict_set_default_str(qdict, BDRV_OPT_CACHE_DIRECT, "off");
+         qdict_set_default_str(qdict, BDRV_OPT_CACHE_NO_FLUSH, "off");
+         qdict_set_default_str(qdict, BDRV_OPT_READ_ONLY, "off");
++        qdict_set_default_str(qdict, BDRV_OPT_AUTO_READ_ONLY, "off");
++
+     }
+ 
+     bs = bdrv_open_inherit(NULL, reference, qdict, 0, NULL, NULL, errp);
+diff --git a/block/vvfat.c b/block/vvfat.c
+index c7d2ed2..3efce9e 100644
+--- a/block/vvfat.c
++++ b/block/vvfat.c
+@@ -3130,6 +3130,7 @@ static void vvfat_qcow_options(int *child_flags, QDict *child_options,
+                                int parent_flags, QDict *parent_options)
+ {
+     qdict_set_default_str(child_options, BDRV_OPT_READ_ONLY, "off");
++    qdict_set_default_str(child_options, BDRV_OPT_AUTO_READ_ONLY, "off");
+     qdict_set_default_str(child_options, BDRV_OPT_CACHE_NO_FLUSH, "on");
+ }
+ 
+diff --git a/blockdev.c b/blockdev.c
+index 6e8a1e9..3d73f05 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -2758,7 +2758,7 @@ void qmp_blockdev_change_medium(bool has_device, const char *device,
+ 
+     bdrv_flags = blk_get_open_flags_from_root_state(blk);
+     bdrv_flags &= ~(BDRV_O_TEMPORARY | BDRV_O_SNAPSHOT | BDRV_O_NO_BACKING |
+-        BDRV_O_PROTOCOL);
++        BDRV_O_PROTOCOL | BDRV_O_AUTO_RDONLY);
+ 
+     if (!has_read_only) {
+         read_only = BLOCKDEV_CHANGE_READ_ONLY_MODE_RETAIN;
+diff --git a/include/block/block.h b/include/block/block.h
+index 8e78daf..6ee8b2a 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -114,6 +114,7 @@ typedef struct HDGeometry {
+                                       select an appropriate protocol driver,
+                                       ignoring the format layer */
+ #define BDRV_O_NO_IO       0x10000 /* don't initialize for I/O */
++#define BDRV_O_AUTO_RDONLY 0x20000 /* degrade to read-only if opening read-write fails */
+ 
+ #define BDRV_O_CACHE_MASK  (BDRV_O_NOCACHE | BDRV_O_NO_FLUSH)
+ 
+@@ -124,6 +125,7 @@ typedef struct HDGeometry {
+ #define BDRV_OPT_CACHE_DIRECT   "cache.direct"
+ #define BDRV_OPT_CACHE_NO_FLUSH "cache.no-flush"
+ #define BDRV_OPT_READ_ONLY      "read-only"
++#define BDRV_OPT_AUTO_READ_ONLY "auto-read-only"
+ #define BDRV_OPT_DISCARD        "discard"
+ #define BDRV_OPT_FORCE_SHARE    "force-share"
+ 
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 2706012..9741555 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -3608,6 +3608,12 @@
+ #                 either generally or in certain configurations. In this case,
+ #                 the default value does not work and the option must be
+ #                 specified explicitly.
++# @auto-read-only: if true and @read-only is false, QEMU may automatically
++#                  decide not to open the image read-write as requested, but
++#                  fall back to read-only instead (and switch between the modes
++#                  later), e.g. depending on whether the image file is writable
++#                  or whether a writing user is attached to the node
++#                  (default: false, since 3.1)
+ # @detect-zeroes: detect and optimize zero writes (Since 2.1)
+ #                 (default: off)
+ # @force-share:   force share all permission on added nodes.
+@@ -3623,6 +3629,7 @@
+             '*discard': 'BlockdevDiscardOptions',
+             '*cache': 'BlockdevCacheOptions',
+             '*read-only': 'bool',
++            '*auto-read-only': 'bool',
+             '*force-share': 'bool',
+             '*detect-zeroes': 'BlockdevDetectZeroesOptions' },
+   'discriminator': 'driver',
+-- 
+1.8.3.1
+

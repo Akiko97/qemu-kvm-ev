@@ -1,0 +1,302 @@
+From 26de0d4fe93a094dcf7aef4c2b139c46c1117a99 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:17 +0200
+Subject: [PATCH 10/54] block: Fix -blockdev for certain non-string scalars
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-11-armbru@redhat.com>
+Patchwork-id: 80743
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 10/23] block: Fix -blockdev for certain non-string scalars
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Configuration flows through the block subsystem in a rather peculiar
+way.  Configuration made with -drive enters it as QemuOpts.
+Configuration made with -blockdev / blockdev-add enters it as QAPI
+type BlockdevOptions.  The block subsystem uses QDict, QemuOpts and
+QAPI types internally.  The precise flow is next to impossible to
+explain (I tried for this commit message, but gave up after wasting
+several hours).  What I can explain is a flaw in the BlockDriver
+interface that leads to this bug:
+
+    $ qemu-system-x86_64 -blockdev node-name=n1,driver=nfs,server.type=inet,server.host=localhost,path=/foo/bar,user=1234
+    qemu-system-x86_64: -blockdev node-name=n1,driver=nfs,server.type=inet,server.host=localhost,path=/foo/bar,user=1234: Internal error: parameter user invalid
+
+QMP blockdev-add is broken the same way.
+
+Here's what happens.  The block layer passes configuration represented
+as flat QDict (with dotted keys) to BlockDriver methods
+.bdrv_file_open().  The QDict's members are typed according to the
+QAPI schema.
+
+nfs_file_open() converts it to QAPI type BlockdevOptionsNfs, with
+qdict_crumple() and a qobject input visitor.
+
+This visitor comes in two flavors.  The plain flavor requires scalars
+to be typed according to the QAPI schema.  That's the case here.  The
+keyval flavor requires string scalars.  That's not the case here.
+nfs_file_open() uses the latter, and promptly falls apart for members
+@user, @group, @tcp-syn-count, @readahead-size, @page-cache-size,
+@debug.
+
+Switching to the plain flavor would fix -blockdev, but break -drive,
+because there the scalars arrive in nfs_file_open() as strings.
+
+The proper fix would be to replace the QDict by QAPI type
+BlockdevOptions in the BlockDriver interface.  Sadly, that's beyond my
+reach right now.
+
+Next best would be to fix the block layer to always pass correctly
+typed QDicts to the BlockDriver methods.  Also beyond my reach.
+
+What I can do is throw another hack onto the pile: have
+nfs_file_open() convert all members to string, so use of the keyval
+flavor actually works, by replacing qdict_crumple() by new function
+qdict_crumple_for_keyval_qiv().
+
+The pattern "pass result of qdict_crumple() to
+qobject_input_visitor_new_keyval()" occurs several times more:
+
+* qemu_rbd_open()
+
+  Same issue as nfs_file_open(), but since BlockdevOptionsRbd has only
+  string members, its only a latent bug.  Fix it anyway.
+
+* parallels_co_create_opts(), qcow_co_create_opts(),
+  qcow2_co_create_opts(), bdrv_qed_co_create_opts(),
+  sd_co_create_opts(), vhdx_co_create_opts(), vpc_co_create_opts()
+
+  These work, because they create the QDict with
+  qemu_opts_to_qdict_filtered(), which creates only string scalars.
+  The function sports a TODO comment asking for better typing; that's
+  going to be fun.  Use qdict_crumple_for_keyval_qiv() to be safe.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit e5af0da1dcbfb1a4694150f9954554fb6df88819)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nfs.c           |  2 +-
+ block/parallels.c     |  2 +-
+ block/qcow.c          |  2 +-
+ block/qcow2.c         |  2 +-
+ block/qed.c           |  2 +-
+ block/rbd.c           |  2 +-
+ block/sheepdog.c      |  2 +-
+ block/vhdx.c          |  2 +-
+ block/vpc.c           |  2 +-
+ include/block/qdict.h |  1 +
+ qobject/block-qdict.c | 57 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 11 files changed, 67 insertions(+), 9 deletions(-)
+
+diff --git a/block/nfs.c b/block/nfs.c
+index 5159ef0..4090d28 100644
+--- a/block/nfs.c
++++ b/block/nfs.c
+@@ -560,7 +560,7 @@ static BlockdevOptionsNfs *nfs_options_qdict_to_qapi(QDict *options,
+     Visitor *v;
+     Error *local_err = NULL;
+ 
+-    crumpled = qdict_crumple(options, errp);
++    crumpled = qdict_crumple_for_keyval_qiv(options, errp);
+     if (crumpled == NULL) {
+         return NULL;
+     }
+diff --git a/block/parallels.c b/block/parallels.c
+index 0ee1f6a..aa58955 100644
+--- a/block/parallels.c
++++ b/block/parallels.c
+@@ -651,7 +651,7 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "parallels");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple(qdict, errp);
++    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+     qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+diff --git a/block/qcow.c b/block/qcow.c
+index fb821ad..14b7296 100644
+--- a/block/qcow.c
++++ b/block/qcow.c
+@@ -995,7 +995,7 @@ static int coroutine_fn qcow_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "qcow");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple(qdict, errp);
++    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+     qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+diff --git a/block/qcow2.c b/block/qcow2.c
+index fa9f557..fa06b41 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -3139,7 +3139,7 @@ static int coroutine_fn qcow2_co_create_opts(const char *filename, QemuOpts *opt
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     /* Now get the QAPI type BlockdevCreateOptions */
+-    qobj = qdict_crumple(qdict, errp);
++    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+     qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+diff --git a/block/qed.c b/block/qed.c
+index 9a8997a..d8810f5 100644
+--- a/block/qed.c
++++ b/block/qed.c
+@@ -763,7 +763,7 @@ static int coroutine_fn bdrv_qed_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "qed");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple(qdict, errp);
++    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+     qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+diff --git a/block/rbd.c b/block/rbd.c
+index e695cf2..0b5455f 100644
+--- a/block/rbd.c
++++ b/block/rbd.c
+@@ -640,7 +640,7 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
+     }
+ 
+     /* Convert the remaining options into a QAPI object */
+-    crumpled = qdict_crumple(options, errp);
++    crumpled = qdict_crumple_for_keyval_qiv(options, errp);
+     if (crumpled == NULL) {
+         r = -EINVAL;
+         goto out;
+diff --git a/block/sheepdog.c b/block/sheepdog.c
+index fd3876f..821a3c4 100644
+--- a/block/sheepdog.c
++++ b/block/sheepdog.c
+@@ -2218,7 +2218,7 @@ static int coroutine_fn sd_co_create_opts(const char *filename, QemuOpts *opts,
+     }
+ 
+     /* Get the QAPI object */
+-    crumpled = qdict_crumple(qdict, errp);
++    crumpled = qdict_crumple_for_keyval_qiv(qdict, errp);
+     if (crumpled == NULL) {
+         ret = -EINVAL;
+         goto fail;
+diff --git a/block/vhdx.c b/block/vhdx.c
+index 26c05aa..32939c4 100644
+--- a/block/vhdx.c
++++ b/block/vhdx.c
+@@ -2003,7 +2003,7 @@ static int coroutine_fn vhdx_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "vhdx");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple(qdict, errp);
++    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+     qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+diff --git a/block/vpc.c b/block/vpc.c
+index 41c8c98..16178e5 100644
+--- a/block/vpc.c
++++ b/block/vpc.c
+@@ -1119,7 +1119,7 @@ static int coroutine_fn vpc_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "vpc");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple(qdict, errp);
++    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+     qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+diff --git a/include/block/qdict.h b/include/block/qdict.h
+index 71c037a..47d9638 100644
+--- a/include/block/qdict.h
++++ b/include/block/qdict.h
+@@ -21,6 +21,7 @@ void qdict_extract_subqdict(QDict *src, QDict **dst, const char *start);
+ void qdict_array_split(QDict *src, QList **dst);
+ int qdict_array_entries(QDict *src, const char *subqdict);
+ QObject *qdict_crumple(const QDict *src, Error **errp);
++QObject *qdict_crumple_for_keyval_qiv(QDict *qdict, Error **errp);
+ void qdict_flatten(QDict *qdict);
+ 
+ typedef struct QDictRenames {
+diff --git a/qobject/block-qdict.c b/qobject/block-qdict.c
+index fb92010..aba372c 100644
+--- a/qobject/block-qdict.c
++++ b/qobject/block-qdict.c
+@@ -9,7 +9,10 @@
+ 
+ #include "qemu/osdep.h"
+ #include "block/qdict.h"
++#include "qapi/qmp/qbool.h"
+ #include "qapi/qmp/qlist.h"
++#include "qapi/qmp/qnum.h"
++#include "qapi/qmp/qstring.h"
+ #include "qemu/cutils.h"
+ #include "qapi/error.h"
+ 
+@@ -514,6 +517,60 @@ QObject *qdict_crumple(const QDict *src, Error **errp)
+ }
+ 
+ /**
++ * qdict_crumple_for_keyval_qiv:
++ * @src: the flat dictionary (only scalar values) to crumple
++ * @errp: location to store error
++ *
++ * Like qdict_crumple(), but additionally transforms scalar values so
++ * the result can be passed to qobject_input_visitor_new_keyval().
++ *
++ * The block subsystem uses this function to prepare its flat QDict
++ * with possibly confused scalar types for a visit.  It should not be
++ * used for anything else, and it should go away once the block
++ * subsystem has been cleaned up.
++ */
++QObject *qdict_crumple_for_keyval_qiv(QDict *src, Error **errp)
++{
++    QDict *tmp = NULL;
++    char *buf;
++    const char *s;
++    const QDictEntry *ent;
++    QObject *dst;
++
++    for (ent = qdict_first(src); ent; ent = qdict_next(src, ent)) {
++        buf = NULL;
++        switch (qobject_type(ent->value)) {
++        case QTYPE_QNULL:
++        case QTYPE_QSTRING:
++            continue;
++        case QTYPE_QNUM:
++            s = buf = qnum_to_string(qobject_to(QNum, ent->value));
++            break;
++        case QTYPE_QDICT:
++        case QTYPE_QLIST:
++            /* @src isn't flat; qdict_crumple() will fail */
++            continue;
++        case QTYPE_QBOOL:
++            s = qbool_get_bool(qobject_to(QBool, ent->value))
++                ? "on" : "off";
++            break;
++        default:
++            abort();
++        }
++
++        if (!tmp) {
++            tmp = qdict_clone_shallow(src);
++        }
++        qdict_put(tmp, ent->key, qstring_from_str(s));
++        g_free(buf);
++    }
++
++    dst = qdict_crumple(tmp ?: src, errp);
++    qobject_unref(tmp);
++    return dst;
++}
++
++/**
+  * qdict_array_entries(): Returns the number of direct array entries if the
+  * sub-QDict of src specified by the prefix in subqdict (or src itself for
+  * prefix == "") is valid as an array, i.e. the length of the created list if
+-- 
+1.8.3.1
+

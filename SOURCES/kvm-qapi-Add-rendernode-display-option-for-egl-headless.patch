@@ -1,0 +1,69 @@
+From c6a95857cb076ed085b2620009da4c0e108cd8ed Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Tue, 5 Mar 2019 08:26:14 +0100
+Subject: [PATCH 6/9] qapi: Add "rendernode" display option for egl-headless
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20190305082617.14614-2-kraxel@redhat.com>
+Patchwork-id: 84796
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/4] qapi: Add "rendernode" display option for egl-headless
+Bugzilla: 1648236
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Erik Skultety <eskultet@redhat.com>
+
+From: Erik Skultety <eskultet@redhat.com>
+
+Unlike SPICE, egl-headless doesn't offer a way of specifying the DRM
+node used for OpenGL, hence QEMU always selecting the first one that is
+available. Thus, add the 'rendernode' option for egl-headless to QAPI.
+
+Signed-off-by: Erik Skultety <eskultet@redhat.com>
+Message-id: 7658e15eca72d520e7a5fb1c2e724702d83d4f7f.1542362949.git.eskultet@redhat.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+(cherry picked from commit d4dc4ab133b5d7b066aa14036f297ed20398dd32)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qapi/ui.json | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/qapi/ui.json b/qapi/ui.json
+index 5d01ad4..3e8aeee 100644
+--- a/qapi/ui.json
++++ b/qapi/ui.json
+@@ -1020,6 +1020,20 @@
+   'data'    : { '*grab-on-hover' : 'bool' } }
+ 
+ ##
++# @DisplayEGLHeadless:
++#
++# EGL headless display options.
++#
++# @rendernode: Which DRM render node should be used. Default is the first
++#              available node on the host.
++#
++# Since: 3.1
++#
++##
++{ 'struct'  : 'DisplayEGLHeadless',
++  'data'    : { '*rendernode' : 'str' } }
++
++##
+ # @DisplayType:
+ #
+ # Display (user interface) type.
+@@ -1054,6 +1068,6 @@
+                 'none'           : 'DisplayNoOpts',
+                 'gtk'            : 'DisplayGTK',
+                 'sdl'            : 'DisplayNoOpts',
+-                'egl-headless'   : 'DisplayNoOpts',
++                'egl-headless'   : 'DisplayEGLHeadless',
+                 'curses'         : 'DisplayNoOpts',
+                 'cocoa'          : 'DisplayNoOpts' } }
+-- 
+1.8.3.1
+

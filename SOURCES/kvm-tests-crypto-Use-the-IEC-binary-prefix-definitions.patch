@@ -1,0 +1,134 @@
+From 6da2990d427f11549d7d5ee6f230af95e6b69219 Mon Sep 17 00:00:00 2001
+From: "Daniel P. Berrange" <berrange@redhat.com>
+Date: Wed, 24 Apr 2019 10:30:22 +0200
+Subject: [PATCH 03/12] tests/crypto: Use the IEC binary prefix definitions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Daniel P. Berrange <berrange@redhat.com>
+Message-id: <20190424103030.2925-2-berrange@redhat.com>
+Patchwork-id: 85892
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/9] tests/crypto: Use the IEC binary prefix definitions
+Bugzilla: 1666336
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+
+From: Philippe Mathieu-Daudé <f4bug@amsat.org>
+
+It eases code review, unit is explicit.
+
+Patch generated using:
+
+  $ git grep -n '[<>][<>]= ?[1-5]0'
+
+and modified manually.
+
+Suggested-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Message-Id: <20180625124238.25339-45-f4bug@amsat.org>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 68dbb6d05db59fe39af0c192005490576d9f5b7c)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/benchmark-crypto-cipher.c | 6 +++---
+ tests/benchmark-crypto-hash.c   | 5 +++--
+ tests/benchmark-crypto-hmac.c   | 6 +++---
+ 3 files changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/tests/benchmark-crypto-cipher.c b/tests/benchmark-crypto-cipher.c
+index cf98443..f5a0d0b 100644
+--- a/tests/benchmark-crypto-cipher.c
++++ b/tests/benchmark-crypto-cipher.c
+@@ -11,6 +11,7 @@
+  * top-level directory.
+  */
+ #include "qemu/osdep.h"
++#include "qemu/units.h"
+ #include "crypto/init.h"
+ #include "crypto/cipher.h"
+ 
+@@ -56,8 +57,7 @@ static void test_cipher_speed(const void *opaque)
+         total += chunk_size;
+     } while (g_test_timer_elapsed() < 5.0);
+ 
+-    total /= 1024 * 1024; /* to MB */
+-
++    total /= MiB;
+     g_print("cbc(aes128): ");
+     g_print("Testing chunk_size %zu bytes ", chunk_size);
+     g_print("done: %.2f MB in %.2f secs: ", total, g_test_timer_last());
+@@ -78,7 +78,7 @@ int main(int argc, char **argv)
+     g_test_init(&argc, &argv, NULL);
+     g_assert(qcrypto_init(NULL) == 0);
+ 
+-    for (i = 512; i <= (64 * 1204); i *= 2) {
++    for (i = 512; i <= 64 * KiB; i *= 2) {
+         memset(name, 0 , sizeof(name));
+         snprintf(name, sizeof(name), "/crypto/cipher/speed-%zu", i);
+         g_test_add_data_func(name, (void *)i, test_cipher_speed);
+diff --git a/tests/benchmark-crypto-hash.c b/tests/benchmark-crypto-hash.c
+index 122bfb6..9b6f7a9 100644
+--- a/tests/benchmark-crypto-hash.c
++++ b/tests/benchmark-crypto-hash.c
+@@ -11,6 +11,7 @@
+  * top-level directory.
+  */
+ #include "qemu/osdep.h"
++#include "qemu/units.h"
+ #include "crypto/init.h"
+ #include "crypto/hash.h"
+ 
+@@ -39,7 +40,7 @@ static void test_hash_speed(const void *opaque)
+         total += chunk_size;
+     } while (g_test_timer_elapsed() < 5.0);
+ 
+-    total /= 1024 * 1024; /* to MB */
++    total /= MiB;
+     g_print("sha256: ");
+     g_print("Testing chunk_size %zu bytes ", chunk_size);
+     g_print("done: %.2f MB in %.2f secs: ", total, g_test_timer_last());
+@@ -57,7 +58,7 @@ int main(int argc, char **argv)
+     g_test_init(&argc, &argv, NULL);
+     g_assert(qcrypto_init(NULL) == 0);
+ 
+-    for (i = 512; i <= (64 * 1204); i *= 2) {
++    for (i = 512; i <= 64 * KiB; i *= 2) {
+         memset(name, 0 , sizeof(name));
+         snprintf(name, sizeof(name), "/crypto/hash/speed-%zu", i);
+         g_test_add_data_func(name, (void *)i, test_hash_speed);
+diff --git a/tests/benchmark-crypto-hmac.c b/tests/benchmark-crypto-hmac.c
+index c30250d..f1dfa24 100644
+--- a/tests/benchmark-crypto-hmac.c
++++ b/tests/benchmark-crypto-hmac.c
+@@ -11,6 +11,7 @@
+  * top-level directory.
+  */
+ #include "qemu/osdep.h"
++#include "qemu/units.h"
+ #include "crypto/init.h"
+ #include "crypto/hmac.h"
+ 
+@@ -53,8 +54,7 @@ static void test_hmac_speed(const void *opaque)
+         total += chunk_size;
+     } while (g_test_timer_elapsed() < 5.0);
+ 
+-    total /= 1024 * 1024; /* to MB */
+-
++    total /= MiB;
+     g_print("hmac(sha256): ");
+     g_print("Testing chunk_size %zu bytes ", chunk_size);
+     g_print("done: %.2f MB in %.2f secs: ", total, g_test_timer_last());
+@@ -72,7 +72,7 @@ int main(int argc, char **argv)
+     g_test_init(&argc, &argv, NULL);
+     g_assert(qcrypto_init(NULL) == 0);
+ 
+-    for (i = 512; i <= (64 * 1204); i *= 2) {
++    for (i = 512; i <= 64 * KiB; i *= 2) {
+         memset(name, 0 , sizeof(name));
+         snprintf(name, sizeof(name), "/crypto/hmac/speed-%zu", i);
+         g_test_add_data_func(name, (void *)i, test_hmac_speed);
+-- 
+1.8.3.1
+

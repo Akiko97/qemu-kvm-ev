@@ -1,0 +1,164 @@
+From 79faa485281ca351111a0461bbffe10a17f30c64 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 19:00:02 +0200
+Subject: [PATCH 23/57] migration: introduce decompress-error-check
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-16-dgilbert@redhat.com>
+Patchwork-id: 81013
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 15/18] migration: introduce decompress-error-check
+Bugzilla: 1584139
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Xiao Guangrong <xiaoguangrong@tencent.com>
+
+QEMU 3.0 enables strict check for compression & decompression to
+make the migration more robust, that depends on the source to fix
+the internal design which triggers the unexpected error conditions
+
+To make it work for migrating old version QEMU to 2.13 QEMU, we
+introduce this parameter to disable the error check on the
+destination which is the default behavior of the machine type
+which is older than 2.13, alternately, the strict check can be
+enabled explicitly as followings:
+      -M pc-q35-2.11 -global migration.decompress-error-check=true
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@tencent.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+(cherry picked from commit f548222c24342ca74689de7794f9006b43f86a54)
+  added compat entry to HW_COMPAT_RHEL7_5
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/arm/virt.c         | 4 ++++
+ hw/i386/pc_piix.c     | 1 +
+ hw/i386/pc_q35.c      | 1 +
+ include/hw/compat.h   | 5 +++++
+ migration/migration.c | 4 ++++
+ migration/migration.h | 8 ++++++++
+ migration/ram.c       | 2 +-
+ 7 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index a4d0f52..751a93c 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -1607,6 +1607,9 @@ static void machvirt_machine_init(void)
+ }
+ type_init(machvirt_machine_init);
+ 
++#define VIRT_COMPAT_2_12 \
++    HW_COMPAT_2_12
++
+ static void virt_2_12_instance_init(Object *obj)
+ {
+     VirtMachineState *vms = VIRT_MACHINE(obj);
+@@ -1669,6 +1672,7 @@ static void virt_2_12_instance_init(Object *obj)
+ 
+ static void virt_machine_2_12_options(MachineClass *mc)
+ {
++    SET_MACHINE_COMPAT(mc, VIRT_COMPAT_2_12);
+ }
+ DEFINE_VIRT_MACHINE_AS_LATEST(2, 12)
+ 
+diff --git a/hw/i386/pc_piix.c b/hw/i386/pc_piix.c
+index 7b87ef6..9991650 100644
+--- a/hw/i386/pc_piix.c
++++ b/hw/i386/pc_piix.c
+@@ -432,6 +432,7 @@ static void pc_i440fx_2_12_machine_options(MachineClass *m)
+     pc_i440fx_machine_options(m);
+     m->alias = "pc";
+     m->is_default = 1;
++    SET_MACHINE_COMPAT(m, PC_COMPAT_2_12);
+ }
+ 
+ DEFINE_I440FX_MACHINE(v2_12, "pc-i440fx-2.12", NULL,
+diff --git a/hw/i386/pc_q35.c b/hw/i386/pc_q35.c
+index 1805f55..a4387e0 100644
+--- a/hw/i386/pc_q35.c
++++ b/hw/i386/pc_q35.c
+@@ -313,6 +313,7 @@ static void pc_q35_2_12_machine_options(MachineClass *m)
+ {
+     pc_q35_machine_options(m);
+     m->alias = "q35";
++    SET_MACHINE_COMPAT(m, PC_COMPAT_2_12);
+ }
+ 
+ DEFINE_Q35_MACHINE(v2_12, "pc-q35-2.12", NULL,
+diff --git a/include/hw/compat.h b/include/hw/compat.h
+index 9e659e9..5802e61 100644
+--- a/include/hw/compat.h
++++ b/include/hw/compat.h
+@@ -480,6 +480,11 @@
+         .driver   = "cirrus-vga",\
+         .property = "vgamem_mb",\
+         .value    = "16",\
++    },{ /* HW_COMPAT_RHEL7_5 */ \
++        .driver   = "migration",\
++        .property = "decompress-error-check",\
++        .value    = "off",\
+     },
+ 
++
+ #endif /* HW_COMPAT_H */
+diff --git a/migration/migration.c b/migration/migration.c
+index 43d8a64..b6294f6 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -2483,6 +2483,8 @@ void migration_global_dump(Monitor *mon)
+                    ms->send_configuration ? "on" : "off");
+     monitor_printf(mon, "send-section-footer: %s\n",
+                    ms->send_section_footer ? "on" : "off");
++    monitor_printf(mon, "decompress-error-check: %s\n",
++                   ms->decompress_error_check ? "on" : "off");
+ }
+ 
+ #define DEFINE_PROP_MIG_CAP(name, x)             \
+@@ -2496,6 +2498,8 @@ static Property migration_properties[] = {
+                      send_configuration, true),
+     DEFINE_PROP_BOOL("send-section-footer", MigrationState,
+                      send_section_footer, true),
++    DEFINE_PROP_BOOL("decompress-error-check", MigrationState,
++                      decompress_error_check, true),
+ 
+     /* Migration parameters */
+     DEFINE_PROP_UINT8("x-compress-level", MigrationState,
+diff --git a/migration/migration.h b/migration/migration.h
+index 06833d7..a9c5c7f 100644
+--- a/migration/migration.h
++++ b/migration/migration.h
+@@ -182,6 +182,14 @@ struct MigrationState
+     bool send_configuration;
+     /* Whether we send section footer during migration */
+     bool send_section_footer;
++
++    /*
++     * Whether we abort the migration if decompression errors are
++     * detected at the destination. It is left at false for qemu
++     * older than 3.0, since only newer qemu sends streams that
++     * do not trigger spurious decompression errors.
++     */
++    bool decompress_error_check;
+ };
+ 
+ void migrate_set_state(int *state, int old_state, int new_state);
+diff --git a/migration/ram.c b/migration/ram.c
+index c982201..bd563b5 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -2582,7 +2582,7 @@ static void *do_data_decompress(void *opaque)
+ 
+             ret = qemu_uncompress_data(&param->stream, des, pagesize,
+                                        param->compbuf, len);
+-            if (ret < 0) {
++            if (ret < 0 && migrate_get_current()->decompress_error_check) {
+                 error_report("decompress data failed");
+                 qemu_file_set_error(decomp_file, ret);
+             }
+-- 
+1.8.3.1
+

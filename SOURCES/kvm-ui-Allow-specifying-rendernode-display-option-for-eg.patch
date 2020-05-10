@@ -1,0 +1,53 @@
+From 5c8182b9ee049c2a66ae41aaf664a8f97c86cf16 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Tue, 5 Mar 2019 08:26:15 +0100
+Subject: [PATCH 7/9] ui: Allow specifying 'rendernode' display option for
+ egl-headless
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20190305082617.14614-3-kraxel@redhat.com>
+Patchwork-id: 84798
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 2/4] ui: Allow specifying 'rendernode' display option for egl-headless
+Bugzilla: 1648236
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Erik Skultety <eskultet@redhat.com>
+
+From: Erik Skultety <eskultet@redhat.com>
+
+As libvirt can't predict which rendernode QEMU would pick, it
+won't adjust the permissions on the device, hence QEMU getting
+"Permission denied" when opening the DRI device. Therefore, enable
+'rendernode' option for egl-headless display type.
+
+Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1648236
+
+Signed-off-by: Erik Skultety <eskultet@redhat.com>
+Message-id: 27f4617f19aa1072114f10f1aa9dd199735ef982.1542362949.git.eskultet@redhat.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+(cherry picked from commit 91e61947eb2be21b00091d34f5692f89cef41376)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ ui/egl-headless.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ui/egl-headless.c b/ui/egl-headless.c
+index 7c87712..03fec49 100644
+--- a/ui/egl-headless.c
++++ b/ui/egl-headless.c
+@@ -175,7 +175,7 @@ static void egl_headless_init(DisplayState *ds, DisplayOptions *opts)
+     egl_dpy *edpy;
+     int idx;
+ 
+-    if (egl_rendernode_init(NULL) < 0) {
++    if (egl_rendernode_init(opts->u.egl_headless.rendernode) < 0) {
+         error_report("egl: render node init failed");
+         exit(1);
+     }
+-- 
+1.8.3.1
+

@@ -1,0 +1,104 @@
+From 309929687960d52f77df69a745bd1c351023febb Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Thu, 12 Jul 2018 14:42:57 +0200
+Subject: [PATCH 38/89] block: Use tracked request for truncate
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180712144258.17303-6-kwolf@redhat.com>
+Patchwork-id: 81326
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 5/6] block: Use tracked request for truncate
+Bugzilla: 1595173
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+When growing an image, block drivers (especially protocol drivers) may
+initialise the newly added area. I/O requests to the same area need to
+wait for this initialisation to be completed so that data writes don't
+get overwritten and reads don't read uninitialised data.
+
+To avoid overhead in the fast I/O path by adding new locking in the
+protocol drivers and to restrict the impact to requests that actually
+touch the new area, reuse the existing tracked request infrastructure in
+block/io.c and mark all discard requests as serialising.
+
+With this change, it is safe for protocol drivers to make
+.bdrv_co_truncate actually asynchronous.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 1bc5f09f2e1b2be8f6f737b8d5352b438fc41492)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c                | 25 +++++++++++++++++++++++++
+ include/block/block_int.h |  1 +
+ 2 files changed, 26 insertions(+)
+
+diff --git a/block/io.c b/block/io.c
+index 32a82e3..ad8afc0 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -2948,6 +2948,8 @@ int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset,
+ {
+     BlockDriverState *bs = child->bs;
+     BlockDriver *drv = bs->drv;
++    BdrvTrackedRequest req;
++    int64_t old_size, new_bytes;
+     int ret;
+ 
+     assert(child->perm & BLK_PERM_RESIZE);
+@@ -2962,7 +2964,28 @@ int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset,
+         return -EINVAL;
+     }
+ 
++    old_size = bdrv_getlength(bs);
++    if (old_size < 0) {
++        error_setg_errno(errp, -old_size, "Failed to get old image size");
++        return old_size;
++    }
++
++    if (offset > old_size) {
++        new_bytes = offset - old_size;
++    } else {
++        new_bytes = 0;
++    }
++
+     bdrv_inc_in_flight(bs);
++    tracked_request_begin(&req, bs, offset, new_bytes, BDRV_TRACKED_TRUNCATE);
++
++    /* If we are growing the image and potentially using preallocation for the
++     * new area, we need to make sure that no write requests are made to it
++     * concurrently or they might be overwritten by preallocation. */
++    if (new_bytes) {
++        mark_request_serialising(&req, 1);
++        wait_serialising_requests(&req);
++    }
+ 
+     if (!drv->bdrv_co_truncate) {
+         if (bs->file && drv->is_filter) {
+@@ -2996,7 +3019,9 @@ int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset,
+     atomic_inc(&bs->write_gen);
+ 
+ out:
++    tracked_request_end(&req);
+     bdrv_dec_in_flight(bs);
++
+     return ret;
+ }
+ 
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index 6a844ec..27e168f 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -63,6 +63,7 @@ enum BdrvTrackedRequestType {
+     BDRV_TRACKED_READ,
+     BDRV_TRACKED_WRITE,
+     BDRV_TRACKED_DISCARD,
++    BDRV_TRACKED_TRUNCATE,
+ };
+ 
+ typedef struct BdrvTrackedRequest {
+-- 
+1.8.3.1
+

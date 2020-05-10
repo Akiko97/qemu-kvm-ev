@@ -1,0 +1,54 @@
+From b565bf8ec21b5aa9cc4cbadeca016bd7989a1a6c Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 13 Aug 2019 02:34:40 +0200
+Subject: [PATCH 2/4] target/i386: add MDS-NO feature
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20190813023440.3565-1-ehabkost@redhat.com>
+Patchwork-id: 89947
+O-Subject: [RHEL-7.7.z qemu-kvm-rhev PATCH] target/i386: add MDS-NO feature
+Bugzilla: 1716726
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Bandan Das <bsd@redhat.com>
+
+From: Paolo Bonzini <pbonzini@redhat.com>
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1716726
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=23024015
+
+Microarchitectural Data Sampling is a hardware vulnerability which allows
+unprivileged speculative access to data which is available in various CPU
+internal buffers.
+
+Some Intel processors use the ARCH_CAP_MDS_NO bit in the
+IA32_ARCH_CAPABILITIES
+MSR to report that they are not vulnerable, make it available to guests.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-Id: <20190516185320.28340-1-pbonzini@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 20140a82c67467f53814ca197403d5e1b561a5e5)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 928e53c..5d6b45b 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1147,7 +1147,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+         .type = MSR_FEATURE_WORD,
+         .feat_names = {
+             "rdctl-no", "ibrs-all", "rsba", "skip-l1dfl-vmentry",
+-            "ssb-no", NULL, NULL, NULL,
++            "ssb-no", "mds-no", NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+-- 
+1.8.3.1
+

@@ -1,0 +1,16 @@
+From e19d458c0569611dee562575e03968844bea0252 Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Wed, 27 Jun 2018 14:42:36 +0200
+Subject: [PATCH 01/89] Fix permissions for iotest 218
+
+---
+ tests/qemu-iotests/218 | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+ mode change 100644 => 100755 tests/qemu-iotests/218
+
+diff --git a/tests/qemu-iotests/218 b/tests/qemu-iotests/218
+old mode 100644
+new mode 100755
+-- 
+1.8.3.1
+

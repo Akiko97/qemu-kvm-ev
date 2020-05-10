@@ -1,0 +1,45 @@
+From ec75d6bf020a399a3caee05dcc37b463d438c332 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 10 Sep 2018 18:17:52 +0200
+Subject: [PATCH 14/25] block/mirror: don't install backing chain on abort
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180910181803.11781-15-jsnow@redhat.com>
+Patchwork-id: 82091
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 14/25] block/mirror: don't install backing chain on abort
+Bugzilla: 1626061
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+In cases where we abort the block/mirror job, there's no point in
+installing the new backing chain before we finish aborting.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Message-id: 20180906130225.5118-6-jsnow@redhat.com
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 46e2f0070a9bd82187c12b679ec5a69c6aabe128)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/mirror.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index a80c359..1945000 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -514,7 +514,7 @@ static void mirror_exit(Job *job)
+      * required before it could become a backing file of target_bs. */
+     bdrv_child_try_set_perm(mirror_top_bs->backing, 0, BLK_PERM_ALL,
+                             &error_abort);
+-    if (s->backing_mode == MIRROR_SOURCE_BACKING_CHAIN) {
++    if (ret == 0 && s->backing_mode == MIRROR_SOURCE_BACKING_CHAIN) {
+         BlockDriverState *backing = s->is_none_mode ? src : s->base;
+         if (backing_bs(target_bs) != backing) {
+             bdrv_set_backing_hd(target_bs, backing, &local_err);
+-- 
+1.8.3.1
+

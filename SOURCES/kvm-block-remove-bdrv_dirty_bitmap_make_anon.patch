@@ -1,0 +1,82 @@
+From f803d3a0cda98654a4cf53ec64dcd179b4ccc6d4 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:21 +0100
+Subject: [PATCH 11/33] block: remove bdrv_dirty_bitmap_make_anon
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-2-jsnow@redhat.com>
+Patchwork-id: 84261
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 01/23] block: remove bdrv_dirty_bitmap_make_anon
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Paolo Bonzini <pbonzini@redhat.com>
+
+All this function is doing will be repeated by
+bdrv_do_release_matching_dirty_bitmap_locked, except
+resetting bm->persistent.  But even that does not matter
+because the bitmap will be freed.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: 20180323164254.26487-1-pbonzini@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit ab41fc4853cc0cf01ed4903ffe7c36e3768b538f)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c         | 9 ---------
+ blockdev.c                   | 1 -
+ include/block/dirty-bitmap.h | 1 -
+ 3 files changed, 11 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index bc662d3..50e855a 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -98,15 +98,6 @@ BdrvDirtyBitmap *bdrv_find_dirty_bitmap(BlockDriverState *bs, const char *name)
+ }
+ 
+ /* Called with BQL taken.  */
+-void bdrv_dirty_bitmap_make_anon(BdrvDirtyBitmap *bitmap)
+-{
+-    assert(!bdrv_dirty_bitmap_frozen(bitmap));
+-    g_free(bitmap->name);
+-    bitmap->name = NULL;
+-    bitmap->persistent = false;
+-}
+-
+-/* Called with BQL taken.  */
+ BdrvDirtyBitmap *bdrv_create_dirty_bitmap(BlockDriverState *bs,
+                                           uint32_t granularity,
+                                           const char *name,
+diff --git a/blockdev.c b/blockdev.c
+index f25ab15..745ed08 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3019,7 +3019,6 @@ void qmp_block_dirty_bitmap_remove(const char *node, const char *name,
+         }
+     }
+ 
+-    bdrv_dirty_bitmap_make_anon(bitmap);
+     bdrv_release_dirty_bitmap(bs, bitmap);
+ }
+ 
+diff --git a/include/block/dirty-bitmap.h b/include/block/dirty-bitmap.h
+index af9ba3c..bf68dd7 100644
+--- a/include/block/dirty-bitmap.h
++++ b/include/block/dirty-bitmap.h
+@@ -24,7 +24,6 @@ BdrvDirtyBitmap *bdrv_reclaim_dirty_bitmap(BlockDriverState *bs,
+ void bdrv_dirty_bitmap_enable_successor(BdrvDirtyBitmap *bitmap);
+ BdrvDirtyBitmap *bdrv_find_dirty_bitmap(BlockDriverState *bs,
+                                         const char *name);
+-void bdrv_dirty_bitmap_make_anon(BdrvDirtyBitmap *bitmap);
+ void bdrv_release_dirty_bitmap(BlockDriverState *bs, BdrvDirtyBitmap *bitmap);
+ void bdrv_release_named_dirty_bitmaps(BlockDriverState *bs);
+ void bdrv_release_persistent_dirty_bitmaps(BlockDriverState *bs);
+-- 
+1.8.3.1
+

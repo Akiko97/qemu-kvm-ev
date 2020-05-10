@@ -1,0 +1,114 @@
+From 62f7b17e6115df60aa9a54e7530e16e5f4c6d2a0 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 19:00:03 +0200
+Subject: [PATCH 24/57] migration: Don't activate block devices if using -S
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-17-dgilbert@redhat.com>
+Patchwork-id: 81002
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 16/18] migration: Don't activate block devices if using -S
+Bugzilla: 1560854
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+
+Activating the block devices causes the locks to be taken on
+the backing file.  If we're running with -S and the destination libvirt
+hasn't started the destination with 'cont', it's expecting the locks are
+still untaken.
+
+Don't activate the block devices if we're not going to autostart the VM;
+'cont' already will do that anyway.   This change is tied to the new
+migration capability 'late-block-activate' that defaults to off, keeping
+the old behaviour by default.
+
+bz: https://bugzilla.redhat.com/show_bug.cgi?id=1560854
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+(cherry picked from commit 0f073f44df109ea0910d67caede70dec95956ff6)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/migration.c | 34 +++++++++++++++++++++++++++-------
+ qapi/migration.json   |  5 ++++-
+ 2 files changed, 31 insertions(+), 8 deletions(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index b6294f6..edf1c06 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -199,6 +199,16 @@ static void migrate_generate_event(int new_state)
+     }
+ }
+ 
++static bool migrate_late_block_activate(void)
++{
++    MigrationState *s;
++
++    s = migrate_get_current();
++
++    return s->enabled_capabilities[
++        MIGRATION_CAPABILITY_LATE_BLOCK_ACTIVATE];
++}
++
+ /*
+  * Called on -incoming with a defer: uri.
+  * The migration can be started later after any parameters have been
+@@ -308,13 +318,23 @@ static void process_incoming_migration_bh(void *opaque)
+     Error *local_err = NULL;
+     MigrationIncomingState *mis = opaque;
+ 
+-    /* Make sure all file formats flush their mutable metadata.
+-     * If we get an error here, just don't restart the VM yet. */
+-    bdrv_invalidate_cache_all(&local_err);
+-    if (local_err) {
+-        error_report_err(local_err);
+-        local_err = NULL;
+-        autostart = false;
++    /* If capability late_block_activate is set:
++     * Only fire up the block code now if we're going to restart the
++     * VM, else 'cont' will do it.
++     * This causes file locking to happen; so we don't want it to happen
++     * unless we really are starting the VM.
++     */
++    if (!migrate_late_block_activate() ||
++         (autostart && (!global_state_received() ||
++            global_state_get_runstate() == RUN_STATE_RUNNING))) {
++        /* Make sure all file formats flush their mutable metadata.
++         * If we get an error here, just don't restart the VM yet. */
++        bdrv_invalidate_cache_all(&local_err);
++        if (local_err) {
++            error_report_err(local_err);
++            local_err = NULL;
++            autostart = false;
++        }
+     }
+ 
+     /*
+diff --git a/qapi/migration.json b/qapi/migration.json
+index 9d0bf82..618d2de 100644
+--- a/qapi/migration.json
++++ b/qapi/migration.json
+@@ -357,13 +357,16 @@
+ # @dirty-bitmaps: If enabled, QEMU will migrate named dirty bitmaps.
+ #                 (since 2.12)
+ #
++# @late-block-activate: If enabled, the destination will not activate block
++#           devices (and thus take locks) immediately at the end of migration.
++#           (since 3.0)
+ # Since: 1.2
+ ##
+ { 'enum': 'MigrationCapability',
+   'data': ['xbzrle', 'rdma-pin-all', 'auto-converge', 'zero-blocks',
+            'compress', 'events', 'postcopy-ram', 'x-colo', 'release-ram',
+            'block', 'return-path', 'pause-before-switchover', 'x-multifd',
+-           'dirty-bitmaps' ] }
++           'dirty-bitmaps', 'late-block-activate' ] }
+ 
+ ##
+ # @MigrationCapabilityStatus:
+-- 
+1.8.3.1
+

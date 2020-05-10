@@ -1,0 +1,48 @@
+From 4f02070b0278bfaebe0f9af1fcb5f2624693f57c Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:28 +0200
+Subject: [PATCH 18/53] nbd/client: Fix error message for server with unusable
+ sizing
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-19-jsnow@redhat.com>
+Patchwork-id: 87188
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 18/19] nbd/client: Fix error message for server with unusable sizing
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Add a missing space to the error message used when giving up on a
+server that insists on an alignment which renders the last few bytes
+of the export unreadable.
+
+Fixes: 3add3ab78
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190404145226.32649-1-eblake@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit e53f88df77e70350b0eda92a2e5e39f67792008f)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/client.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/nbd/client.c b/nbd/client.c
+index 4309569..49754120 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -428,7 +428,7 @@ static int nbd_opt_info_or_go(QIOChannel *ioc, uint32_t opt,
+             }
+             if (info->min_block &&
+                 !QEMU_IS_ALIGNED(info->size, info->min_block)) {
+-                error_setg(errp, "export size %" PRIu64 "is not multiple of "
++                error_setg(errp, "export size %" PRIu64 " is not multiple of "
+                            "minimum block size %" PRIu32, info->size,
+                            info->min_block);
+                 nbd_send_opt_abort(ioc);
+-- 
+1.8.3.1
+

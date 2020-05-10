@@ -1,0 +1,206 @@
+From 99c200d1a05ef50fedcb6b86387af3b60fe54a0e Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:19 +0200
+Subject: [PATCH 52/53] Revert "migration: move only_migratable to
+ MigrationState"
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-31-armbru@redhat.com>
+Patchwork-id: 88007
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 30/31] Revert "migration: move only_migratable to MigrationState"
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+This reverts commit 3df663e575f1876d7f3bc684f80e72fca0703d39.
+This reverts commit b605c47b57b58e61a901a50a0762dccf43d94783.
+
+Command line option --only-migratable is for disallowing any
+configuration that can block migration.
+
+Initially, --only-migratable set global variable @only_migratable.
+
+Commit 3df663e575 "migration: move only_migratable to MigrationState"
+replaced it by MigrationState member @only_migratable.  That was a
+mistake.
+
+First, it doesn't make sense on the design level.  MigrationState
+captures the state of an individual migration, but --only-migratable
+isn't a property of an individual migration, it's a restriction on
+QEMU configuration.  With fault tolerance, we could have several
+migrations at once.  --only-migratable would certainly protect all of
+them.  Storing it in MigrationState feels inappropriate.
+
+Second, it contributes to a dependency cycle that manifests itself as
+a bug now.
+
+Putting @only_migratable into MigrationState means its available only
+after migration_object_init().
+
+We can't set it before migration_object_init(), so we delay setting it
+with a global property (this is fixup commit b605c47b57 "migration:
+fix handling for --only-migratable").
+
+We can't get it before migration_object_init(), so anything that uses
+it can only run afterwards.
+
+Since migrate_add_blocker() needs to obey --only-migratable, any code
+adding migration blockers can run only afterwards.  This contributes
+to the following dependency cycle:
+
+* configure_blockdev() must run before machine_set_property()
+  so machine properties can refer to block backends
+
+* machine_set_property() before configure_accelerator()
+  so machine properties like kvm-irqchip get applied
+
+* configure_accelerator() before migration_object_init()
+  so that Xen's accelerator compat properties get applied.
+
+* migration_object_init() before configure_blockdev()
+  so configure_blockdev() can add migration blockers
+
+The cycle was closed when recent commit cda4aa9a5a0 "Create block
+backends before setting machine properties" added the first
+dependency, and satisfied it by violating the last one.  Broke block
+backends that add migration blockers.
+
+Moving @only_migratable into MigrationState was a mistake.  Revert it.
+
+This doesn't quite break the "migration_object_init() before
+configure_blockdev() dependency, since migrate_add_blocker() still has
+another dependency on migration_object_init().  To be addressed the
+next commit.
+
+Note that the reverted commit made -only-migratable sugar for -global
+migration.only-migratable=on below the hood.  Documentation has only
+ever mentioned -only-migratable.  This commit removes the arcane &
+undocumented alternative to -only-migratable again.  Nobody should be
+using it.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Conflicts:
+	include/migration/misc.h
+	migration/migration.c
+	migration/migration.h
+	vl.c
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20190401090827.20793-3-armbru@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+(cherry picked from commit 811f8652712a4ec2ff73c2c5dca35581a25112a4)
+[Conflicts in migration/migration.c and vl.c because we lack conflicts
+there]
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+---
+ include/sysemu/sysemu.h | 1 +
+ migration/migration.c   | 5 ++---
+ migration/migration.h   | 3 ---
+ migration/savevm.c      | 2 +-
+ vl.c                    | 9 ++-------
+ 5 files changed, 6 insertions(+), 14 deletions(-)
+
+diff --git a/include/sysemu/sysemu.h b/include/sysemu/sysemu.h
+index 5d8634b..2a6f4a5 100644
+--- a/include/sysemu/sysemu.h
++++ b/include/sysemu/sysemu.h
+@@ -14,6 +14,7 @@
+ /* vl.c */
+ 
+ extern const char *bios_name;
++extern int only_migratable;
+ extern const char *qemu_name;
+ extern QemuUUID qemu_uuid;
+ extern bool qemu_uuid_set;
+diff --git a/migration/migration.c b/migration/migration.c
+index edf1c06..83b8d6a 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -1330,7 +1330,7 @@ static GSList *migration_blockers;
+ 
+ int migrate_add_blocker(Error *reason, Error **errp)
+ {
+-    if (migrate_get_current()->only_migratable) {
++    if (only_migratable) {
+         error_propagate(errp, error_copy(reason));
+         error_prepend(errp, "disallowing migration blocker "
+                           "(--only_migratable) for: ");
+@@ -2498,7 +2498,7 @@ void migration_global_dump(Monitor *mon)
+     monitor_printf(mon, "store-global-state: %s\n",
+                    ms->store_global_state ? "on" : "off");
+     monitor_printf(mon, "only-migratable: %s\n",
+-                   ms->only_migratable ? "on" : "off");
++                   only_migratable ? "on" : "off");
+     monitor_printf(mon, "send-configuration: %s\n",
+                    ms->send_configuration ? "on" : "off");
+     monitor_printf(mon, "send-section-footer: %s\n",
+@@ -2513,7 +2513,6 @@ void migration_global_dump(Monitor *mon)
+ static Property migration_properties[] = {
+     DEFINE_PROP_BOOL("store-global-state", MigrationState,
+                      store_global_state, true),
+-    DEFINE_PROP_BOOL("only-migratable", MigrationState, only_migratable, false),
+     DEFINE_PROP_BOOL("send-configuration", MigrationState,
+                      send_configuration, true),
+     DEFINE_PROP_BOOL("send-section-footer", MigrationState,
+diff --git a/migration/migration.h b/migration/migration.h
+index a9c5c7f..84bdcb7 100644
+--- a/migration/migration.h
++++ b/migration/migration.h
+@@ -175,9 +175,6 @@ struct MigrationState
+      */
+     bool store_global_state;
+ 
+-    /* Whether the VM is only allowing for migratable devices */
+-    bool only_migratable;
+-
+     /* Whether we send QEMU_VM_CONFIGURATION during migration */
+     bool send_configuration;
+     /* Whether we send section footer during migration */
+diff --git a/migration/savevm.c b/migration/savevm.c
+index e5d57fa..6c398d1 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -2530,7 +2530,7 @@ void vmstate_register_ram_global(MemoryRegion *mr)
+ bool vmstate_check_only_migratable(const VMStateDescription *vmsd)
+ {
+     /* check needed if --only-migratable is specified */
+-    if (!migrate_get_current()->only_migratable) {
++    if (!only_migratable) {
+         return true;
+     }
+ 
+diff --git a/vl.c b/vl.c
+index 15e87a4..61247eb 100644
+--- a/vl.c
++++ b/vl.c
+@@ -192,6 +192,7 @@ bool boot_strict;
+ uint8_t *boot_splash_filedata;
+ size_t boot_splash_filedata_size;
+ uint8_t qemu_extra_params_fw[2];
++int only_migratable; /* turn it off unless user states otherwise */
+ 
+ int icount_align_option;
+ 
+@@ -3994,13 +3995,7 @@ int main(int argc, char **argv, char **envp)
+                 incoming = optarg;
+                 break;
+             case QEMU_OPTION_only_migratable:
+-                /*
+-                 * TODO: we can remove this option one day, and we
+-                 * should all use:
+-                 *
+-                 * "-global migration.only-migratable=true"
+-                 */
+-                qemu_global_option("migration.only-migratable=true");
++                only_migratable = 1;
+                 break;
+             case QEMU_OPTION_nodefaults:
+                 has_defaults = 0;
+-- 
+1.8.3.1
+

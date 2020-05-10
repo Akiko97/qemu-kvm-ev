@@ -1,0 +1,64 @@
+From 8486c0843637f5822dbfcc1eed561d640ff14fe9 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:14 +0200
+Subject: [PATCH 47/53] pflash_cfi01: Add pflash_cfi01_get_blk() helper
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-26-armbru@redhat.com>
+Patchwork-id: 87983
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 25/31] pflash_cfi01: Add pflash_cfi01_get_blk() helper
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+Add an helper to access the opaque struct PFlashCFI01.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Laszlo Ersek <lersek@redhat.com>
+Message-Id: <20190308131445.17502-9-armbru@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit e60cf76549a628d63f865fb6faeb1c7c0f390d0b)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/block/pflash_cfi01.c  | 5 +++++
+ include/hw/block/flash.h | 1 +
+ 2 files changed, 6 insertions(+)
+
+diff --git a/hw/block/pflash_cfi01.c b/hw/block/pflash_cfi01.c
+index 0101127..7a25051 100644
+--- a/hw/block/pflash_cfi01.c
++++ b/hw/block/pflash_cfi01.c
+@@ -980,6 +980,11 @@ PFlashCFI01 *pflash_cfi01_register(hwaddr base,
+     return PFLASH_CFI01(dev);
+ }
+ 
++BlockBackend *pflash_cfi01_get_blk(PFlashCFI01 *fl)
++{
++    return fl->blk;
++}
++
+ MemoryRegion *pflash_cfi01_get_memory(PFlashCFI01 *fl)
+ {
+     return &fl->mem;
+diff --git a/include/hw/block/flash.h b/include/hw/block/flash.h
+index 914932e..a0f4887 100644
+--- a/include/hw/block/flash.h
++++ b/include/hw/block/flash.h
+@@ -22,6 +22,7 @@ PFlashCFI01 *pflash_cfi01_register(hwaddr base,
+                                    uint16_t id0, uint16_t id1,
+                                    uint16_t id2, uint16_t id3,
+                                    int be);
++BlockBackend *pflash_cfi01_get_blk(PFlashCFI01 *fl);
+ MemoryRegion *pflash_cfi01_get_memory(PFlashCFI01 *fl);
+ 
+ /* pflash_cfi02.c */
+-- 
+1.8.3.1
+

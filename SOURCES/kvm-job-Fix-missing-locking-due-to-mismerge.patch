@@ -1,0 +1,53 @@
+From a3a6c860441cfaa684fe819791628f9d43af98dc Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:24 +0200
+Subject: [PATCH 33/49] job: Fix missing locking due to mismerge
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-27-kwolf@redhat.com>
+Patchwork-id: 82178
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 26/42] job: Fix missing locking due to mismerge
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+job_completed() had a problem with double locking that was recently
+fixed independently by two different commits:
+
+"job: Fix nested aio_poll() hanging in job_txn_apply"
+"jobs: add exit shim"
+
+One fix removed the first aio_context_acquire(), the other fix removed
+the other one. Now we have a bug again and the code is run without any
+locking.
+
+Add it back in one of the places.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ job.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/job.c b/job.c
+index 5d117fb..db53163 100644
+--- a/job.c
++++ b/job.c
+@@ -842,7 +842,11 @@ static void job_completed(Job *job)
+ static void job_exit(void *opaque)
+ {
+     Job *job = (Job *)opaque;
++    AioContext *ctx = job->aio_context;
++
++    aio_context_acquire(ctx);
+     job_completed(job);
++    aio_context_release(ctx);
+ }
+ 
+ /**
+-- 
+1.8.3.1
+

@@ -1,0 +1,88 @@
+From 7d5a7d6926805c069903bef845d43912cf718410 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 3 Jul 2018 17:23:54 +0200
+Subject: [PATCH 09/89] i386: Fix up the Node id for CPUID_8000_001E
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180703172356.21038-9-ehabkost@redhat.com>
+Patchwork-id: 81218
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v3 08/10] i386: Fix up the Node id for CPUID_8000_001E
+Bugzilla: 1481253
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Babu Moger <babu.moger@amd.com>
+
+This is part of topoext support. To keep the compatibility, it is better
+we support all the combination of nr_cores and nr_threads currently
+supported. By allowing more nr_cores and nr_threads, we might end up with
+more nodes than we can actually support with the real hardware. We need to
+fix up the node id to make this work. We can achieve this by shifting the
+socket_id bits left to address more nodes.
+
+Signed-off-by: Babu Moger <babu.moger@amd.com>
+Message-Id: <1529443919-67509-2-git-send-email-babu.moger@amd.com>
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 631be32155dbafa1fe886f2488127956c9120ba6)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 26 +++++++++++++++++++++++++-
+ 1 file changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 643d3b1..ef43ea0 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -19,6 +19,7 @@
+ 
+ #include "qemu/osdep.h"
+ #include "qemu/cutils.h"
++#include "qemu/bitops.h"
+ 
+ #include "cpu.h"
+ #include "exec/exec-all.h"
+@@ -474,6 +475,8 @@ static void encode_topo_cpuid8000001e(CPUState *cs, X86CPU *cpu,
+                                        uint32_t *ecx, uint32_t *edx)
+ {
+     struct core_topology topo = {0};
++    unsigned long nodes;
++    int shift;
+ 
+     build_core_topology(cs->nr_cores, cpu->core_id, &topo);
+     *eax = cpu->apic_id;
+@@ -506,7 +509,28 @@ static void encode_topo_cpuid8000001e(CPUState *cs, X86CPU *cpu,
+      *         2  Socket id
+      *       1:0  Node id
+      */
+-    *ecx = ((topo.num_nodes - 1) << 8) | (cpu->socket_id << 2) | topo.node_id;
++    if (topo.num_nodes <= 4) {
++        *ecx = ((topo.num_nodes - 1) << 8) | (cpu->socket_id << 2) |
++                topo.node_id;
++    } else {
++        /*
++         * Node id fix up. Actual hardware supports up to 4 nodes. But with
++         * more than 32 cores, we may end up with more than 4 nodes.
++         * Node id is a combination of socket id and node id. Only requirement
++         * here is that this number should be unique accross the system.
++         * Shift the socket id to accommodate more nodes. We dont expect both
++         * socket id and node id to be big number at the same time. This is not
++         * an ideal config but we need to to support it. Max nodes we can have
++         * is 32 (255/8) with 8 cores per node and 255 max cores. We only need
++         * 5 bits for nodes. Find the left most set bit to represent the total
++         * number of nodes. find_last_bit returns last set bit(0 based). Left
++         * shift(+1) the socket id to represent all the nodes.
++         */
++        nodes = topo.num_nodes - 1;
++        shift = find_last_bit(&nodes, 8);
++        *ecx = ((topo.num_nodes - 1) << 8) | (cpu->socket_id << (shift + 1)) |
++                topo.node_id;
++    }
+     *edx = 0;
+ }
+ 
+-- 
+1.8.3.1
+

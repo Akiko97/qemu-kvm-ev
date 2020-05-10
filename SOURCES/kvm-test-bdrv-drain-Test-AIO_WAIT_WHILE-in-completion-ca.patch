@@ -1,0 +1,58 @@
+From c6dae9ed2996e40bfdcf6c680bd481c43182fb3d Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:30 +0200
+Subject: [PATCH 39/49] test-bdrv-drain: Test AIO_WAIT_WHILE() in completion
+ callback
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-33-kwolf@redhat.com>
+Patchwork-id: 82181
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 32/42] test-bdrv-drain: Test AIO_WAIT_WHILE() in completion callback
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This is a regression test for a deadlock that occurred in block job
+completion callbacks (via job_defer_to_main_loop) because the AioContext
+lock was taken twice: once in job_finish_sync() and then again in
+job_defer_to_main_loop_bh(). This would cause AIO_WAIT_WHILE() to hang.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/test-bdrv-drain.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/tests/test-bdrv-drain.c b/tests/test-bdrv-drain.c
+index 3cf3ba3..05f3b55 100644
+--- a/tests/test-bdrv-drain.c
++++ b/tests/test-bdrv-drain.c
+@@ -774,6 +774,15 @@ typedef struct TestBlockJob {
+     bool should_complete;
+ } TestBlockJob;
+ 
++static int test_job_prepare(Job *job)
++{
++    TestBlockJob *s = container_of(job, TestBlockJob, common.job);
++
++    /* Provoke an AIO_WAIT_WHILE() call to verify there is no deadlock */
++    blk_flush(s->common.blk);
++    return 0;
++}
++
+ static int coroutine_fn test_job_run(Job *job, Error **errp)
+ {
+     TestBlockJob *s = container_of(job, TestBlockJob, common.job);
+@@ -804,6 +813,7 @@ BlockJobDriver test_job_driver = {
+         .drain          = block_job_drain,
+         .run            = test_job_run,
+         .complete       = test_job_complete,
++        .prepare        = test_job_prepare,
+     },
+ };
+ 
+-- 
+1.8.3.1
+

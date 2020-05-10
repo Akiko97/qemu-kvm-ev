@@ -1,0 +1,166 @@
+From df5a366613d42ec2dc5dae33e10b6fdd5db09e0d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:19 +0200
+Subject: [PATCH 09/53] nbd/client: Report offsets in bdrv_block_status
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-10-jsnow@redhat.com>
+Patchwork-id: 87199
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 09/19] nbd/client: Report offsets in bdrv_block_status
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+It is desirable for 'qemu-img map' to have the same output for a file
+whether it is served over file or nbd protocols. However, ever since
+we implemented block status for NBD (2.12), the NBD protocol forgot to
+inform the block layer that as the final layer in the chain, the
+offset is valid; without an offset, the human-readable form of
+qemu-img map gives up with the unhelpful:
+
+$ nbdkit -U - data data="1" size=512 --run 'qemu-img map $nbd'
+Offset          Length          Mapped to       File
+qemu-img: File contains external, encrypted or compressed clusters.
+
+The --output=json form always works, because it is reporting the
+lower-level bdrv_block_status results directly rather than trying to
+filter out sparse ranges for human consumption - but now it also
+shows the offset member.
+
+With this patch, the human output changes to:
+
+Offset          Length          Mapped to       File
+0               0x200           0               nbd+unix://?socket=/tmp/nbdkitOxeoLa/socket
+
+This change is observable to several iotests.
+
+Fixes: 78a33ab5
+Reported-by: Richard W.M. Jones <rjones@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190329042750.14704-4-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit a62a85ef5ccd764d03d72d6c3cd558f9755b3457)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c         |  9 +++++++--
+ tests/qemu-iotests/209.out |  4 ++--
+ tests/qemu-iotests/223.out | 18 +++++++++---------
+ tests/qemu-iotests/241.out |  6 +++---
+ 4 files changed, 21 insertions(+), 16 deletions(-)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index 09e20b2..9b5779f 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -959,7 +959,9 @@ int coroutine_fn nbd_client_co_block_status(BlockDriverState *bs,
+ 
+     if (!client->info.base_allocation) {
+         *pnum = bytes;
+-        return BDRV_BLOCK_DATA;
++        *map = offset;
++        *file = bs;
++        return BDRV_BLOCK_DATA | BDRV_BLOCK_OFFSET_VALID;
+     }
+ 
+     ret = nbd_co_send_request(bs, &request, NULL);
+@@ -982,8 +984,11 @@ int coroutine_fn nbd_client_co_block_status(BlockDriverState *bs,
+ 
+     assert(extent.length);
+     *pnum = extent.length;
++    *map = offset;
++    *file = bs;
+     return (extent.flags & NBD_STATE_HOLE ? 0 : BDRV_BLOCK_DATA) |
+-           (extent.flags & NBD_STATE_ZERO ? BDRV_BLOCK_ZERO : 0);
++        (extent.flags & NBD_STATE_ZERO ? BDRV_BLOCK_ZERO : 0) |
++        BDRV_BLOCK_OFFSET_VALID;
+ }
+ 
+ void nbd_client_detach_aio_context(BlockDriverState *bs)
+diff --git a/tests/qemu-iotests/209.out b/tests/qemu-iotests/209.out
+index 0d29724..214e27b 100644
+--- a/tests/qemu-iotests/209.out
++++ b/tests/qemu-iotests/209.out
+@@ -1,2 +1,2 @@
+-[{ "start": 0, "length": 524288, "depth": 0, "zero": false, "data": true},
+-{ "start": 524288, "length": 524288, "depth": 0, "zero": true, "data": false}]
++[{ "start": 0, "length": 524288, "depth": 0, "zero": false, "data": true, "offset": 0},
++{ "start": 524288, "length": 524288, "depth": 0, "zero": true, "data": false, "offset": 524288}]
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+index 0524ffb..a620f82 100644
+--- a/tests/qemu-iotests/223.out
++++ b/tests/qemu-iotests/223.out
+@@ -67,18 +67,18 @@ read 1048576/1048576 bytes at offset 1048576
+ 1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+ read 2097152/2097152 bytes at offset 2097152
+ 2 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+-[{ "start": 0, "length": 4096, "depth": 0, "zero": false, "data": true},
+-{ "start": 4096, "length": 1044480, "depth": 0, "zero": true, "data": false},
+-{ "start": 1048576, "length": 3145728, "depth": 0, "zero": false, "data": true}]
++[{ "start": 0, "length": 4096, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
++{ "start": 4096, "length": 1044480, "depth": 0, "zero": true, "data": false, "offset": OFFSET},
++{ "start": 1048576, "length": 3145728, "depth": 0, "zero": false, "data": true, "offset": OFFSET}]
+ [{ "start": 0, "length": 65536, "depth": 0, "zero": false, "data": false},
+-{ "start": 65536, "length": 2031616, "depth": 0, "zero": false, "data": true},
++{ "start": 65536, "length": 2031616, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
+ { "start": 2097152, "length": 2097152, "depth": 0, "zero": false, "data": false}]
+ 
+ === Contrast to small granularity dirty-bitmap ===
+ 
+-[{ "start": 0, "length": 512, "depth": 0, "zero": false, "data": true},
++[{ "start": 0, "length": 512, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
+ { "start": 512, "length": 512, "depth": 0, "zero": false, "data": false},
+-{ "start": 1024, "length": 2096128, "depth": 0, "zero": false, "data": true},
++{ "start": 1024, "length": 2096128, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
+ { "start": 2097152, "length": 2097152, "depth": 0, "zero": false, "data": false}]
+ 
+ === End qemu NBD server ===
+@@ -94,10 +94,10 @@ read 2097152/2097152 bytes at offset 2097152
+ === Use qemu-nbd as server ===
+ 
+ [{ "start": 0, "length": 65536, "depth": 0, "zero": false, "data": false},
+-{ "start": 65536, "length": 2031616, "depth": 0, "zero": false, "data": true},
++{ "start": 65536, "length": 2031616, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
+ { "start": 2097152, "length": 2097152, "depth": 0, "zero": false, "data": false}]
+-[{ "start": 0, "length": 512, "depth": 0, "zero": false, "data": true},
++[{ "start": 0, "length": 512, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
+ { "start": 512, "length": 512, "depth": 0, "zero": false, "data": false},
+-{ "start": 1024, "length": 2096128, "depth": 0, "zero": false, "data": true},
++{ "start": 1024, "length": 2096128, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
+ { "start": 2097152, "length": 2097152, "depth": 0, "zero": false, "data": false}]
+ *** done
+diff --git a/tests/qemu-iotests/241.out b/tests/qemu-iotests/241.out
+index b76a623..f22eabb 100644
+--- a/tests/qemu-iotests/241.out
++++ b/tests/qemu-iotests/241.out
+@@ -4,7 +4,7 @@ QA output created by 241
+ 
+   size:  1024
+   min block: 512
+-[{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true}]
++[{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true, "offset": OFFSET}]
+ 1 KiB (0x400) bytes     allocated at offset 0 bytes (0x0)
+ 
+ === Exporting unaligned raw image, forced server sector alignment ===
+@@ -14,13 +14,13 @@ WARNING: Image format was not specified for '/home/eblake/qemu/tests/qemu-iotest
+          Specify the 'raw' format explicitly to remove the restrictions.
+   size:  1024
+   min block: 512
+-[{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true}]
++[{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true, "offset": OFFSET}]
+ 1 KiB (0x400) bytes     allocated at offset 0 bytes (0x0)
+ 
+ === Exporting unaligned raw image, forced client sector alignment ===
+ 
+   size:  1024
+   min block: 512
+-[{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true}]
++[{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true, "offset": OFFSET}]
+ 1 KiB (0x400) bytes     allocated at offset 0 bytes (0x0)
+ *** done
+-- 
+1.8.3.1
+

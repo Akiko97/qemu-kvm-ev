@@ -1,0 +1,233 @@
+From f8f33512aefd597c9664eeb26a97cafc12d958da Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Tue, 14 Mar 2017 14:16:45 +0100
+Subject: QMP: Forward-port __com.redhat_drive_add from RHEL-6
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <1387262799-10350-4-git-send-email-armbru@redhat.com>
+Patchwork-id: 56294
+O-Subject: [PATCH v2 3/6] QMP: Forward-port __com.redhat_drive_add from RHEL-6
+Bugzilla: 889051
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Luiz Capitulino <lcapitulino@redhat.com>
+
+From: Markus Armbruster <armbru@redhat.com>
+
+Code taken from RHEL-6 as of qemu-kvm-0.12.1.2-2.418.el6, backported
+and fixed up as follows:
+
+* Update simple_drive_add() for commit 4e89978 "qemu-option:
+  qemu_opts_from_qdict(): use error_set()".
+
+* Update simple_drive_add() for commit 2d0d283 "Support default block
+  interfaces per QEMUMachine".
+
+* Add comment explaining drive_init() error reporting hacks to
+  simple_drive_add().
+
+* qemu-monitor.hx has been split into qmp-commands.hx and
+  hmp-commands.hx.  Copy the QMP parts to qmp-commands.hx.  Clean up
+  second example slightly.
+
+* Trailing whitespace cleaned up.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+
+Rebase notes (2.9.0):
+- documentation moved from docs/qmp-commands.txt to qapi/block.json
+- added argument to qmp_register_command
+- explicit argument listing for correct documentation checking
+
+Rebase notes (2.8.0):
+- qmp-commands.hx replaced by docs/qmp-commands.txt (commit bd6092e)
+
+Rebase notes (2.6.0):
+- Added qapi/error.h to device-hotplug.c
+
+Rebase notes (2.4.0):
+- removed qerror_report
+- removed user_print
+
+Merged patches (2.9.0):
+- 599ec5f QMP: Fix forward port of __com.redhat_drive_add
+
+Merged patches (2.12.0):
+- 8679189 qmp: Report __com.redhat_drive_add error to monitor
+
+Merged patches (2.7.0):
+- 20af75a QMP: Relax __com.redhat_drive_add parameter checking
+
+(cherry picked from commit 6b8c0495aa317dfc5caa6d204373140811880d1a)
+(cherry picked from commit 5d293a214ca093a133011d0edc9039b1e71b4219)
+(cherry picked from commit 45f0a917e663aab47217bb8b6cc5bca3a8b1baac)
+(cherry picked from commit e15f0bd3c4ccce535ae9a08156aebcd780c38132)
+(cherry picked from commit c7ae434601e7439371012494cd026179369af330)
+---
+ device-hotplug.c          | 63 +++++++++++++++++++++++++++++++++++++++++++++++
+ include/sysemu/blockdev.h |  2 ++
+ monitor.c                 |  2 ++
+ qapi/block.json           | 45 +++++++++++++++++++++++++++++++++
+ 4 files changed, 112 insertions(+)
+
+diff --git a/device-hotplug.c b/device-hotplug.c
+index 23fd665..5575eb7 100644
+--- a/device-hotplug.c
++++ b/device-hotplug.c
+@@ -33,6 +33,10 @@
+ #include "sysemu/sysemu.h"
+ #include "monitor/monitor.h"
+ #include "block/block_int.h"
++#include "qemu/error-report.h"
++#include "qapi/qmp/qerror.h"
++#include "qapi/error.h"
++
+ 
+ static DriveInfo *add_init_drive(const char *optstr)
+ {
+@@ -91,3 +95,62 @@ err:
+         blk_unref(blk);
+     }
+ }
++
++static void check_parm(const char *key, QObject *obj, void *opaque)
++{
++    static const char *unwanted_keys[] = {
++        "bus", "unit", "index", "if", "boot", "addr",
++        NULL
++
++    };
++    int *stopped = opaque;
++    const char **p;
++
++    if (*stopped) {
++        return;
++    }
++
++    for (p = unwanted_keys; *p; p++) {
++        if (!strcmp(key, *p)) {
++            error_report(QERR_INVALID_PARAMETER, key);
++            *stopped = 1;
++            return;
++        }
++    }
++}
++
++void simple_drive_add(QDict *qdict, QObject **ret_data, Error **errp)
++{
++    int stopped;
++    Error *local_err = NULL;
++    QemuOpts *opts;
++    DriveInfo *dinfo;
++    MachineClass *mc;
++
++    if (!qdict_haskey(qdict, "id")) {
++        error_setg(errp, QERR_MISSING_PARAMETER, "id");
++        return;
++    }
++
++    stopped = 0;
++    qdict_iter(qdict, check_parm, &stopped);
++    if (stopped) {
++        return;
++    }
++
++    opts = qemu_opts_from_qdict(&qemu_drive_opts, qdict, &local_err);
++    if (!opts) {
++        error_propagate(errp, local_err);
++        return;
++    }
++    qemu_opt_set(opts, "if", "none", &error_abort);
++    mc = MACHINE_GET_CLASS(current_machine);
++    dinfo = drive_new(opts, mc->block_default_type);
++    if (!dinfo) {
++        error_setg(errp, QERR_DEVICE_INIT_FAILED, qemu_opts_id(opts));
++        qemu_opts_del(opts);
++        return;
++    }
++
++    return;
++}
+diff --git a/include/sysemu/blockdev.h b/include/sysemu/blockdev.h
+index ac22f2a..3bda14c 100644
+--- a/include/sysemu/blockdev.h
++++ b/include/sysemu/blockdev.h
+@@ -63,4 +63,6 @@ DriveInfo *drive_new(QemuOpts *arg, BlockInterfaceType block_default_type);
+ 
+ void hmp_commit(Monitor *mon, const QDict *qdict);
+ void hmp_drive_del(Monitor *mon, const QDict *qdict);
++
++void simple_drive_add(QDict *qdict, QObject **ret_data, Error **errp);
+ #endif
+diff --git a/monitor.c b/monitor.c
+index 1813d34..c587f21 100644
+--- a/monitor.c
++++ b/monitor.c
+@@ -1204,6 +1204,8 @@ static void monitor_init_qmp_commands(void)
+                          QCO_NO_OPTIONS);
+     qmp_register_command(&qmp_commands, "netdev_add", qmp_netdev_add,
+                          QCO_NO_OPTIONS);
++    qmp_register_command(&qmp_commands, "__com.redhat_drive_add", simple_drive_add,
++                         QCO_NO_OPTIONS);
+ 
+     qmp_unregister_commands_hack();
+ 
+diff --git a/qapi/block.json b/qapi/block.json
+index e1fe18e..48c732f 100644
+--- a/qapi/block.json
++++ b/qapi/block.json
+@@ -211,6 +211,51 @@
+   'data': { 'id': 'str' } }
+ 
+ ##
++# @__com.redhat_drive_add:
++#
++# Create a drive similar to -drive if=none.
++#
++# @id: Drive ID, must be unique
++# @file: Disk image
++# @format: Disk format
++# @aio: How to perform asynchronous disk I/O
++# @cache: Host cache use policy
++# @cyls, "heads", "secs": Disk geometry
++# @trans: BIOS translation mode
++# @media: Media type
++# @readonly: Open image read-only
++# @rerror: What to do on read error
++# @werror: What to do on write error
++# @serial: Drive serial number
++# @snapshot: Enable snapshot mode
++# @copy-on-read: Enable copy-on-read mode
++#
++# Example:
++#
++# 1. Add a drive without medium:
++#
++# -> { "execute": "__com.redhat_drive_add", "arguments": { "id": "foo" } }
++# <- {"return": {}}
++#
++# 2. Add a drive with medium:
++#
++# -> { "execute": "__com.redhat_drive_add",
++#      "arguments": { "id": "bar", "file": "tmp.qcow2", "format": "qcow2" } }
++# <- {"return": {}}
++#
++##
++{ 'command': '__com.redhat_drive_add',
++  'data': { 'id': 'str', '*file': 'str', '*format': 'str',
++            '*aio': 'BlockdevAioOptions',
++            '*cache': 'BlockdevCacheOptions',
++            '*cyls': 'int', '*heads': 'int', '*secs': 'int',
++            '*trans': 'str', '*media': 'str',
++            '*readonly': 'bool', '*snapshot': 'bool',
++            '*rerror': 'str', '*werror': 'str',
++            '*copy-on-read': 'bool', '*serial': 'str' },
++  'gen': false }                # just to minimize porting churn
++
++##
+ # @nbd-server-start:
+ #
+ # Start an NBD server listening on the given host and port.  Block
+-- 
+1.8.3.1
+

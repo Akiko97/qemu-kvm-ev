@@ -1,0 +1,102 @@
+From 1ef4307f6e1299d337bc925ea7bbea41c2f99706 Mon Sep 17 00:00:00 2001
+From: Laurent Vivier <lvivier@redhat.com>
+Date: Fri, 4 May 2018 09:38:55 +0200
+Subject: [PATCH 06/13] tcg: workaround branch instruction overflow in
+ tcg_out_qemu_ld/st
+
+RH-Author: Laurent Vivier <lvivier@redhat.com>
+Message-id: <20180504093855.30922-1-lvivier@redhat.com>
+Patchwork-id: 80025
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] tcg: workaround branch instruction overflow in tcg_out_qemu_ld/st
+Bugzilla: 1574577
+RH-Acked-by: Serhii Popovych <spopovyc@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+ppc64 uses a BC instruction to call the tcg_out_qemu_ld/st
+slow path. BC instruction uses a relative address encoded
+on 14 bits.
+
+The slow path functions are added at the end of the generated
+instructions buffer, in the reverse order of the callers.
+So more we have slow path functions more the distance between
+the caller (BC) and the function increases.
+
+This patch changes the behavior to generate the functions in
+the same order of the callers.
+
+Cc: qemu-stable@nongnu.org
+Fixes: 15fa08f845 ("tcg: Dynamically allocate TCGOps")
+Signed-off-by: Laurent Vivier <lvivier@redhat.com>
+Message-Id: <20180429235840.16659-1-lvivier@redhat.com>
+Signed-off-by: Richard Henderson <richard.henderson@linaro.org>
+(cherry picked from commit 6001f7729e12dd1d810291e4cbf83cee8e07441d)
+Signed-off-by: Laurent Vivier <lvivier@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tcg/tcg-ldst.inc.c | 8 ++++----
+ tcg/tcg.c          | 2 +-
+ tcg/tcg.h          | 2 +-
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/tcg/tcg-ldst.inc.c b/tcg/tcg-ldst.inc.c
+index 0e14cf4..47f41b9 100644
+--- a/tcg/tcg-ldst.inc.c
++++ b/tcg/tcg-ldst.inc.c
+@@ -30,7 +30,7 @@ typedef struct TCGLabelQemuLdst {
+     TCGReg datahi_reg;      /* reg index for high word to be loaded or stored */
+     tcg_insn_unit *raddr;   /* gen code addr of the next IR of qemu_ld/st IR */
+     tcg_insn_unit *label_ptr[2]; /* label pointers to be updated */
+-    struct TCGLabelQemuLdst *next;
++    QSIMPLEQ_ENTRY(TCGLabelQemuLdst) next;
+ } TCGLabelQemuLdst;
+ 
+ 
+@@ -46,7 +46,7 @@ static bool tcg_out_ldst_finalize(TCGContext *s)
+     TCGLabelQemuLdst *lb;
+ 
+     /* qemu_ld/st slow paths */
+-    for (lb = s->ldst_labels; lb != NULL; lb = lb->next) {
++    QSIMPLEQ_FOREACH(lb, &s->ldst_labels, next) {
+         if (lb->is_ld) {
+             tcg_out_qemu_ld_slow_path(s, lb);
+         } else {
+@@ -72,7 +72,7 @@ static inline TCGLabelQemuLdst *new_ldst_label(TCGContext *s)
+ {
+     TCGLabelQemuLdst *l = tcg_malloc(sizeof(*l));
+ 
+-    l->next = s->ldst_labels;
+-    s->ldst_labels = l;
++    QSIMPLEQ_INSERT_TAIL(&s->ldst_labels, l, next);
++
+     return l;
+ }
+diff --git a/tcg/tcg.c b/tcg/tcg.c
+index bb24526..b84850b 100644
+--- a/tcg/tcg.c
++++ b/tcg/tcg.c
+@@ -3324,7 +3324,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
+     s->code_ptr = tb->tc.ptr;
+ 
+ #ifdef TCG_TARGET_NEED_LDST_LABELS
+-    s->ldst_labels = NULL;
++    QSIMPLEQ_INIT(&s->ldst_labels);
+ #endif
+ #ifdef TCG_TARGET_NEED_POOL_LABELS
+     s->pool_labels = NULL;
+diff --git a/tcg/tcg.h b/tcg/tcg.h
+index 30896ca..a3076c5 100644
+--- a/tcg/tcg.h
++++ b/tcg/tcg.h
+@@ -699,7 +699,7 @@ struct TCGContext {
+ 
+     /* These structures are private to tcg-target.inc.c.  */
+ #ifdef TCG_TARGET_NEED_LDST_LABELS
+-    struct TCGLabelQemuLdst *ldst_labels;
++    QSIMPLEQ_HEAD(ldst_labels, TCGLabelQemuLdst) ldst_labels;
+ #endif
+ #ifdef TCG_TARGET_NEED_POOL_LABELS
+     struct TCGLabelPoolData *pool_labels;
+-- 
+1.8.3.1
+

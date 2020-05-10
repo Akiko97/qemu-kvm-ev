@@ -1,0 +1,108 @@
+From 8ca94edad4b07d6191bc4761a44d8289b0f8ad5d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 10 Sep 2018 18:17:41 +0200
+Subject: [PATCH 03/25] jobs: add exit shim
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180910181803.11781-4-jsnow@redhat.com>
+Patchwork-id: 82104
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 03/25] jobs: add exit shim
+Bugzilla: 1626061
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+All jobs do the same thing when they leave their running loop:
+- Store the return code in a structure
+- wait to receive this structure in the main thread
+- signal job completion via job_completed
+
+Few jobs do anything beyond exactly this. Consolidate this exit
+logic for a net reduction in SLOC.
+
+More seriously, when we utilize job_defer_to_main_loop_bh to call
+a function that calls job_completed, job_finalize_single will run
+in a context where it has recursively taken the aio_context lock,
+which can cause hangs if it puts down a reference that causes a flush.
+
+You can observe this in practice by looking at mirror_exit's careful
+placement of job_completed and bdrv_unref calls.
+
+If we centralize job exiting, we can signal job completion from outside
+of the aio_context, which should allow for job cleanup code to run with
+only one lock, which makes cleanup callbacks less tricky to write.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180830015734.19765-4-jsnow@redhat.com
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 00359a71d45a414ee47d8e423104dc0afd24ec65)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/job.h | 11 +++++++++++
+ job.c              | 18 ++++++++++++++++++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 905dfdd..24b5f3f 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -209,6 +209,17 @@ struct JobDriver {
+     void (*drain)(Job *job);
+ 
+     /**
++     * If the callback is not NULL, exit will be invoked from the main thread
++     * when the job's coroutine has finished, but before transactional
++     * convergence; before @prepare or @abort.
++     *
++     * FIXME TODO: This callback is only temporary to transition remaining jobs
++     * to prepare/commit/abort/clean callbacks and will be removed before 3.1.
++     * is released.
++     */
++    void (*exit)(Job *job);
++
++    /**
+      * If the callback is not NULL, prepare will be invoked when all the jobs
+      * belonging to the same transaction complete; or upon this job's completion
+      * if it is not in a transaction.
+diff --git a/job.c b/job.c
+index 020ee0d..a814857 100644
+--- a/job.c
++++ b/job.c
+@@ -530,6 +530,18 @@ void job_drain(Job *job)
+     }
+ }
+ 
++static void job_exit(void *opaque)
++{
++    Job *job = (Job *)opaque;
++    AioContext *aio_context = job->aio_context;
++
++    if (job->driver->exit) {
++        aio_context_acquire(aio_context);
++        job->driver->exit(job);
++        aio_context_release(aio_context);
++    }
++    job_completed(job, job->ret);
++}
+ 
+ /**
+  * All jobs must allow a pause point before entering their job proper. This
+@@ -542,6 +554,12 @@ static void coroutine_fn job_co_entry(void *opaque)
+     assert(job && job->driver && job->driver->run);
+     job_pause_point(job);
+     job->ret = job->driver->run(job, &job->err);
++    if (!job->deferred_to_main_loop) {
++        job->deferred_to_main_loop = true;
++        aio_bh_schedule_oneshot(qemu_get_aio_context(),
++                                job_exit,
++                                job);
++    }
+ }
+ 
+ 
+-- 
+1.8.3.1
+

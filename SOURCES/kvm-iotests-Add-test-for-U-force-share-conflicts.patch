@@ -1,0 +1,82 @@
+From 071df911bc33bc213570bf40135272c8cd3bcf77 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 16:31:06 +0200
+Subject: [PATCH 39/54] iotests: Add test for -U/force-share conflicts
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618163106.23010-4-mreitz@redhat.com>
+Patchwork-id: 80773
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 3/3] iotests: Add test for -U/force-share conflicts
+Bugzilla: 1576598
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180502202051.15493-4-mreitz@redhat.com
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 4e7d73c5fbd97e55ffe5af02f24d1f7dbe3bbf20)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/153     | 17 +++++++++++++++++
+ tests/qemu-iotests/153.out | 16 ++++++++++++++++
+ 2 files changed, 33 insertions(+)
+
+diff --git a/tests/qemu-iotests/153 b/tests/qemu-iotests/153
+index a0fd815..ec508c7 100755
+--- a/tests/qemu-iotests/153
++++ b/tests/qemu-iotests/153
+@@ -242,6 +242,23 @@ _run_cmd $QEMU_IO "${TEST_IMG}" -c 'write 0 512'
+ 
+ _cleanup_qemu
+ 
++echo
++echo "== Detecting -U and force-share conflicts =="
++
++echo
++echo 'No conflict:'
++$QEMU_IMG info -U --image-opts driver=null-co,force-share=on
++echo
++echo 'Conflict:'
++$QEMU_IMG info -U --image-opts driver=null-co,force-share=off
++
++echo
++echo 'No conflict:'
++$QEMU_IO -c 'open -r -U -o driver=null-co,force-share=on'
++echo
++echo 'Conflict:'
++$QEMU_IO -c 'open -r -U -o driver=null-co,force-share=off'
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/153.out b/tests/qemu-iotests/153.out
+index bb721cb..2510762 100644
+--- a/tests/qemu-iotests/153.out
++++ b/tests/qemu-iotests/153.out
+@@ -399,4 +399,20 @@ Is another process using the image?
+ Closing the other
+ 
+ _qemu_io_wrapper TEST_DIR/t.qcow2 -c write 0 512
++
++== Detecting -U and force-share conflicts ==
++
++No conflict:
++image: null-co://
++file format: null-co
++virtual size: 1.0G (1073741824 bytes)
++disk size: unavailable
++
++Conflict:
++qemu-img: --force-share/-U conflicts with image options
++
++No conflict:
++
++Conflict:
++-U conflicts with image options
+ *** done
+-- 
+1.8.3.1
+

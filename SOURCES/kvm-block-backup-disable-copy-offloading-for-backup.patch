@@ -1,0 +1,43 @@
+From 0dff4725df2174ed2715d05793b40663a981633d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:53 +0200
+Subject: [PATCH 68/89] block/backup: disable copy offloading for backup
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-18-jsnow@redhat.com>
+Patchwork-id: 81417
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 17/35] block/backup: disable copy offloading for backup
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Downstream only for 2.12.0; there are several upstream fixes that fix
+the copy_range support for block/backup that are in 3.0 that we're not
+prepared to backport to 2.12.0.
+
+For now, then, hardcode block/backup to use the old bounce buffer method
+that works without additional caveats.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/backup.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index d26eeb5..adb3cbd 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -727,7 +727,7 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
+     } else {
+         job->cluster_size = MAX(BACKUP_CLUSTER_SIZE_DEFAULT, bdi.cluster_size);
+     }
+-    job->use_copy_range = true;
++    job->use_copy_range = false;
+     job->copy_range_size = MIN_NON_ZERO(blk_get_max_transfer(job->common.blk),
+                                         blk_get_max_transfer(job->target));
+     job->copy_range_size = MAX(job->cluster_size,
+-- 
+1.8.3.1
+

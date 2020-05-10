@@ -1,0 +1,95 @@
+From 52970228a0ba4956ed98cb1ae370b16dd740c9e4 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Mon, 2 Jul 2018 15:40:08 +0200
+Subject: [PATCH 55/57] qemu-iotests: Test qcow2 not leaking clusters on write
+ error
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180702154008.15533-4-kwolf@redhat.com>
+Patchwork-id: 81187
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 3/3] qemu-iotests: Test qcow2 not leaking clusters on write error
+Bugzilla: 1528541
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+This adds a test for a temporary write failure, which simulates the
+situation after werror=stop/enospc has stopped the VM. We shouldn't
+leave leaked clusters behind in such cases.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit ae376c6255d0eee4b3c4d60acc4679aa99c0d2c8)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/026             | 17 +++++++++++++++++
+ tests/qemu-iotests/026.out         |  8 ++++++++
+ tests/qemu-iotests/026.out.nocache |  8 ++++++++
+ 3 files changed, 33 insertions(+)
+
+diff --git a/tests/qemu-iotests/026 b/tests/qemu-iotests/026
+index 7fadfba..582d254 100755
+--- a/tests/qemu-iotests/026
++++ b/tests/qemu-iotests/026
+@@ -200,6 +200,23 @@ done
+ done
+ done
+ 
++echo
++echo === Avoid cluster leaks after temporary failure ===
++echo
++
++cat > "$TEST_DIR/blkdebug.conf" <<EOF
++[inject-error]
++event = "write_aio"
++errno = "5"
++once = "on"
++EOF
++
++# After the failed first write, do a second write so that the updated refcount
++# block is actually written back
++_make_test_img 64M
++$QEMU_IO -c "write 0 1M" -c "write 0 1M" "$BLKDBG_TEST_IMG" | _filter_qemu_io
++_check_test_img
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/026.out b/tests/qemu-iotests/026.out
+index 8e89416..dd10a82 100644
+--- a/tests/qemu-iotests/026.out
++++ b/tests/qemu-iotests/026.out
+@@ -675,4 +675,12 @@ write failed: No space left on device
+ 
+ 96 leaked clusters were found on the image.
+ This means waste of disk space, but no harm to data.
++
++=== Avoid cluster leaks after temporary failure ===
++
++Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=67108864
++write failed: Input/output error
++wrote 1048576/1048576 bytes at offset 0
++1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++No errors were found on the image.
+ *** done
+diff --git a/tests/qemu-iotests/026.out.nocache b/tests/qemu-iotests/026.out.nocache
+index 650ccd8..1ca6cda 100644
+--- a/tests/qemu-iotests/026.out.nocache
++++ b/tests/qemu-iotests/026.out.nocache
+@@ -683,4 +683,12 @@ write failed: No space left on device
+ 
+ 96 leaked clusters were found on the image.
+ This means waste of disk space, but no harm to data.
++
++=== Avoid cluster leaks after temporary failure ===
++
++Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=67108864
++write failed: Input/output error
++wrote 1048576/1048576 bytes at offset 0
++1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++No errors were found on the image.
+ *** done
+-- 
+1.8.3.1
+

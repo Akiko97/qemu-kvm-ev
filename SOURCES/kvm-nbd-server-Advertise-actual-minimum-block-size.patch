@@ -1,0 +1,172 @@
+From 3086eb8eb3a2bf4aec260fea793519899432ad70 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:23 +0200
+Subject: [PATCH 13/53] nbd/server: Advertise actual minimum block size
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-14-jsnow@redhat.com>
+Patchwork-id: 87196
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 13/19] nbd/server: Advertise actual minimum block size
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Both NBD_CMD_BLOCK_STATUS and structured NBD_CMD_READ will split their
+reply according to bdrv_block_status() boundaries. If the block device
+has a request_alignment smaller than 512, but we advertise a block
+alignment of 512 to the client, then this can result in the server
+reply violating client expectations by reporting a smaller region of
+the export than what the client is permitted to address (although this
+is less of an issue for qemu 4.0 clients, given recent client patches
+to overlook our non-compliance at EOF).  Since it's always better to
+be strict in what we send, it is worth advertising the actual minimum
+block limit rather than blindly rounding it up to 512.
+
+Note that this patch is not foolproof - it is still possible to
+provoke non-compliant server behavior using:
+
+$ qemu-nbd --image-opts driver=blkdebug,align=512,image.driver=file,image.filename=/path/to/non-aligned-file
+
+That is arguably a bug in the blkdebug driver (it should never pass
+back block status smaller than its alignment, even if it has to make
+multiple bdrv_get_status calls and determine the
+least-common-denominator status among the group to return). It may
+also be possible to observe issues with a backing layer with smaller
+alignment than the active layer, although so far I have been unable to
+write a reliable iotest for that scenario (but again, an issue like
+that could be argued to be a bug in the block layer, or something
+where we need a flag to bdrv_block_status() to state whether the
+result must be aligned to the current layer's limits or can be
+subdivided for accuracy when chasing backing files).
+
+Anyways, as blkdebug is not normally used, and as this patch makes our
+server more interoperable with qemu 3.1 clients, it is worth applying
+now, even while we still work on a larger patch series for the 4.1
+timeframe to have byte-accurate file lengths.
+
+Note that the iotests output changes - for 223 and 233, we can see the
+server's better granularity advertisement; and for 241, the three test
+cases have the following effects:
+- natural alignment: the server's smaller alignment is now advertised,
+and the hole reported at EOF is now the right result; we've gotten rid
+of the server's non-compliance
+- forced server alignment: the server still advertises 512 bytes, but
+still sends a mid-sector hole. This is still a server compliance bug,
+which needs to be fixed in the block layer in a later patch; output
+does not change because the client is already being tolerant of the
+non-compliance
+- forced client alignment: the server's smaller alignment means that
+the client now sees the server's status change mid-sector without any
+protocol violations, but the fact that the map shows an unaligned
+mid-sector hole is evidence of the block layer problems with aligned
+block status, to be fixed in a later patch
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190329042750.14704-7-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+[eblake: rebase to enhanced iotest 241 coverage]
+(cherry picked from commit b0245d6478ea5906e3d7a542244d5c015fd47bc7)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c               | 13 ++++++++-----
+ tests/qemu-iotests/223.out |  4 ++--
+ tests/qemu-iotests/233.out |  2 +-
+ tests/qemu-iotests/241.out | 10 ++++++----
+ 4 files changed, 17 insertions(+), 12 deletions(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 9b87c7f..706f95a 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -607,13 +607,16 @@ static int nbd_negotiate_handle_info(NBDClient *client, uint16_t myflags,
+     /* Send NBD_INFO_BLOCK_SIZE always, but tweak the minimum size
+      * according to whether the client requested it, and according to
+      * whether this is OPT_INFO or OPT_GO. */
+-    /* minimum - 1 for back-compat, or 512 if client is new enough.
+-     * TODO: consult blk_bs(blk)->bl.request_alignment? */
+-    sizes[0] =
+-            (client->opt == NBD_OPT_INFO || blocksize) ? BDRV_SECTOR_SIZE : 1;
++    /* minimum - 1 for back-compat, or actual if client will obey it. */
++    if (client->opt == NBD_OPT_INFO || blocksize) {
++        sizes[0] = blk_get_request_alignment(exp->blk);
++    } else {
++        sizes[0] = 1;
++    }
++    assert(sizes[0] <= NBD_MAX_BUFFER_SIZE);
+     /* preferred - Hard-code to 4096 for now.
+      * TODO: is blk_bs(blk)->bl.opt_transfer appropriate? */
+-    sizes[1] = 4096;
++    sizes[1] = MAX(4096, sizes[0]);
+     /* maximum - At most 32M, but smaller as appropriate. */
+     sizes[2] = MIN(blk_get_max_transfer(exp->blk), NBD_MAX_BUFFER_SIZE);
+     trace_nbd_negotiate_handle_info_block_size(sizes[0], sizes[1], sizes[2]);
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+index a620f82..805cfbf 100644
+--- a/tests/qemu-iotests/223.out
++++ b/tests/qemu-iotests/223.out
+@@ -41,7 +41,7 @@ exports available: 2
+  export: 'n'
+   size:  4194304
+   flags: 0x4ef ( readonly flush fua trim zeroes df cache )
+-  min block: 512
++  min block: 1
+   opt block: 4096
+   max block: 33554432
+   available meta contexts: 2
+@@ -50,7 +50,7 @@ exports available: 2
+  export: 'n2'
+   size:  4194304
+   flags: 0x4ed ( flush fua trim zeroes df cache )
+-  min block: 512
++  min block: 1
+   opt block: 4096
+   max block: 33554432
+   available meta contexts: 2
+diff --git a/tests/qemu-iotests/233.out b/tests/qemu-iotests/233.out
+index 6d45f3b..cd83b86 100644
+--- a/tests/qemu-iotests/233.out
++++ b/tests/qemu-iotests/233.out
+@@ -33,7 +33,7 @@ exports available: 1
+  export: ''
+   size:  67108864
+   flags: 0x4ed ( flush fua trim zeroes df cache )
+-  min block: 512
++  min block: 1
+   opt block: 4096
+   max block: 33554432
+   available meta contexts: 1
+diff --git a/tests/qemu-iotests/241.out b/tests/qemu-iotests/241.out
+index f22eabb..f481074 100644
+--- a/tests/qemu-iotests/241.out
++++ b/tests/qemu-iotests/241.out
+@@ -3,8 +3,9 @@ QA output created by 241
+ === Exporting unaligned raw image, natural alignment ===
+ 
+   size:  1024
+-  min block: 512
+-[{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true, "offset": OFFSET}]
++  min block: 1
++[{ "start": 0, "length": 1000, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
++{ "start": 1000, "length": 24, "depth": 0, "zero": true, "data": true, "offset": OFFSET}]
+ 1 KiB (0x400) bytes     allocated at offset 0 bytes (0x0)
+ 
+ === Exporting unaligned raw image, forced server sector alignment ===
+@@ -20,7 +21,8 @@ WARNING: Image format was not specified for '/home/eblake/qemu/tests/qemu-iotest
+ === Exporting unaligned raw image, forced client sector alignment ===
+ 
+   size:  1024
+-  min block: 512
+-[{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true, "offset": OFFSET}]
++  min block: 1
++[{ "start": 0, "length": 1000, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
++{ "start": 1000, "length": 24, "depth": 0, "zero": true, "data": true, "offset": OFFSET}]
+ 1 KiB (0x400) bytes     allocated at offset 0 bytes (0x0)
+ *** done
+-- 
+1.8.3.1
+

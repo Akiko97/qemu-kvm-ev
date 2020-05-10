@@ -1,0 +1,49 @@
+From 7cf8326f7f34372f1646475f20a2617726aff797 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 7 Nov 2018 18:00:05 +0100
+Subject: [PATCH 31/34] scsi-generic: avoid out-of-bounds access to VPD page
+ list
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20181107180007.22954-8-pbonzini@redhat.com>
+Patchwork-id: 82939
+O-Subject: [RHEL7.6.z qemu-kvm-rhev PATCH 7/9] scsi-generic: avoid out-of-bounds access to VPD page list
+Bugzilla: 1566195
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+A device can report an excessive number of VPD pages when asked for a
+list; this can cause an out-of-bounds access to buf in
+scsi_generic_set_vpd_bl_emulation.  It should not happen, but
+it is technically not incorrect so handle it: do not check any byte
+past the allocation length that was sent to the INQUIRY command.
+
+Reported-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 57dbb58d800f62b9e56d946660dba4e8dbd20204)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/scsi-generic.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/scsi/scsi-generic.c b/hw/scsi/scsi-generic.c
+index 98c6a34..6d6db69 100644
+--- a/hw/scsi/scsi-generic.c
++++ b/hw/scsi/scsi-generic.c
+@@ -539,7 +539,7 @@ static void scsi_generic_set_vpd_bl_emulation(SCSIDevice *s)
+     }
+ 
+     page_len = buf[3];
+-    for (i = 4; i < page_len + 4; i++) {
++    for (i = 4; i < MIN(sizeof(buf), page_len + 4); i++) {
+         if (buf[i] == 0xb0) {
+             s->needs_vpd_bl_emulation = false;
+             return;
+-- 
+1.8.3.1
+

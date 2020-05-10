@@ -1,0 +1,97 @@
+From 77e6d5c8d54be29781b15bc7dbb816dd156812a0 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 18:00:53 +0200
+Subject: [PATCH 47/54] block: Make bdrv_is_writable() public
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618180055.22739-2-mreitz@redhat.com>
+Patchwork-id: 80792
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/3] block: Make bdrv_is_writable() public
+Bugzilla: 1588039
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+This is a useful function for the whole block layer, so make it public.
+At the same time, users outside of block.c probably do not need to make
+use of the reopen functionality, so rename the current function to
+bdrv_is_writable_after_reopen() create a new bdrv_is_writable() function
+that just passes NULL to it for the reopen queue.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180606193702.7113-2-mreitz@redhat.com
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit cc022140972f8b6ac3973c12ccf9dd6b1d2fd200)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c               | 17 ++++++++++++++---
+ include/block/block.h |  1 +
+ 2 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/block.c b/block.c
+index 3c3e8fd..982d54e 100644
+--- a/block.c
++++ b/block.c
+@@ -1621,13 +1621,24 @@ static int bdrv_reopen_get_flags(BlockReopenQueue *q, BlockDriverState *bs)
+ 
+ /* Returns whether the image file can be written to after the reopen queue @q
+  * has been successfully applied, or right now if @q is NULL. */
+-static bool bdrv_is_writable(BlockDriverState *bs, BlockReopenQueue *q)
++static bool bdrv_is_writable_after_reopen(BlockDriverState *bs,
++                                          BlockReopenQueue *q)
+ {
+     int flags = bdrv_reopen_get_flags(q, bs);
+ 
+     return (flags & (BDRV_O_RDWR | BDRV_O_INACTIVE)) == BDRV_O_RDWR;
+ }
+ 
++/*
++ * Return whether the BDS can be written to.  This is not necessarily
++ * the same as !bdrv_is_read_only(bs), as inactivated images may not
++ * be written to but do not count as read-only images.
++ */
++bool bdrv_is_writable(BlockDriverState *bs)
++{
++    return bdrv_is_writable_after_reopen(bs, NULL);
++}
++
+ static void bdrv_child_perm(BlockDriverState *bs, BlockDriverState *child_bs,
+                             BdrvChild *c, const BdrvChildRole *role,
+                             BlockReopenQueue *reopen_queue,
+@@ -1665,7 +1676,7 @@ static int bdrv_check_perm(BlockDriverState *bs, BlockReopenQueue *q,
+ 
+     /* Write permissions never work with read-only images */
+     if ((cumulative_perms & (BLK_PERM_WRITE | BLK_PERM_WRITE_UNCHANGED)) &&
+-        !bdrv_is_writable(bs, q))
++        !bdrv_is_writable_after_reopen(bs, q))
+     {
+         error_setg(errp, "Block node is read-only");
+         return -EPERM;
+@@ -1957,7 +1968,7 @@ void bdrv_format_default_perms(BlockDriverState *bs, BdrvChild *c,
+                                   &perm, &shared);
+ 
+         /* Format drivers may touch metadata even if the guest doesn't write */
+-        if (bdrv_is_writable(bs, reopen_queue)) {
++        if (bdrv_is_writable_after_reopen(bs, reopen_queue)) {
+             perm |= BLK_PERM_WRITE | BLK_PERM_RESIZE;
+         }
+ 
+diff --git a/include/block/block.h b/include/block/block.h
+index 3894edd..06cd772 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -407,6 +407,7 @@ bool bdrv_is_read_only(BlockDriverState *bs);
+ int bdrv_can_set_read_only(BlockDriverState *bs, bool read_only,
+                            bool ignore_allow_rdw, Error **errp);
+ int bdrv_set_read_only(BlockDriverState *bs, bool read_only, Error **errp);
++bool bdrv_is_writable(BlockDriverState *bs);
+ bool bdrv_is_sg(BlockDriverState *bs);
+ bool bdrv_is_inserted(BlockDriverState *bs);
+ void bdrv_lock_medium(BlockDriverState *bs, bool locked);
+-- 
+1.8.3.1
+

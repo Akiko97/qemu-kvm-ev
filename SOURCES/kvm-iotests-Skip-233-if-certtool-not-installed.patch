@@ -1,0 +1,55 @@
+From 1764efd987a39de271eac2e5bc9900f29819f6f0 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:14 +0100
+Subject: [PATCH 075/163] iotests: Skip 233 if certtool not installed
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-2-jsnow@redhat.com>
+Patchwork-id: 85176
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 01/55] iotests: Skip 233 if certtool not installed
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+The use of TLS while building qemu is optional. While the
+'certtool' binary should be available on every platform that
+supports building against TLS, that does not imply that the
+developer has installed it.  Make the test gracefully skip
+in that case.
+
+Reported-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Reviewed-by: Wainer dos Santos Moschetta <wainersm@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 155af09d44f584a790118f78448f50f140d0f788)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/common.tls | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/tests/qemu-iotests/common.tls b/tests/qemu-iotests/common.tls
+index 39f17c1..eae8178 100644
+--- a/tests/qemu-iotests/common.tls
++++ b/tests/qemu-iotests/common.tls
+@@ -31,6 +31,9 @@ tls_x509_cleanup()
+ 
+ tls_x509_init()
+ {
++    (certtool --help) >/dev/null 2>&1 || \
++	_notrun "certtool utility not found, skipping test"
++
+     mkdir -p "${tls_dir}"
+ 
+     # use a fixed key so we don't waste system entropy on
+-- 
+1.8.3.1
+

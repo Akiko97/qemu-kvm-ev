@@ -1,0 +1,71 @@
+From 2cca40617df140d2907a47fb58d15487cbf2af59 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <philmd@redhat.com>
+Date: Fri, 17 Jan 2020 11:49:41 +0100
+Subject: [PATCH 2/3] slirp: use correct size while emulating IRC commands
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-id: <20200117114942.12236-3-philmd@redhat.com>
+Patchwork-id: 93392
+O-Subject: [RHEL-7.7.z qemu-kvm-rhev + RHEL-7.8 qemu-kvm-rhev + RHEL-7.9 qemu-kvm-rhev + RHEL-8.1.0 qemu-kvm + RHEL-8.2.0 qemu-kvm + RHEL-7.7.z qemu-kvm-ma + RHEL-7.8 qemu-kvm-ma + RHEL-7.9 qemu-kvm-ma PATCH 2/3] slirp: use correct size while emulating IRC commands
+Bugzilla: 1791563 1791570
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Prasad J Pandit <pjp@fedoraproject.org>
+
+While emulating IRC DCC commands, tcp_emu() uses 'mbuf' size
+'m->m_size' to write DCC commands via snprintf(3). This may
+lead to OOB write access, because 'bptr' points somewhere in
+the middle of 'mbuf' buffer, not at the start. Use M_FREEROOM(m)
+size to avoid OOB access.
+
+Reported-by: Vishnu Dev TJ <vishnudevtj@gmail.com>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+Reviewed-by: Samuel Thibault <samuel.thibault@ens-lyon.org>
+Message-Id: <20200109094228.79764-2-ppandit@redhat.com>
+(cherry picked from libslirp commit ce131029d6d4a405cb7d3ac6716d03e58fb4a5d9)
+Signed-off-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ slirp/tcp_subr.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/slirp/tcp_subr.c b/slirp/tcp_subr.c
+index decfd9b..b60310d 100644
+--- a/slirp/tcp_subr.c
++++ b/slirp/tcp_subr.c
+@@ -783,7 +783,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 				return 1;
+ 			}
+ 			m->m_len = bptr - m->m_data; /* Adjust length */
+-                        m->m_len += snprintf(bptr, m->m_size,
++                        m->m_len += snprintf(bptr, M_FREEROOM(m),
+                                              "DCC CHAT chat %lu %u%c\n",
+                                              (unsigned long)ntohl(so->so_faddr.s_addr),
+                                              ntohs(so->so_fport), 1);
+@@ -794,7 +794,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 				return 1;
+ 			}
+ 			m->m_len = bptr - m->m_data; /* Adjust length */
+-                        m->m_len += snprintf(bptr, m->m_size,
++                        m->m_len += snprintf(bptr, M_FREEROOM(m),
+                                              "DCC SEND %s %lu %u %u%c\n", buff,
+                                              (unsigned long)ntohl(so->so_faddr.s_addr),
+                                              ntohs(so->so_fport), n1, 1);
+@@ -805,7 +805,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 				return 1;
+ 			}
+ 			m->m_len = bptr - m->m_data; /* Adjust length */
+-                        m->m_len += snprintf(bptr, m->m_size,
++                        m->m_len += snprintf(bptr, M_FREEROOM(m),
+                                              "DCC MOVE %s %lu %u %u%c\n", buff,
+                                              (unsigned long)ntohl(so->so_faddr.s_addr),
+                                              ntohs(so->so_fport), n1, 1);
+-- 
+1.8.3.1
+

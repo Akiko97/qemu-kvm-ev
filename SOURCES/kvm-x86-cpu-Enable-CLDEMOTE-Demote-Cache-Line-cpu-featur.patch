@@ -1,0 +1,71 @@
+From 45be760eda02e18ac33b603224a47b3954bfb762 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Mon, 4 Feb 2019 17:31:05 +0100
+Subject: [PATCH 01/12] x86/cpu: Enable CLDEMOTE(Demote Cache Line) cpu feature
+
+RH-Author: plai@redhat.com
+Message-id: <1549301465-19852-1-git-send-email-plai@redhat.com>
+Patchwork-id: 84206
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH BZ 1537776 RESEND] x86/cpu: Enable CLDEMOTE(Demote Cache Line) cpu feature
+Bugzilla: 1537776
+RH-Acked-by: Bandan Das <bsd@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+The CLDEMOTE instruction hints to hardware that the cache line that
+contains the linear address should be moved("demoted") from
+the cache(s) closest to the processor core to a level more distant
+from the processor core. This may accelerate subsequent accesses
+to the line by other cores in the same coherence domain,
+especially if the line was written by the core that demotes the line.
+
+Intel Snow Ridge has added new cpu feature, CLDEMOTE.
+The new cpu feature needs to be exposed to guest VM.
+
+The bit definition:
+CPUID.(EAX=7,ECX=0):ECX[bit 25] CLDEMOTE
+
+The release document ref below link:
+https://software.intel.com/sites/default/files/managed/c5/15/\
+architecture-instruction-set-extensions-programming-reference.pdf
+
+Signed-off-by: Jingqi Liu <jingqi.liu@intel.com>
+Message-Id: <1525406253-54846-1-git-send-email-jingqi.liu@intel.com>
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 0da0fb062841d0dcd8ba47e4a989d2e952cdf0ff)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 2 +-
+ target/i386/cpu.h | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index c5156c8..4558b1a 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -991,7 +991,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+             "avx512bitalg", NULL, "avx512-vpopcntdq", NULL,
+             "la57", NULL, NULL, NULL,
+             NULL, NULL, "rdpid", NULL,
+-            NULL, NULL, NULL, NULL,
++            NULL, "cldemote", NULL, NULL,
+             NULL, NULL, NULL, NULL,
+         },
+         .cpuid_eax = 7,
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 392065d..ea8c355 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -682,6 +682,7 @@ typedef uint32_t FeatureWordArray[FEATURE_WORDS];
+ #define CPUID_7_0_ECX_AVX512_VPOPCNTDQ (1U << 14) /* POPCNT for vectors of DW/QW */
+ #define CPUID_7_0_ECX_LA57     (1U << 16)
+ #define CPUID_7_0_ECX_RDPID    (1U << 22)
++#define CPUID_7_0_ECX_CLDEMOTE (1U << 25)  /* CLDEMOTE Instruction */
+ 
+ #define CPUID_7_0_EDX_AVX512_4VNNIW (1U << 2) /* AVX512 Neural Network Instructions */
+ #define CPUID_7_0_EDX_AVX512_4FMAPS (1U << 3) /* AVX512 Multiply Accumulation Single Precision */
+-- 
+1.8.3.1
+

@@ -1,0 +1,55 @@
+From a728b4ea94c406513e3d3167ba74c7b3314df3ce Mon Sep 17 00:00:00 2001
+From: "Daniel P. Berrange" <berrange@redhat.com>
+Date: Wed, 24 Apr 2019 10:30:28 +0200
+Subject: [PATCH 09/12] crypto: annotate xts_tweak_encdec as inlineable
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Daniel P. Berrange <berrange@redhat.com>
+Message-id: <20190424103030.2925-8-berrange@redhat.com>
+Patchwork-id: 85893
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 7/9] crypto: annotate xts_tweak_encdec as inlineable
+Bugzilla: 1666336
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+
+Encouraging the compiler to inline xts_tweak_encdec increases the
+performance for xts-aes-128 when built with gcrypt:
+
+  Encrypt: 545 MB/s -> 580 MB/s
+  Decrypt: 568 MB/s -> 602 MB/s
+
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+(cherry picked from commit aa895bd439341a8f218d8f1a3d21359ba058c13f)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ crypto/xts.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/crypto/xts.c b/crypto/xts.c
+index 10ec83f..4277ad4 100644
+--- a/crypto/xts.c
++++ b/crypto/xts.c
+@@ -81,11 +81,11 @@ static void xts_mult_x(xts_uint128 *I)
+  *
+  * Encrypt/decrypt data with a tweak
+  */
+-static void xts_tweak_encdec(const void *ctx,
+-                             xts_cipher_func *func,
+-                             const xts_uint128 *src,
+-                             xts_uint128 *dst,
+-                             xts_uint128 *iv)
++static inline void xts_tweak_encdec(const void *ctx,
++                                    xts_cipher_func *func,
++                                    const xts_uint128 *src,
++                                    xts_uint128 *dst,
++                                    xts_uint128 *iv)
+ {
+     /* tweak encrypt block i */
+     xts_uint128_xor(dst, src, iv);
+-- 
+1.8.3.1
+

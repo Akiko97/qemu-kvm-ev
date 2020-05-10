@@ -1,0 +1,125 @@
+From 557b85bcd4aedf4550b272abb57f817f7dc8eba1 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:12 +0200
+Subject: [PATCH 02/53] nbd: Tolerate some server non-compliance in
+ NBD_CMD_BLOCK_STATUS
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-3-jsnow@redhat.com>
+Patchwork-id: 87193
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 02/19] nbd: Tolerate some server non-compliance in NBD_CMD_BLOCK_STATUS
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+The NBD spec states that NBD_CMD_FLAG_REQ_ONE (which we currently
+always use) should not reply with an extent larger than our request,
+and that the server's response should be exactly one extent. Right
+now, that means that if a server sends more than one extent, we treat
+the server as broken, fail the block status request, and disconnect,
+which prevents all further use of the block device. But while good
+software should be strict in what it sends, it should be tolerant in
+what it receives.
+
+While trying to implement NBD_CMD_BLOCK_STATUS in nbdkit, we
+temporarily had a non-compliant server sending too many extents in
+spite of REQ_ONE. Oddly enough, 'qemu-img convert' with qemu 3.1
+failed with a somewhat useful message:
+  qemu-img: Protocol error: invalid payload for NBD_REPLY_TYPE_BLOCK_STATUS
+
+which then disappeared with commit d8b4bad8, on the grounds that an
+error message flagged only at the time of coroutine teardown is
+pointless, and instead we should rely on the actual failed API to
+report an error - in other words, the 3.1 behavior was masking the
+fact that qemu-img was not reporting an error. That has since been
+fixed in the previous patch, where qemu-img convert now fails with:
+  qemu-img: error while reading block status of sector 0: Invalid argument
+
+But even that is harsh.  Since we already partially relaxed things in
+commit acfd8f7a to tolerate a server that exceeds the cap (although
+that change was made prior to the NBD spec actually putting a cap on
+the extent length during REQ_ONE - in fact, the NBD spec change was
+BECAUSE of the qemu behavior prior to that commit), it's not that much
+harder to argue that we should also tolerate a server that sends too
+many extents.  But at the same time, it's nice to trace when we are
+being tolerant of server non-compliance, in order to help server
+writers fix their implementations to be more portable (if they refer
+to our traces, rather than just stderr).
+
+Reported-by: Richard W.M. Jones <rjones@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190323212639.579-3-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit a39286dd61e455014694cb6aa44cfa9e5c86d101)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c | 21 ++++++++++++++++-----
+ block/trace-events |  1 +
+ 2 files changed, 17 insertions(+), 5 deletions(-)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index 1230850..f3c31d1 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -227,8 +227,8 @@ static int nbd_parse_offset_hole_payload(NBDStructuredReplyChunk *chunk,
+ }
+ 
+ /* nbd_parse_blockstatus_payload
+- * support only one extent in reply and only for
+- * base:allocation context
++ * Based on our request, we expect only one extent in reply, for the
++ * base:allocation context.
+  */
+ static int nbd_parse_blockstatus_payload(NBDClientSession *client,
+                                          NBDStructuredReplyChunk *chunk,
+@@ -237,7 +237,8 @@ static int nbd_parse_blockstatus_payload(NBDClientSession *client,
+ {
+     uint32_t context_id;
+ 
+-    if (chunk->length != sizeof(context_id) + sizeof(*extent)) {
++    /* The server succeeded, so it must have sent [at least] one extent */
++    if (chunk->length < sizeof(context_id) + sizeof(*extent)) {
+         error_setg(errp, "Protocol error: invalid payload for "
+                          "NBD_REPLY_TYPE_BLOCK_STATUS");
+         return -EINVAL;
+@@ -263,10 +264,20 @@ static int nbd_parse_blockstatus_payload(NBDClientSession *client,
+         return -EINVAL;
+     }
+ 
+-    /* The server is allowed to send us extra information on the final
+-     * extent; just clamp it to the length we requested. */
++    /*
++     * We used NBD_CMD_FLAG_REQ_ONE, so the server should not have
++     * sent us any more than one extent, nor should it have included
++     * status beyond our request in that extent. However, it's easy
++     * enough to ignore the server's noncompliance without killing the
++     * connection; just ignore trailing extents, and clamp things to
++     * the length of our request.
++     */
++    if (chunk->length > sizeof(context_id) + sizeof(*extent)) {
++        trace_nbd_parse_blockstatus_compliance("more than one extent");
++    }
+     if (extent->length > orig_length) {
+         extent->length = orig_length;
++        trace_nbd_parse_blockstatus_compliance("extent length too large");
+     }
+ 
+     return 0;
+diff --git a/block/trace-events b/block/trace-events
+index 6d4d399..59c6f54 100644
+--- a/block/trace-events
++++ b/block/trace-events
+@@ -152,5 +152,6 @@ nvme_cmd_map_qiov_pages(void *s, int i, uint64_t page) "s %p page[%d] 0x%"PRIx64
+ nvme_cmd_map_qiov_iov(void *s, int i, void *page, int pages) "s %p iov[%d] %p pages %d"
+ 
+ # block/nbd-client.c
++nbd_parse_blockstatus_compliance(const char *err) "ignoring extra data from non-compliant server: %s"
+ nbd_read_reply_entry_fail(int ret, const char *err) "ret = %d, err: %s"
+ nbd_co_request_fail(uint64_t from, uint32_t len, uint64_t handle, uint16_t flags, uint16_t type, const char *name, int ret, const char *err) "Request failed { .from = %" PRIu64", .len = %" PRIu32 ", .handle = %" PRIu64 ", .flags = 0x%" PRIx16 ", .type = %" PRIu16 " (%s) } ret = %d, err: %s"
+-- 
+1.8.3.1
+

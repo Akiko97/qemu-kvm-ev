@@ -1,0 +1,87 @@
+From c8edc3f99b203feb6795d2d727c9b46058bcf3bd Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 31 Aug 2018 14:24:59 +0200
+Subject: [PATCH 08/29] i386: Fix arch_query_cpu_model_expansion() leak
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180831142459.18567-3-armbru@redhat.com>
+Patchwork-id: 81985
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/2] i386: Fix arch_query_cpu_model_expansion() leak
+Bugzilla: 1624390
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+
+From: Eduardo Habkost <ehabkost@redhat.com>
+
+Reported by Coverity:
+
+Error: RESOURCE_LEAK (CWE-772): [#def439]
+qemu-2.12.0/target/i386/cpu.c:3179: alloc_fn: Storage is returned from allocation function "qdict_new".
+qemu-2.12.0/qobject/qdict.c:34:5: alloc_fn: Storage is returned from allocation function "g_malloc0".
+qemu-2.12.0/qobject/qdict.c:34:5: var_assign: Assigning: "qdict" = "g_malloc0(4120UL)".
+qemu-2.12.0/qobject/qdict.c:37:5: return_alloc: Returning allocated memory "qdict".
+qemu-2.12.0/target/i386/cpu.c:3179: var_assign: Assigning: "props" = storage returned from "qdict_new()".
+qemu-2.12.0/target/i386/cpu.c:3217: leaked_storage: Variable "props" going out of scope leaks the storage it points to.
+
+This was introduced by commit b8097deb359b ("i386: Improve
+query-cpu-model-expansion full mode").
+
+The leak is only theoretical: if ret->model->props is set to
+props, the qapi_free_CpuModelExpansionInfo() call will free props
+too in case of errors.  The only way for this to not happen is if
+we enter the default branch of the switch statement, which would
+never happen because all CpuModelExpansionType values are being
+handled.
+
+It's still worth to change this to make the allocation logic
+easier to follow and make the Coverity error go away.  To make
+everything simpler, initialize ret->model and ret->model->props
+earlier in the function.
+
+While at it, remove redundant check for !prop because prop is
+always initialized at the beginning of the function.
+
+Fixes: b8097deb359bbbd92592b9670adfe9e245b2d0bd
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <20180816183509.8231-1-ehabkost@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit e38bf612477fca62b205ebd909b1372a7e45a8c0)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index e317aaf..6b5acdf 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -3733,6 +3733,9 @@ arch_query_cpu_model_expansion(CpuModelExpansionType type,
+     }
+ 
+     props = qdict_new();
++    ret->model = g_new0(CpuModelInfo, 1);
++    ret->model->props = QOBJECT(props);
++    ret->model->has_props = true;
+ 
+     switch (type) {
+     case CPU_MODEL_EXPANSION_TYPE_STATIC:
+@@ -3753,15 +3756,9 @@ arch_query_cpu_model_expansion(CpuModelExpansionType type,
+         goto out;
+     }
+ 
+-    if (!props) {
+-        props = qdict_new();
+-    }
+     x86_cpu_to_dict(xc, props);
+ 
+-    ret->model = g_new0(CpuModelInfo, 1);
+     ret->model->name = g_strdup(base_name);
+-    ret->model->props = QOBJECT(props);
+-    ret->model->has_props = true;
+ 
+ out:
+     object_unref(OBJECT(xc));
+-- 
+1.8.3.1
+

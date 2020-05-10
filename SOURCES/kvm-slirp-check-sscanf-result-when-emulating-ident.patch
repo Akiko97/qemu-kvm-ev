@@ -1,0 +1,62 @@
+From cbf833ce3cbbd9162c22573278497e5b8bd1ccb4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Tue, 2 Apr 2019 14:03:50 +0200
+Subject: [PATCH 131/163] slirp: check sscanf result when emulating ident
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: <20190402140350.5604-1-marcandre.lureau@redhat.com>
+Patchwork-id: 85306
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH] slirp: check sscanf result when emulating ident
+Bugzilla: 1689793
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+From: William Bowling <will@wbowling.info>
+
+When emulating ident in tcp_emu, if the strchr checks passed but the
+sscanf check failed, two uninitialized variables would be copied and
+sent in the reply, so move this code inside the if(sscanf()) clause.
+
+Signed-off-by: William Bowling <will@wbowling.info>
+Cc: qemu-stable@nongnu.org
+Cc: secalert@redhat.com
+Message-Id: <1551476756-25749-1-git-send-email-will@wbowling.info>
+Signed-off-by: Samuel Thibault <samuel.thibault@ens-lyon.org>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+(cherry picked from commit d3222975c7d6cda9e25809dea05241188457b113)
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ slirp/tcp_subr.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/slirp/tcp_subr.c b/slirp/tcp_subr.c
+index da0d537..98ceb4f 100644
+--- a/slirp/tcp_subr.c
++++ b/slirp/tcp_subr.c
+@@ -660,12 +660,12 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 							break;
+ 						}
+ 					}
++					so_rcv->sb_cc = snprintf(so_rcv->sb_data,
++								 so_rcv->sb_datalen,
++								 "%d,%d\r\n", n1, n2);
++					so_rcv->sb_rptr = so_rcv->sb_data;
++					so_rcv->sb_wptr = so_rcv->sb_data + so_rcv->sb_cc;
+ 				}
+-                                so_rcv->sb_cc = snprintf(so_rcv->sb_data,
+-                                                         so_rcv->sb_datalen,
+-                                                         "%d,%d\r\n", n1, n2);
+-				so_rcv->sb_rptr = so_rcv->sb_data;
+-				so_rcv->sb_wptr = so_rcv->sb_data + so_rcv->sb_cc;
+ 			}
+ 			m_free(m);
+ 			return 0;
+-- 
+1.8.3.1
+

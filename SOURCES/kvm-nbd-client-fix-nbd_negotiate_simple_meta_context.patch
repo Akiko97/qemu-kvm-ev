@@ -1,0 +1,59 @@
+From 8f9f560d48befb6c527e876347d883f8ed3c128a Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:14 +0100
+Subject: [PATCH 047/163] nbd/client: fix nbd_negotiate_simple_meta_context
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-2-jsnow@redhat.com>
+Patchwork-id: 85092
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 01/28] nbd/client: fix nbd_negotiate_simple_meta_context
+Bugzilla: 1691563
+RH-Acked-by: Richard Jones <rjones@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Initialize received variable. Otherwise, is is possible for server to
+answer without any contexts, but we will set context_id to something
+random (received_id is not initialized too) and return 1, which is
+wrong.
+
+To solve it, just initialize received to false. Initialize received_id
+too, just to make all possible checkers happy.
+
+Bug was introduced in 78a33ab58782efdb206de14 "nbd: BLOCK_STATUS for
+standard get_block_status function: client part" with the whole
+function.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20180427142002.21930-2-vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+CC: qemu-stable@nongnu.org
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 89aa0d87634e2cb98517509dc8bdb876f26ecf8b)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/client.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/nbd/client.c b/nbd/client.c
+index 25603f2..a151fa5 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -613,8 +613,8 @@ static int nbd_negotiate_simple_meta_context(QIOChannel *ioc,
+ {
+     int ret;
+     NBDOptionReply reply;
+-    uint32_t received_id;
+-    bool received;
++    uint32_t received_id = 0;
++    bool received = false;
+     uint32_t export_len = strlen(export);
+     uint32_t context_len = strlen(context);
+     uint32_t data_len = sizeof(export_len) + export_len +
+-- 
+1.8.3.1
+

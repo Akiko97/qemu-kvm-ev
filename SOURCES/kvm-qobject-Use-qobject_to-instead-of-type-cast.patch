@@ -1,0 +1,55 @@
+From 5dcc5026b76ccfe45ed4a4ed56c8c949ead76e98 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:08 +0200
+Subject: [PATCH 01/54] qobject: Use qobject_to() instead of type cast
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-2-armbru@redhat.com>
+Patchwork-id: 80732
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 01/23] qobject: Use qobject_to() instead of type cast
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+The proper way to convert from (abstract) QObject to a (concrete)
+subtype is qobject_to().  Look for offenders that type cast instead:
+
+    $ git-grep '(Q[A-Z][a-z]* \*)'
+    hmp.c:    qmp_device_add((QDict *)qdict, NULL, &err);
+    include/qapi/qmp/qobject.h:        return (QObject *)obj;
+    qobject/qobject.c:static void (*qdestroy[QTYPE__MAX])(QObject *) = {
+    tests/check-qdict.c:    dst = (QDict *)qdict_crumple(src, &error_abort);
+
+The first two cast away const, the third isn't a type cast.  Fix the
+fourth.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20180426152805.8469-1-armbru@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+(cherry picked from commit 46cfbf13b06d551072ed17fbfca67c103edf814f)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/check-qdict.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tests/check-qdict.c b/tests/check-qdict.c
+index 2e73c2f..08d4303 100644
+--- a/tests/check-qdict.c
++++ b/tests/check-qdict.c
+@@ -657,7 +657,7 @@ static void qdict_crumple_test_empty(void)
+ 
+     src = qdict_new();
+ 
+-    dst = (QDict *)qdict_crumple(src, &error_abort);
++    dst = qobject_to(QDict, qdict_crumple(src, &error_abort));
+ 
+     g_assert_cmpint(qdict_size(dst), ==, 0);
+ 
+-- 
+1.8.3.1
+

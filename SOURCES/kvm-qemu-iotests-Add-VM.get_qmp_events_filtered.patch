@@ -1,0 +1,46 @@
+From a1633706e8bd21f323a9718b495b101590b9c985 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:41 +0200
+Subject: [PATCH 72/89] qemu-iotests: Add VM.get_qmp_events_filtered()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-59-kwolf@redhat.com>
+Patchwork-id: 81122
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 58/73] qemu-iotests: Add VM.get_qmp_events_filtered()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This adds a helper function that returns a list of QMP events that are
+already filtered through filter_qmp_event().
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit 5ad1dbf76a97b6f07d685585175832e990fe9a92)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index daf008a..7e311ed 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -392,6 +392,11 @@ class VM(qtest.QEMUQtestMachine):
+             output_list += [key + '=' + obj[key]]
+         return ','.join(output_list)
+ 
++    def get_qmp_events_filtered(self, wait=True):
++        result = []
++        for ev in self.get_qmp_events(wait=wait):
++            result.append(filter_qmp_event(ev))
++        return result
+ 
+ 
+ index_re = re.compile(r'([^\[]+)\[([^\]]+)\]')
+-- 
+1.8.3.1
+

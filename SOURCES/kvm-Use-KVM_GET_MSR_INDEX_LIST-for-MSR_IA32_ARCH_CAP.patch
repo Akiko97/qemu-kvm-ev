@@ -1,0 +1,76 @@
+From d8ed655838cc87d703e1a1419bd9704fceae6a6c Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Tue, 4 Jun 2019 21:47:25 +0200
+Subject: [PATCH 06/23] kvm: Use KVM_GET_MSR_INDEX_LIST for
+ MSR_IA32_ARCH_CAPABILITIES support
+
+RH-Author: plai@redhat.com
+Message-id: <1559684847-10889-7-git-send-email-plai@redhat.com>
+Patchwork-id: 88529
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH v4 6/8] kvm: Use KVM_GET_MSR_INDEX_LIST for MSR_IA32_ARCH_CAPABILITIES support
+Bugzilla: 1709972
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Bandan Das <bsd@redhat.com>
+
+When writing to guest's MSR_IA32_ARCH_CAPABILITIES, check whether it's
+supported in the guest using the KVM_GET_MSR_INDEX_LIST ioctl.
+
+Fixes: d86f963694df27f11b3681ffd225c9362de1b634
+Suggested-by: Eduardo Habkost <ehabkost@redhat.com>
+Tested-by: balducci@units.it
+Signed-off-by: Bandan Das <bsd@redhat.com>
+Message-Id: <jpg4lc4iiav.fsf_-_@linux.bootlegged.copy>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit aec5e9c3a94cf8b7920f59bef69a6f426092c4a0)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/kvm.c | 15 +++++++--------
+ 1 file changed, 7 insertions(+), 8 deletions(-)
+
+diff --git a/target/i386/kvm.c b/target/i386/kvm.c
+index 88a4114..c99c0ef 100644
+--- a/target/i386/kvm.c
++++ b/target/i386/kvm.c
+@@ -94,6 +94,7 @@ static bool has_msr_xss;
+ static bool has_msr_spec_ctrl;
+ static bool has_msr_virt_ssbd;
+ static bool has_msr_smi_count;
++static bool has_msr_arch_capabs;
+ 
+ static uint32_t has_architectural_pmu_version;
+ static uint32_t num_architectural_pmu_gp_counters;
+@@ -1330,6 +1331,9 @@ static int kvm_get_supported_msrs(KVMState *s)
+                 case MSR_VIRT_SSBD:
+                     has_msr_virt_ssbd = true;
+                     break;
++                case MSR_IA32_ARCH_CAPABILITIES:
++                    has_msr_arch_capabs = true;
++                    break;
+                 }
+             }
+         }
+@@ -1834,14 +1838,9 @@ static int kvm_put_msrs(X86CPU *cpu, int level)
+ #endif
+ 
+     /* If host supports feature MSR, write down. */
+-    if (kvm_feature_msrs) {
+-        int i;
+-        for (i = 0; i < kvm_feature_msrs->nmsrs; i++)
+-            if (kvm_feature_msrs->indices[i] == MSR_IA32_ARCH_CAPABILITIES) {
+-                kvm_msr_entry_add(cpu, MSR_IA32_ARCH_CAPABILITIES,
+-                              env->features[FEAT_ARCH_CAPABILITIES]);
+-                break;
+-            }
++    if (has_msr_arch_capabs) {
++        kvm_msr_entry_add(cpu, MSR_IA32_ARCH_CAPABILITIES,
++                          env->features[FEAT_ARCH_CAPABILITIES]);
+     }
+ 
+     /*
+-- 
+1.8.3.1
+

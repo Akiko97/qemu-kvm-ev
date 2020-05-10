@@ -1,0 +1,52 @@
+From e79d4d03368f7346249033e0f5ad2732228852ca Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Wed, 13 Jun 2018 13:15:57 +0200
+Subject: [PATCH 02/89] qxl: fix local renderer crash
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20180613131557.12255-2-kraxel@redhat.com>
+Patchwork-id: 80662
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] qxl: fix local renderer crash
+Bugzilla: 1567733
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+Make sure we only ask the spice local renderer for display updates in
+case we have a valid primary surface.  Without that spice is confused
+and throws errors in case a display update request (triggered by
+screendump for example) happens in parallel to a mode switch and hits
+the race window where the old primary surface is gone and the new isn't
+establisted yet.
+
+Cc: qemu-stable@nongnu.org
+Fixes: https://bugzilla.redhat.com//show_bug.cgi?id=1567733
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: 20180427115528.345-1-kraxel@redhat.com
+(cherry picked from commit 5bd5c27c7d284d01477c5cc022ce22438c46bf9f)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/display/qxl-render.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/hw/display/qxl-render.c b/hw/display/qxl-render.c
+index e7ac4f8..c62b9a5 100644
+--- a/hw/display/qxl-render.c
++++ b/hw/display/qxl-render.c
+@@ -169,7 +169,8 @@ void qxl_render_update(PCIQXLDevice *qxl)
+ 
+     qemu_mutex_lock(&qxl->ssd.lock);
+ 
+-    if (!runstate_is_running() || !qxl->guest_primary.commands) {
++    if (!runstate_is_running() || !qxl->guest_primary.commands ||
++        qxl->mode == QXL_MODE_UNDEFINED) {
+         qxl_render_update_area_unlocked(qxl);
+         qemu_mutex_unlock(&qxl->ssd.lock);
+         return;
+-- 
+1.8.3.1
+

@@ -1,0 +1,107 @@
+From f678429fca4701bda6a4631722e99c57a977846f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:30 +0100
+Subject: [PATCH 20/33] qapi: add transaction support for
+ x-block-dirty-bitmap-merge
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-11-jsnow@redhat.com>
+Patchwork-id: 84270
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 10/23] qapi: add transaction support for x-block-dirty-bitmap-merge
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+New action is like clean action: do the whole thing in .prepare and
+undo in .abort. This behavior for bitmap-changing actions is needed
+because backup job actions use bitmap in .prepare.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 6fd2e40789ef7389b17c5fff93b0bf82d4352cb3)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c            | 35 +++++++++++++++++++++++++++++++++++
+ qapi/transaction.json |  2 ++
+ 2 files changed, 37 insertions(+)
+
+diff --git a/blockdev.c b/blockdev.c
+index 853dd0e..df0cbe2 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -2264,6 +2264,35 @@ static void block_dirty_bitmap_disable_abort(BlkActionState *common)
+     }
+ }
+ 
++static void block_dirty_bitmap_merge_prepare(BlkActionState *common,
++                                             Error **errp)
++{
++    BlockDirtyBitmapMerge *action;
++    BlockDirtyBitmapState *state = DO_UPCAST(BlockDirtyBitmapState,
++                                             common, common);
++    BdrvDirtyBitmap *merge_source;
++
++    if (action_check_completion_mode(common, errp) < 0) {
++        return;
++    }
++
++    action = common->action->u.x_block_dirty_bitmap_merge.data;
++    state->bitmap = block_dirty_bitmap_lookup(action->node,
++                                              action->dst_name,
++                                              &state->bs,
++                                              errp);
++    if (!state->bitmap) {
++        return;
++    }
++
++    merge_source = bdrv_find_dirty_bitmap(state->bs, action->src_name);
++    if (!merge_source) {
++        return;
++    }
++
++    bdrv_merge_dirty_bitmap(state->bitmap, merge_source, &state->backup, errp);
++}
++
+ static void abort_prepare(BlkActionState *common, Error **errp)
+ {
+     error_setg(errp, "Transaction aborted using Abort action");
+@@ -2335,6 +2364,12 @@ static const BlkActionOps actions[] = {
+         .prepare = block_dirty_bitmap_disable_prepare,
+         .abort = block_dirty_bitmap_disable_abort,
+     },
++    [TRANSACTION_ACTION_KIND_X_BLOCK_DIRTY_BITMAP_MERGE] = {
++        .instance_size = sizeof(BlockDirtyBitmapState),
++        .prepare = block_dirty_bitmap_merge_prepare,
++        .commit = block_dirty_bitmap_free_backup,
++        .abort = block_dirty_bitmap_restore,
++    },
+     /* Where are transactions for MIRROR, COMMIT and STREAM?
+      * Although these blockjobs use transaction callbacks like the backup job,
+      * these jobs do not necessarily adhere to transaction semantics.
+diff --git a/qapi/transaction.json b/qapi/transaction.json
+index d7e4274..5875cdb 100644
+--- a/qapi/transaction.json
++++ b/qapi/transaction.json
+@@ -48,6 +48,7 @@
+ # - @block-dirty-bitmap-clear: since 2.5
+ # - @x-block-dirty-bitmap-enable: since 3.0
+ # - @x-block-dirty-bitmap-disable: since 3.0
++# - @x-block-dirty-bitmap-merge: since 3.1
+ # - @blockdev-backup: since 2.3
+ # - @blockdev-snapshot: since 2.5
+ # - @blockdev-snapshot-internal-sync: since 1.7
+@@ -63,6 +64,7 @@
+        'block-dirty-bitmap-clear': 'BlockDirtyBitmap',
+        'x-block-dirty-bitmap-enable': 'BlockDirtyBitmap',
+        'x-block-dirty-bitmap-disable': 'BlockDirtyBitmap',
++       'x-block-dirty-bitmap-merge': 'BlockDirtyBitmapMerge',
+        'blockdev-backup': 'BlockdevBackup',
+        'blockdev-snapshot': 'BlockdevSnapshot',
+        'blockdev-snapshot-internal-sync': 'BlockdevSnapshotInternal',
+-- 
+1.8.3.1
+

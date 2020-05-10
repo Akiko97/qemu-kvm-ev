@@ -1,0 +1,109 @@
+From 5cdd4dfafc5280d312001371c6917ccaf2ba06c3 Mon Sep 17 00:00:00 2001
+From: Stefan Hajnoczi <stefanha@redhat.com>
+Date: Tue, 24 Jul 2018 15:13:07 +0200
+Subject: [PATCH 08/15] qdev: add HotplugHandler->post_plug() callback
+
+RH-Author: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: <20180724151308.20500-2-stefanha@redhat.com>
+Patchwork-id: 81485
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] qdev: add HotplugHandler->post_plug() callback
+Bugzilla: 1607891
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+
+The ->pre_plug() callback is invoked before the device is realized.  The
+->plug() callback is invoked when the device is being realized but
+before it is reset.
+
+This patch adds a ->post_plug() callback which is invoked after the
+device has been reset.  This callback is needed by HotplugHandlers that
+need to wait until after ->reset().
+
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-Id: <20180716083732.3347-2-stefanha@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 25e8978817a54745c44d956d8303e6be6f2c4047)
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/core/hotplug.c    | 10 ++++++++++
+ hw/core/qdev.c       |  4 ++++
+ include/hw/hotplug.h | 11 +++++++++++
+ 3 files changed, 25 insertions(+)
+
+diff --git a/hw/core/hotplug.c b/hw/core/hotplug.c
+index 17ac986..2253072 100644
+--- a/hw/core/hotplug.c
++++ b/hw/core/hotplug.c
+@@ -35,6 +35,16 @@ void hotplug_handler_plug(HotplugHandler *plug_handler,
+     }
+ }
+ 
++void hotplug_handler_post_plug(HotplugHandler *plug_handler,
++                               DeviceState *plugged_dev)
++{
++    HotplugHandlerClass *hdc = HOTPLUG_HANDLER_GET_CLASS(plug_handler);
++
++    if (hdc->post_plug) {
++        hdc->post_plug(plug_handler, plugged_dev);
++    }
++}
++
+ void hotplug_handler_unplug_request(HotplugHandler *plug_handler,
+                                     DeviceState *plugged_dev,
+                                     Error **errp)
+diff --git a/hw/core/qdev.c b/hw/core/qdev.c
+index ce7c316..24f1ae7 100644
+--- a/hw/core/qdev.c
++++ b/hw/core/qdev.c
+@@ -893,6 +893,10 @@ static void device_set_realized(Object *obj, bool value, Error **errp)
+             device_reset(dev);
+         }
+         dev->pending_deleted_event = false;
++
++        if (hotplug_ctrl) {
++            hotplug_handler_post_plug(hotplug_ctrl, dev);
++        }
+     } else if (!value && dev->realized) {
+         Error **local_errp = NULL;
+         QLIST_FOREACH(bus, &dev->child_bus, sibling) {
+diff --git a/include/hw/hotplug.h b/include/hw/hotplug.h
+index 1a0516a..51541d6 100644
+--- a/include/hw/hotplug.h
++++ b/include/hw/hotplug.h
+@@ -47,6 +47,8 @@ typedef void (*hotplug_fn)(HotplugHandler *plug_handler,
+  * @parent: Opaque parent interface.
+  * @pre_plug: pre plug callback called at start of device.realize(true)
+  * @plug: plug callback called at end of device.realize(true).
++ * @post_plug: post plug callback called after device.realize(true) and device
++ *             reset
+  * @unplug_request: unplug request callback.
+  *                  Used as a means to initiate device unplug for devices that
+  *                  require asynchronous unplug handling.
+@@ -61,6 +63,7 @@ typedef struct HotplugHandlerClass {
+     /* <public> */
+     hotplug_fn pre_plug;
+     hotplug_fn plug;
++    void (*post_plug)(HotplugHandler *plug_handler, DeviceState *plugged_dev);
+     hotplug_fn unplug_request;
+     hotplug_fn unplug;
+ } HotplugHandlerClass;
+@@ -84,6 +87,14 @@ void hotplug_handler_pre_plug(HotplugHandler *plug_handler,
+                               Error **errp);
+ 
+ /**
++ * hotplug_handler_post_plug:
++ *
++ * Call #HotplugHandlerClass.post_plug callback of @plug_handler.
++ */
++void hotplug_handler_post_plug(HotplugHandler *plug_handler,
++                               DeviceState *plugged_dev);
++
++/**
+  * hotplug_handler_unplug_request:
+  *
+  * Calls #HotplugHandlerClass.unplug_request callback of @plug_handler.
+-- 
+1.8.3.1
+

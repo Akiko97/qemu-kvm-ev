@@ -1,0 +1,65 @@
+From c70d2938f2acf89ca872061086f1fe26e6c5a69d Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 19:00:01 +0200
+Subject: [PATCH 22/57] Migration+TLS: Fix crash due to double cleanup
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-15-dgilbert@redhat.com>
+Patchwork-id: 81004
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 14/18] Migration+TLS: Fix crash due to double cleanup
+Bugzilla: 1584139
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+
+During a TLS connect we see:
+  migration_channel_connect calls
+  migration_tls_channel_connect
+  (calls after TLS setup)
+  migration_channel_connect
+
+My previous error handling fix made migration_channel_connect
+call migrate_fd_connect in all cases; unfortunately the above
+means it gets called twice and crashes doing double cleanup.
+
+Fixes: 688a3dcba98
+
+Reported-by: Peter Krempa <pkrempa@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <20180430185943.35714-1-dgilbert@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+(cherry picked from commit 8b7bf2badac25c0a52aff1b181ad75fdb304dd0c)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/channel.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/migration/channel.c b/migration/channel.c
+index c5eaf0f..7a32b5a 100644
+--- a/migration/channel.c
++++ b/migration/channel.c
+@@ -71,6 +71,15 @@ void migration_channel_connect(MigrationState *s,
+             !object_dynamic_cast(OBJECT(ioc),
+                                  TYPE_QIO_CHANNEL_TLS)) {
+             migration_tls_channel_connect(s, ioc, hostname, &error);
++
++            if (!error) {
++                /* tls_channel_connect will call back to this
++                 * function after the TLS handshake,
++                 * so we mustn't call migrate_fd_connect until then
++                 */
++
++                return;
++            }
+         } else {
+             QEMUFile *f = qemu_fopen_channel_output(ioc);
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,44 @@
+From 5723fea739b8f883cbd7e158292199a01b566e55 Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 18 Dec 2014 06:27:49 +0100
+Subject: Use kvm by default
+
+Bugzilla: 906185
+
+RHEL uses kvm accelerator by default, if available.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Rebase notes (2.10.0)
+- variable rename (upstream)
+
+Rebase notes (2.2.0):
+- Move code from vl.c to accel.c
+
+(cherry picked from commit abcd662eb8e516ebe4a6b401e83a62f749491a15)
+(cherry picked from commit eca6d5766d956c37e3f7f28d70903d357308c846)
+(cherry picked from commit 0672656bb595f3d864b2e108a0278324ee2e7250)
+(cherry picked from commit b3c79df62c3d7b1c9355dddb3c4fde285fdfc8c3)
+(cherry picked from commit c303c9746b7ccfa46c4b1938ab00a29fea6ced9a)
+---
+ accel/accel.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/accel/accel.c b/accel/accel.c
+index 93e2434..5f3d73f 100644
+--- a/accel/accel.c
++++ b/accel/accel.c
+@@ -79,8 +79,8 @@ void configure_accelerator(MachineState *ms)
+ 
+     accel = qemu_opt_get(qemu_get_machine_opts(), "accel");
+     if (accel == NULL) {
+-        /* Use the default "accelerator", tcg */
+-        accel = "tcg";
++        /* RHEL uses kvm as the default accelerator, fallback to tcg */
++        accel = "kvm:tcg";
+     }
+ 
+     p = accel;
+-- 
+1.8.3.1
+

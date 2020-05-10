@@ -1,0 +1,43 @@
+From b8529f23bd95687344653d4ffd56080d35b4a94f Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:09:57 +0100
+Subject: [PATCH 001/163] tests/virtio-blk-test: Disable auto-read-only
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-2-kwolf@redhat.com>
+Patchwork-id: 84878
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 01/14] tests/virtio-blk-test: Disable auto-read-only
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+tests/virtio-blk-test uses a temporary image file that it deletes while
+QEMU is still running, so it can't be reopened when writers are
+attached or detached. Disable auto-read-only to keep it always writable.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 70304118bb920f2aa961530b64efcce761e4cb5b)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/virtio-blk-test.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tests/virtio-blk-test.c b/tests/virtio-blk-test.c
+index 9be9ffb..2ed4e74 100644
+--- a/tests/virtio-blk-test.c
++++ b/tests/virtio-blk-test.c
+@@ -62,7 +62,7 @@ static QOSState *pci_test_start(void)
+     QOSState *qs;
+     const char *arch = qtest_get_arch();
+     char *tmp_path;
+-    const char *cmd = "-drive if=none,id=drive0,file=%s,format=raw "
++    const char *cmd = "-drive if=none,id=drive0,file=%s,format=raw,auto-read-only=off "
+                       "-drive if=none,id=drive1,file=null-co://,format=raw "
+                       "-device virtio-blk-pci,id=drv0,drive=drive0,"
+                       "addr=%x.%x";
+-- 
+1.8.3.1
+

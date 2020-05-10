@@ -1,0 +1,52 @@
+From 7c3744d3960176798cde84b989bab4f7955f97c3 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:47:51 +0200
+Subject: [PATCH 22/89] blockjob: Fix assertion in block_job_finalize()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-9-kwolf@redhat.com>
+Patchwork-id: 81060
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 08/73] blockjob: Fix assertion in block_job_finalize()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Every job gets a non-NULL job->txn on creation, but it doesn't
+necessarily keep it until it is decommissioned: Finalising a job removes
+it from its transaction. Therefore, calling 'blockdev-job-finalize' a
+second time on an already concluded job causes an assertion failure.
+
+Remove job->txn from the assertion in block_job_finalize() to fix this.
+block_job_do_finalize() still has the same assertion, but if a job is
+already removed from its transaction, block_job_apply_verb() will
+already error out before we run into that assertion.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 37aa19b63c46d933f1e4ea944cfccee54e2caf4a)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index 6746cad..0033b96 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -710,7 +710,7 @@ void block_job_complete(BlockJob *job, Error **errp)
+ 
+ void block_job_finalize(BlockJob *job, Error **errp)
+ {
+-    assert(job && job->id && job->txn);
++    assert(job && job->id);
+     if (block_job_apply_verb(job, BLOCK_JOB_VERB_FINALIZE, errp)) {
+         return;
+     }
+-- 
+1.8.3.1
+

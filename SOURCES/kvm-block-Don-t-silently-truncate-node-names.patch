@@ -1,0 +1,148 @@
+From 524287dc348c81473dd19b275a0333dd2e888878 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Thu, 5 Jul 2018 16:47:51 +0200
+Subject: [PATCH 16/89] block: Don't silently truncate node names
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180705164751.15271-2-kwolf@redhat.com>
+Patchwork-id: 81234
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/1] block: Don't silently truncate node names
+Bugzilla: 1549654
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If the user passes a too long node name string, we silently truncate it
+to fit into BlockDriverState.node_name, i.e. to 31 characters. Apart
+from surprising the user when the node has a different name than
+requested, this also bypasses the check for duplicate names, so that the
+same name can be assigned to multiple nodes.
+
+Fix this by just making too long node names an error.
+
+Reported-by: Peter Krempa <pkrempa@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 824808dd77821ceba05357cb1ee4069a6a95bebd)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c                       |  6 ++++++
+ tests/qemu-iotests/051        | 15 +++++++++++++++
+ tests/qemu-iotests/051.out    | 23 +++++++++++++++++++++++
+ tests/qemu-iotests/051.pc.out | 23 +++++++++++++++++++++++
+ 4 files changed, 67 insertions(+)
+
+diff --git a/block.c b/block.c
+index afe30ca..0516284 100644
+--- a/block.c
++++ b/block.c
+@@ -1140,6 +1140,12 @@ static void bdrv_assign_node_name(BlockDriverState *bs,
+         goto out;
+     }
+ 
++    /* Make sure that the node name isn't truncated */
++    if (strlen(node_name) >= sizeof(bs->node_name)) {
++        error_setg(errp, "Node name too long");
++        goto out;
++    }
++
+     /* copy node name into the bs and insert it into the graph list */
+     pstrcpy(bs->node_name, sizeof(bs->node_name), node_name);
+     QTAILQ_INSERT_TAIL(&graph_bdrv_states, bs, node_list);
+diff --git a/tests/qemu-iotests/051 b/tests/qemu-iotests/051
+index 69d34eb..c5cc0ee 100755
+--- a/tests/qemu-iotests/051
++++ b/tests/qemu-iotests/051
+@@ -100,6 +100,21 @@ run_qemu -drive file="$TEST_IMG",driver=raw,format=qcow2
+ run_qemu -drive file="$TEST_IMG",driver=qcow2,format=qcow2
+ 
+ echo
++echo === Node names ===
++echo
++
++# Maximum length: 31 characters
++run_qemu -drive file="$TEST_IMG",node-name=x123456789012345678901234567890
++run_qemu -drive file="$TEST_IMG",node-name=x1234567890123456789012345678901
++
++# First character must be alphabetic
++# Following characters alphanumeric or -._
++run_qemu -drive file="$TEST_IMG",node-name=All-Types.of_all0wed_chars
++run_qemu -drive file="$TEST_IMG",node-name=123foo
++run_qemu -drive file="$TEST_IMG",node-name=_foo
++run_qemu -drive file="$TEST_IMG",node-name=foo#12
++
++echo
+ echo === Device without drive ===
+ echo
+ 
+diff --git a/tests/qemu-iotests/051.out b/tests/qemu-iotests/051.out
+index dd9846d..b727350 100644
+--- a/tests/qemu-iotests/051.out
++++ b/tests/qemu-iotests/051.out
+@@ -47,6 +47,29 @@ Testing: -drive file=TEST_DIR/t.qcow2,driver=qcow2,format=qcow2
+ QEMU_PROG: -drive file=TEST_DIR/t.qcow2,driver=qcow2,format=qcow2: Cannot specify both 'driver' and 'format'
+ 
+ 
++=== Node names ===
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=x123456789012345678901234567890
++QEMU X.Y.Z monitor - type 'help' for more information
++(qemu) quit
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=x1234567890123456789012345678901
++QEMU_PROG: -drive file=TEST_DIR/t.qcow2,node-name=x1234567890123456789012345678901: Node name too long
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=All-Types.of_all0wed_chars
++QEMU X.Y.Z monitor - type 'help' for more information
++(qemu) quit
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=123foo
++QEMU_PROG: -drive file=TEST_DIR/t.qcow2,node-name=123foo: Invalid node name
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=_foo
++QEMU_PROG: -drive file=TEST_DIR/t.qcow2,node-name=_foo: Invalid node name
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=foo#12
++QEMU_PROG: -drive file=TEST_DIR/t.qcow2,node-name=foo#12: Invalid node name
++
++
+ === Device without drive ===
+ 
+ Testing: -device VIRTIO_SCSI -device scsi-hd
+diff --git a/tests/qemu-iotests/051.pc.out b/tests/qemu-iotests/051.pc.out
+index b01f9a9..e9257fe 100644
+--- a/tests/qemu-iotests/051.pc.out
++++ b/tests/qemu-iotests/051.pc.out
+@@ -47,6 +47,29 @@ Testing: -drive file=TEST_DIR/t.qcow2,driver=qcow2,format=qcow2
+ QEMU_PROG: -drive file=TEST_DIR/t.qcow2,driver=qcow2,format=qcow2: Cannot specify both 'driver' and 'format'
+ 
+ 
++=== Node names ===
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=x123456789012345678901234567890
++QEMU X.Y.Z monitor - type 'help' for more information
++(qemu) quit
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=x1234567890123456789012345678901
++QEMU_PROG: -drive file=TEST_DIR/t.qcow2,node-name=x1234567890123456789012345678901: Node name too long
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=All-Types.of_all0wed_chars
++QEMU X.Y.Z monitor - type 'help' for more information
++(qemu) quit
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=123foo
++QEMU_PROG: -drive file=TEST_DIR/t.qcow2,node-name=123foo: Invalid node name
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=_foo
++QEMU_PROG: -drive file=TEST_DIR/t.qcow2,node-name=_foo: Invalid node name
++
++Testing: -drive file=TEST_DIR/t.qcow2,node-name=foo#12
++QEMU_PROG: -drive file=TEST_DIR/t.qcow2,node-name=foo#12: Invalid node name
++
++
+ === Device without drive ===
+ 
+ Testing: -device VIRTIO_SCSI -device scsi-hd
+-- 
+1.8.3.1
+

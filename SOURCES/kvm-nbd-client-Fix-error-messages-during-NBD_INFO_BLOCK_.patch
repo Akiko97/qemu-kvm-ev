@@ -1,0 +1,75 @@
+From 1180606c147edadc4a7979baae377fb983dc5fd2 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:15 +0100
+Subject: [PATCH 048/163] nbd/client: Fix error messages during
+ NBD_INFO_BLOCK_SIZE
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-3-jsnow@redhat.com>
+Patchwork-id: 85091
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 02/28] nbd/client: Fix error messages during NBD_INFO_BLOCK_SIZE
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+A missing space makes for poor error messages, and sizes can't
+go negative.  Also, we missed diagnosing a server that sends
+a maximum block size less than the minimum.
+
+Fixes: 081dd1fe
+CC: qemu-stable@nongnu.org
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180501154654.943782-1-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit e475d108f1b3d3163f0affea67cdedbe5fc9752b)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/client.c | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/nbd/client.c b/nbd/client.c
+index a151fa5..40b74d9 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -435,8 +435,8 @@ static int nbd_opt_go(QIOChannel *ioc, const char *wantname,
+             }
+             be32_to_cpus(&info->min_block);
+             if (!is_power_of_2(info->min_block)) {
+-                error_setg(errp, "server minimum block size %" PRId32
+-                           "is not a power of two", info->min_block);
++                error_setg(errp, "server minimum block size %" PRIu32
++                           " is not a power of two", info->min_block);
+                 nbd_send_opt_abort(ioc);
+                 return -1;
+             }
+@@ -450,8 +450,8 @@ static int nbd_opt_go(QIOChannel *ioc, const char *wantname,
+             be32_to_cpus(&info->opt_block);
+             if (!is_power_of_2(info->opt_block) ||
+                 info->opt_block < info->min_block) {
+-                error_setg(errp, "server preferred block size %" PRId32
+-                           "is not valid", info->opt_block);
++                error_setg(errp, "server preferred block size %" PRIu32
++                           " is not valid", info->opt_block);
+                 nbd_send_opt_abort(ioc);
+                 return -1;
+             }
+@@ -462,6 +462,12 @@ static int nbd_opt_go(QIOChannel *ioc, const char *wantname,
+                 return -1;
+             }
+             be32_to_cpus(&info->max_block);
++            if (info->max_block < info->min_block) {
++                error_setg(errp, "server maximum block size %" PRIu32
++                           " is not valid", info->max_block);
++                nbd_send_opt_abort(ioc);
++                return -1;
++            }
+             trace_nbd_opt_go_info_block_size(info->min_block, info->opt_block,
+                                              info->max_block);
+             break;
+-- 
+1.8.3.1
+

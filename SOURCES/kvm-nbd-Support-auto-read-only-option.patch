@@ -1,0 +1,52 @@
+From 02778d4e42af5fa6c9dd985bee2ae04b2646bbcd Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:47 +0100
+Subject: [PATCH 06/34] nbd: Support auto-read-only option
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-6-kwolf@redhat.com>
+Patchwork-id: 83121
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 05/12] nbd: Support auto-read-only option
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If read-only=off, but auto-read-only=on is given, open a read-write NBD
+connection if the server provides a read-write export, but instead of
+erroring out for read-only exports, just degrade to read-only.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 6c2e581d4d7751f035e9bac0384703879c8a1538)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index 98637c0..80d3625 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -988,11 +988,11 @@ int nbd_client_init(BlockDriverState *bs,
+         logout("Failed to negotiate with the NBD server\n");
+         return ret;
+     }
+-    if (client->info.flags & NBD_FLAG_READ_ONLY &&
+-        !bdrv_is_read_only(bs)) {
+-        error_setg(errp,
+-                   "request for write access conflicts with read-only export");
+-        return -EACCES;
++    if (client->info.flags & NBD_FLAG_READ_ONLY) {
++        ret = bdrv_apply_auto_read_only(bs, "NBD export is read-only", errp);
++        if (ret < 0) {
++            return ret;
++        }
+     }
+     if (client->info.flags & NBD_FLAG_SEND_FUA) {
+         bs->supported_write_flags = BDRV_REQ_FUA;
+-- 
+1.8.3.1
+

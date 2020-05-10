@@ -1,0 +1,57 @@
+From af911371436ef3adf09fca4433f71f8f17631e1b Mon Sep 17 00:00:00 2001
+From: Igor Mammedov <imammedo@redhat.com>
+Date: Mon, 2 Jul 2018 13:57:09 +0200
+Subject: [PATCH 52/57] numa: clarify error message when node index is out of
+ range in -numa dist, ...
+
+RH-Author: Igor Mammedov <imammedo@redhat.com>
+Message-id: <1530539829-260581-1-git-send-email-imammedo@redhat.com>
+Patchwork-id: 81184
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] numa: clarify error message when node index is out of range in -numa dist, ...
+Bugzilla: 1578381
+RH-Acked-by: Andrew Jones <drjones@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+
+When using following CLI:
+  -numa dist,src=128,dst=1,val=20
+user gets a rather confusing error message:
+   "Invalid node 128, max possible could be 128"
+
+Where 128 is number of nodes that QEMU supports (MAX_NODES),
+while src/dst is an index up to that limit, so it should be
+MAX_NODES - 1 in error message.
+Make error message to explicitly state valid range for node
+index to be more clear.
+
+Signed-off-by: Igor Mammedov <imammedo@redhat.com>
+Message-Id: <1526483174-169008-1-git-send-email-imammedo@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 74f38e96b321ef8df2bf7fa1bd4f673ef06aca5b)
+Signed-off-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ numa.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/numa.c b/numa.c
+index daf10d8..bb8f773 100644
+--- a/numa.c
++++ b/numa.c
+@@ -140,9 +140,8 @@ static void parse_numa_distance(NumaDistOptions *dist, Error **errp)
+     uint8_t val = dist->val;
+ 
+     if (src >= MAX_NODES || dst >= MAX_NODES) {
+-        error_setg(errp,
+-                   "Invalid node %d, max possible could be %d",
+-                   MAX(src, dst), MAX_NODES);
++        error_setg(errp, "Parameter '%s' expects an integer between 0 and %d",
++                   src >= MAX_NODES ? "src" : "dst", MAX_NODES - 1);
+         return;
+     }
+ 
+-- 
+1.8.3.1
+

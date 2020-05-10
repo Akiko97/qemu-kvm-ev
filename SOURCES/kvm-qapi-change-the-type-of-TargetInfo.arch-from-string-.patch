@@ -1,0 +1,89 @@
+From 27de7538bc01f788b4b2b652e96817b3c80e760c Mon Sep 17 00:00:00 2001
+From: Laszlo Ersek <lersek@redhat.com>
+Date: Tue, 13 Nov 2018 18:16:36 +0100
+Subject: [PATCH 17/22] qapi: change the type of TargetInfo.arch from string to
+ enum SysEmuTarget
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Laszlo Ersek <lersek@redhat.com>
+Message-id: <20181113181639.4999-4-lersek@redhat.com>
+Patchwork-id: 83004
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/6] qapi: change the type of TargetInfo.arch from string to enum SysEmuTarget
+Bugzilla: 1607406
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+Now that we have @SysEmuTarget, it makes sense to restrict
+@TargetInfo.@arch to valid sysemu targets at the schema level.
+
+Cc: "Daniel P. Berrange" <berrange@redhat.com>
+Cc: Eric Blake <eblake@redhat.com>
+Cc: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Laszlo Ersek <lersek@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180427192852.15013-4-lersek@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit b47aa7b3d44dcedf7bf541563f70704f82f500d0)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ arch_init.c    | 4 +++-
+ qapi/misc.json | 6 ++++--
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/arch_init.c b/arch_init.c
+index 6ee0747..9597218 100644
+--- a/arch_init.c
++++ b/arch_init.c
+@@ -29,6 +29,7 @@
+ #include "hw/pci/pci.h"
+ #include "hw/audio/soundhw.h"
+ #include "qapi/qapi-commands-misc.h"
++#include "qapi/error.h"
+ #include "qemu/config-file.h"
+ #include "qemu/error-report.h"
+ #include "hw/acpi/acpi.h"
+@@ -112,7 +113,8 @@ TargetInfo *qmp_query_target(Error **errp)
+ {
+     TargetInfo *info = g_malloc0(sizeof(*info));
+ 
+-    info->arch = g_strdup(TARGET_NAME);
++    info->arch = qapi_enum_parse(&SysEmuTarget_lookup, TARGET_NAME, -1,
++                                 &error_abort);
+ 
+     return info;
+ }
+diff --git a/qapi/misc.json b/qapi/misc.json
+index 8b28270..7cf4fbc 100644
+--- a/qapi/misc.json
++++ b/qapi/misc.json
+@@ -5,6 +5,8 @@
+ # = Miscellanea
+ ##
+ 
++{ 'include': 'common.json' }
++
+ ##
+ # @qmp_capabilities:
+ #
+@@ -2471,12 +2473,12 @@
+ #
+ # Information describing the QEMU target.
+ #
+-# @arch: the target architecture (eg "x86_64", "i386", etc)
++# @arch: the target architecture
+ #
+ # Since: 1.2.0
+ ##
+ { 'struct': 'TargetInfo',
+-  'data': { 'arch': 'str' } }
++  'data': { 'arch': 'SysEmuTarget' } }
+ 
+ ##
+ # @query-target:
+-- 
+1.8.3.1
+

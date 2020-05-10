@@ -1,0 +1,78 @@
+From c0db4cef886d62fa701b3c8000e1e6d5f4ac9ec5 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:29 +0100
+Subject: [PATCH 031/163] iotests: Fix 207 to use QMP filters for qmp_log
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-18-jsnow@redhat.com>
+Patchwork-id: 84958
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 17/19] iotests: Fix 207 to use QMP filters for qmp_log
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Max Reitz <mreitz@redhat.com>
+
+Fixes: 08fcd6111e1949f456e1b232ebeeb0cc17019a92
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Message-id: 20190210145736.1486-6-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 9ac10f2e2c93e647ba6830c7083310aa04f65021)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/207     | 10 +++++++---
+ tests/qemu-iotests/207.out |  4 ++--
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/tests/qemu-iotests/207 b/tests/qemu-iotests/207
+index 687b2ca..e0d2a2c 100755
+--- a/tests/qemu-iotests/207
++++ b/tests/qemu-iotests/207
+@@ -27,12 +27,16 @@ import re
+ iotests.verify_image_format(supported_fmts=['raw'])
+ iotests.verify_protocol(supported=['ssh'])
+ 
+-def filter_hash(msg):
+-    return re.sub('"hash": "[0-9a-f]+"', '"hash": HASH', msg)
++def filter_hash(qmsg):
++    def _filter(key, value):
++        if key == 'hash' and re.match('[0-9a-f]+', value):
++            return 'HASH'
++        return value
++    return iotests.filter_qmp(qmsg, _filter)
+ 
+ def blockdev_create(vm, options):
+     result = vm.qmp_log('blockdev-create', job_id='job0', options=options,
+-                        filters=[iotests.filter_testfiles, filter_hash])
++                        filters=[iotests.filter_qmp_testfiles, filter_hash])
+ 
+     if 'return' in result:
+         assert result['return'] == {}
+diff --git a/tests/qemu-iotests/207.out b/tests/qemu-iotests/207.out
+index 45ac7c2..88d2240 100644
+--- a/tests/qemu-iotests/207.out
++++ b/tests/qemu-iotests/207.out
+@@ -40,7 +40,7 @@ Job failed: remote host key does not match host_key_check 'wrong'
+ {"execute": "job-dismiss", "arguments": {"id": "job0"}}
+ {"return": {}}
+ 
+-{"execute": "blockdev-create", "arguments": {"job_id": "job0", "options": {"driver": "ssh", "location": {"host-key-check": {"hash": HASH, "mode": "hash", "type": "md5"}, "path": "TEST_DIR/PID-t.img", "server": {"host": "127.0.0.1", "port": "22"}}, "size": 8388608}}}
++{"execute": "blockdev-create", "arguments": {"job_id": "job0", "options": {"driver": "ssh", "location": {"host-key-check": {"hash": "HASH", "mode": "hash", "type": "md5"}, "path": "TEST_DIR/PID-t.img", "server": {"host": "127.0.0.1", "port": "22"}}, "size": 8388608}}}
+ {"return": {}}
+ {"execute": "job-dismiss", "arguments": {"id": "job0"}}
+ {"return": {}}
+@@ -55,7 +55,7 @@ Job failed: remote host key does not match host_key_check 'wrong'
+ {"execute": "job-dismiss", "arguments": {"id": "job0"}}
+ {"return": {}}
+ 
+-{"execute": "blockdev-create", "arguments": {"job_id": "job0", "options": {"driver": "ssh", "location": {"host-key-check": {"hash": HASH, "mode": "hash", "type": "sha1"}, "path": "TEST_DIR/PID-t.img", "server": {"host": "127.0.0.1", "port": "22"}}, "size": 4194304}}}
++{"execute": "blockdev-create", "arguments": {"job_id": "job0", "options": {"driver": "ssh", "location": {"host-key-check": {"hash": "HASH", "mode": "hash", "type": "sha1"}, "path": "TEST_DIR/PID-t.img", "server": {"host": "127.0.0.1", "port": "22"}}, "size": 4194304}}}
+ {"return": {}}
+ {"execute": "job-dismiss", "arguments": {"id": "job0"}}
+ {"return": {}}
+-- 
+1.8.3.1
+

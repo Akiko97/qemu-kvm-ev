@@ -1,0 +1,99 @@
+From dfca592a8a3fb1e781775020961ed16b8aea258e Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Fri, 31 Aug 2018 16:25:53 +0200
+Subject: [PATCH 11/29] memory, exec: Expose all memory block related flags.
+
+RH-Author: plai@redhat.com
+Message-id: <1535732759-22481-4-git-send-email-plai@redhat.com>
+Patchwork-id: 82006
+O-Subject: [RHEL7.6 PATCH BZ 1539280 3/9] memory, exec: Expose all memory block related flags.
+Bugzilla: 1539280
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Junyan He <junyan.he@intel.com>
+
+We need to use these flags in other files rather than just in exec.c,
+For example, RAM_SHARED should be used when create a ram block from file.
+We expose them the exec/memory.h
+
+Signed-off-by: Junyan He <junyan.he@intel.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit b0e5de93811077254a536c23b713b49e12efb742)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ exec.c                | 20 --------------------
+ include/exec/memory.h | 20 ++++++++++++++++++++
+ 2 files changed, 20 insertions(+), 20 deletions(-)
+
+diff --git a/exec.c b/exec.c
+index 7323d39..f21be9c 100644
+--- a/exec.c
++++ b/exec.c
+@@ -87,26 +87,6 @@ AddressSpace address_space_memory;
+ 
+ MemoryRegion io_mem_rom, io_mem_notdirty;
+ static MemoryRegion io_mem_unassigned;
+-
+-/* RAM is pre-allocated and passed into qemu_ram_alloc_from_ptr */
+-#define RAM_PREALLOC   (1 << 0)
+-
+-/* RAM is mmap-ed with MAP_SHARED */
+-#define RAM_SHARED     (1 << 1)
+-
+-/* Only a portion of RAM (used_length) is actually used, and migrated.
+- * This used_length size can change across reboots.
+- */
+-#define RAM_RESIZEABLE (1 << 2)
+-
+-/* UFFDIO_ZEROPAGE is available on this RAMBlock to atomically
+- * zero the page and wake waiting processes.
+- * (Set during postcopy)
+- */
+-#define RAM_UF_ZEROPAGE (1 << 3)
+-
+-/* RAM can be migrated */
+-#define RAM_MIGRATABLE (1 << 4)
+ #endif
+ 
+ #ifdef TARGET_PAGE_BITS_VARY
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index 31eae0a..db46501 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -102,6 +102,26 @@ struct IOMMUNotifier {
+ };
+ typedef struct IOMMUNotifier IOMMUNotifier;
+ 
++/* RAM is pre-allocated and passed into qemu_ram_alloc_from_ptr */
++#define RAM_PREALLOC   (1 << 0)
++
++/* RAM is mmap-ed with MAP_SHARED */
++#define RAM_SHARED     (1 << 1)
++
++/* Only a portion of RAM (used_length) is actually used, and migrated.
++ * This used_length size can change across reboots.
++ */
++#define RAM_RESIZEABLE (1 << 2)
++
++/* UFFDIO_ZEROPAGE is available on this RAMBlock to atomically
++ * zero the page and wake waiting processes.
++ * (Set during postcopy)
++ */
++#define RAM_UF_ZEROPAGE (1 << 3)
++
++/* RAM can be migrated */
++#define RAM_MIGRATABLE (1 << 4)
++
+ static inline void iommu_notifier_init(IOMMUNotifier *n, IOMMUNotify fn,
+                                        IOMMUNotifierFlag flags,
+                                        hwaddr start, hwaddr end)
+-- 
+1.8.3.1
+

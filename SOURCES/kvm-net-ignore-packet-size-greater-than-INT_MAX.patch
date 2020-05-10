@@ -1,0 +1,55 @@
+From 3abb574bc7328eab1f67a1e470ea44c595b0c0b5 Mon Sep 17 00:00:00 2001
+From: Xiao Wang <jasowang@redhat.com>
+Date: Fri, 17 May 2019 07:29:36 +0200
+Subject: [PATCH 2/9] net: ignore packet size greater than INT_MAX
+
+RH-Author: Xiao Wang <jasowang@redhat.com>
+Message-id: <1558078177-372-3-git-send-email-jasowang@redhat.com>
+Patchwork-id: 88014
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH 2/3] net: ignore packet size greater than INT_MAX
+Bugzilla: 1636780
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Jens Freimann <jfreimann@redhat.com>
+RH-Acked-by: Maxime Coquelin <maxime.coquelin@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+
+Bugzilla: 1636779
+
+There should not be a reason for passing a packet size greater than
+INT_MAX. It's usually a hint of bug somewhere, so ignore packet size
+greater than INT_MAX in qemu_deliver_packet_iov()
+
+CC: qemu-stable@nongnu.org
+Reported-by: Daniel Shapira <daniel@twistlock.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+(cherry picked from commit 1592a9947036d60dde5404204a5d45975133caf5)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ net/net.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/net/net.c b/net/net.c
+index 29f8398..c991243 100644
+--- a/net/net.c
++++ b/net/net.c
+@@ -712,10 +712,15 @@ ssize_t qemu_deliver_packet_iov(NetClientState *sender,
+                                 void *opaque)
+ {
+     NetClientState *nc = opaque;
++    size_t size = iov_size(iov, iovcnt);
+     int ret;
+ 
++    if (size > INT_MAX) {
++        return size;
++    }
++
+     if (nc->link_down) {
+-        return iov_size(iov, iovcnt);
++        return size;
+     }
+ 
+     if (nc->receive_disabled) {
+-- 
+1.8.3.1
+

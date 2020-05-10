@@ -1,0 +1,75 @@
+From 6828f21b1fda85e52bbbe92b4a37f1fde5de5ff0 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:02 +0200
+Subject: [PATCH 33/89] job: Add job_delete()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-20-kwolf@redhat.com>
+Patchwork-id: 81065
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 19/73] job: Add job_delete()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This moves freeing the Job object and its fields from block_job_unref()
+to job_delete().
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit fd61a701f1de8e4c1d89b3716ba9ca749cf5c724)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c         | 3 +--
+ include/qemu/job.h | 3 +++
+ job.c              | 6 ++++++
+ 3 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index ea71ec0..430a67b 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -261,9 +261,8 @@ void block_job_unref(BlockJob *job)
+                                         block_job_detach_aio_context, job);
+         blk_unref(job->blk);
+         error_free(job->blocker);
+-        g_free(job->job.id);
+         assert(!timer_pending(&job->sleep_timer));
+-        g_free(job);
++        job_delete(&job->job);
+     }
+ }
+ 
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 279ce68..43dc2e4 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -62,6 +62,9 @@ struct JobDriver {
+  */
+ void *job_create(const char *job_id, const JobDriver *driver, Error **errp);
+ 
++/** Frees the @job object. */
++void job_delete(Job *job);
++
+ /** Returns the JobType of a given Job. */
+ JobType job_type(const Job *job);
+ 
+diff --git a/job.c b/job.c
+index 83724a4..cfdd008 100644
+--- a/job.c
++++ b/job.c
+@@ -56,3 +56,9 @@ void *job_create(const char *job_id, const JobDriver *driver, Error **errp)
+ 
+     return job;
+ }
++
++void job_delete(Job *job)
++{
++    g_free(job->id);
++    g_free(job);
++}
+-- 
+1.8.3.1
+

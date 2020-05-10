@@ -1,0 +1,119 @@
+From 7122c1ace9649d525da8670d5e57aaa8b7c6a686 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:18 +0200
+Subject: [PATCH 08/53] nbd/client: Lower min_block for block-status, unaligned
+ size
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-9-jsnow@redhat.com>
+Patchwork-id: 87187
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 08/19] nbd/client: Lower min_block for block-status, unaligned size
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+We have a latent bug in our NBD client code, tickled by the brand new
+nbdkit 1.11.10 block status support:
+
+$ nbdkit --filter=log --filter=truncate -U - \
+           data data="1" size=511 truncate=64K logfile=/dev/stdout \
+           --run 'qemu-img convert $nbd /var/tmp/out'
+...
+qemu-img: block/io.c:2122: bdrv_co_block_status: Assertion `*pnum && QEMU_IS_ALIGNED(*pnum, align) && align > offset - aligned_offset' failed.
+
+The culprit? Our implementation of .bdrv_co_block_status can return
+unaligned block status for any server that operates with a lower
+actual alignment than what we tell the block layer in
+request_alignment, in violation of the block layer's constraints. To
+date, we've been unable to trip the bug, because qemu as NBD server
+always advertises block sizing (at which point it is a server bug if
+the server sends unaligned status - although qemu 3.1 is such a server
+and I've sent separate patches for 4.0 both to get the server to obey
+the spec, and to let the client to tolerate server oddities at EOF).
+
+But nbdkit does not (yet) advertise block sizing, and therefore is not
+in violation of the spec for returning block status at whatever
+boundaries it wants, and those unaligned results can occur anywhere
+rather than just at EOF. While we are still wise to avoid sending
+sub-sector read/write requests to a server of unknown origin, we MUST
+consider that a server telling us block status without an advertised
+block size is correct.  So, we either have to munge unaligned answers
+from the server into aligned ones that we hand back to the block
+layer, or we have to tell the block layer about a smaller alignment.
+
+Similarly, if the server advertises an image size that is not
+sector-aligned, we might as well assume that the server intends to let
+us access those tail bytes, and therefore supports a minimum block
+size of 1, regardless of whether the server supports block status
+(although we still need more patches to fix the problem that with an
+unaligned image, we can send read or block status requests that exceed
+EOF to the server). Again, qemu as server cannot trip this problem
+(because it rounds images to sector alignment), but nbdkit advertised
+unaligned size even before it gained block status support.
+
+Solve both alignment problems at once by using better heuristics on
+what alignment to report to the block layer when the server did not
+give us something to work with. Note that very few NBD servers
+implement block status (to date, only qemu and nbdkit are known to do
+so); and as the NBD spec mentioned block sizing constraints prior to
+documenting block status, it can be assumed that any future
+implementations of block status are aware that they must advertise
+block size if they want a minimum size other than 1.
+
+We've had a long history of struggles with picking the right alignment
+to use in the block layer, as evidenced by the commit message of
+fd8d372d (v2.12) that introduced the current choice of forced 512-byte
+alignment.
+
+There is no iotest coverage for this fix, because qemu can't provoke
+it, and I didn't want to make test 241 dependent on nbdkit.
+
+Fixes: fd8d372d
+Reported-by: Richard W.M. Jones <rjones@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190329042750.14704-3-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Tested-by: Richard W.M. Jones <rjones@redhat.com>
+(cherry picked from commit 7da537f70d929800ba9c657b8a47a7b827695ccc)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/block/nbd.c b/block/nbd.c
+index 838a8fe..670b9bd 100644
+--- a/block/nbd.c
++++ b/block/nbd.c
+@@ -437,7 +437,24 @@ static void nbd_refresh_limits(BlockDriverState *bs, Error **errp)
+     uint32_t min = s->info.min_block;
+     uint32_t max = MIN_NON_ZERO(NBD_MAX_BUFFER_SIZE, s->info.max_block);
+ 
+-    bs->bl.request_alignment = min ? min : BDRV_SECTOR_SIZE;
++    /*
++     * If the server did not advertise an alignment:
++     * - a size that is not sector-aligned implies that an alignment
++     *   of 1 can be used to access those tail bytes
++     * - advertisement of block status requires an alignment of 1, so
++     *   that we don't violate block layer constraints that block
++     *   status is always aligned (as we can't control whether the
++     *   server will report sub-sector extents, such as a hole at EOF
++     *   on an unaligned POSIX file)
++     * - otherwise, assume the server is so old that we are safer avoiding
++     *   sub-sector requests
++     */
++    if (!min) {
++        min = (!QEMU_IS_ALIGNED(s->info.size, BDRV_SECTOR_SIZE) ||
++               s->info.base_allocation) ? 1 : BDRV_SECTOR_SIZE;
++    }
++
++    bs->bl.request_alignment = min;
+     bs->bl.max_pdiscard = max;
+     bs->bl.max_pwrite_zeroes = max;
+     bs->bl.max_transfer = max;
+-- 
+1.8.3.1
+

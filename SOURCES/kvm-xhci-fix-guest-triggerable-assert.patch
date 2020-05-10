@@ -1,0 +1,45 @@
+From 27d574c17a28134a9e8c5cf12b2ae3635aa339c0 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Wed, 4 Jul 2018 09:00:54 +0200
+Subject: [PATCH 12/89] xhci: fix guest-triggerable assert
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20180704090054.5101-2-kraxel@redhat.com>
+Patchwork-id: 81224
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] xhci: fix guest-triggerable assert
+Bugzilla: 1594135
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+Set xhci into error state instead of throwing a core dump.
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: 20180702162752.29233-1-kraxel@redhat.com
+(cherry picked from commit 8f36ec708834dfad58af6feb0b69bb0be6077f0f)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/usb/hcd-xhci.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index 181e803..45fcce3 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -1954,7 +1954,12 @@ static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
+         for (i = 0; i < length; i++) {
+             TRBType type;
+             type = xhci_ring_fetch(xhci, ring, &xfer->trbs[i], NULL);
+-            assert(type);
++            if (!type) {
++                xhci_die(xhci);
++                xhci_ep_free_xfer(xfer);
++                epctx->kick_active--;
++                return;
++            }
+         }
+         xfer->streamid = streamid;
+ 
+-- 
+1.8.3.1
+

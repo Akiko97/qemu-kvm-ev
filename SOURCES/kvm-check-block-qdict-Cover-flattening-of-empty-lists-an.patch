@@ -1,0 +1,76 @@
+From b90ea90ed89d27cadc704b664e6ca26ea32fa95d Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:27 +0200
+Subject: [PATCH 20/54] check-block-qdict: Cover flattening of empty lists and
+ dictionaries
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-21-armbru@redhat.com>
+Patchwork-id: 80734
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 20/23] check-block-qdict: Cover flattening of empty lists and dictionaries
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit bef96b1549907b005ce1fa1456d2a0910d2a1aa5)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/check-block-qdict.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/tests/check-block-qdict.c b/tests/check-block-qdict.c
+index 29f58a2..2da16f0 100644
+--- a/tests/check-block-qdict.c
++++ b/tests/check-block-qdict.c
+@@ -41,6 +41,8 @@ static void qdict_flatten_test(void)
+     QList *e = qlist_new();
+     QDict *e_1_2 = qdict_new();
+     QDict *f = qdict_new();
++    QList *y = qlist_new();
++    QDict *z = qdict_new();
+     QDict *root = qdict_new();
+ 
+     /*
+@@ -62,7 +64,9 @@ static void qdict_flatten_test(void)
+      *         "c": 2,
+      *         "d": 3,
+      *     },
+-     *     "g": 4
++     *     "g": 4,
++     *     "y": [{}],
++     *     "z": {"a": []}
+      * }
+      *
+      * to
+@@ -77,6 +81,8 @@ static void qdict_flatten_test(void)
+      *     "f.d": 3,
+      *     "g": 4
+      * }
++     *
++     * Note that "y" and "z" get eaten.
+      */
+ 
+     qdict_put_int(e_1_2, "a", 0);
+@@ -91,9 +97,15 @@ static void qdict_flatten_test(void)
+     qdict_put_int(f, "c", 2);
+     qdict_put_int(f, "d", 3);
+ 
++    qlist_append(y, qdict_new());
++
++    qdict_put(z, "a", qlist_new());
++
+     qdict_put(root, "e", e);
+     qdict_put(root, "f", f);
+     qdict_put_int(root, "g", 4);
++    qdict_put(root, "y", y);
++    qdict_put(root, "z", z);
+ 
+     qdict_flatten(root);
+ 
+-- 
+1.8.3.1
+

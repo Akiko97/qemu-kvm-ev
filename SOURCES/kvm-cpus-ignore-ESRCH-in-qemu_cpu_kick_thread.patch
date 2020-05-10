@@ -1,0 +1,55 @@
+From 9e6a36459015ac8ac3c8e550bd2242c127203370 Mon Sep 17 00:00:00 2001
+From: Laurent Vivier <lvivier@redhat.com>
+Date: Wed, 23 Jan 2019 08:48:57 +0100
+Subject: [PATCH 4/8] cpus: ignore ESRCH in qemu_cpu_kick_thread()
+
+RH-Author: Laurent Vivier <lvivier@redhat.com>
+Message-id: <20190123084857.16841-1-lvivier@redhat.com>
+Patchwork-id: 84094
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH] cpus: ignore ESRCH in qemu_cpu_kick_thread()
+Bugzilla: 1614610
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Serhii Popovych <spopovyc@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+We can have a race condition between qemu_cpu_kick_thread() and
+qemu_kvm_cpu_thread_fn() when we hotunplug a CPU. In this case,
+qemu_cpu_kick_thread() can try to kick a thread that is exiting.
+pthread_kill() returns an error and qemu is stopped by an exit(1).
+
+   qemu:qemu_cpu_kick_thread: No such process
+
+We can ignore safely this error.
+
+Signed-off-by: Laurent Vivier <lvivier@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit e9979ef245549b8e1fd240ec9937271c7fda0b57)
+
+BZ:   https://bugzilla.redhat.com/show_bug.cgi?id=1614610
+BREW: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=19894361
+UPSTREAM: In maintainer pull request
+          git://github.com/bonzini/qemu.git tags/for-upstream
+          3cf01054d896fa88ea0dd31c5abb605c2e68bb29
+TEST: Upstream version tested by QE
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ cpus.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/cpus.c b/cpus.c
+index be3a4eb..f9798e3 100644
+--- a/cpus.c
++++ b/cpus.c
+@@ -1700,7 +1700,7 @@ static void qemu_cpu_kick_thread(CPUState *cpu)
+     }
+     cpu->thread_kicked = true;
+     err = pthread_kill(cpu->thread->thread, SIG_IPI);
+-    if (err) {
++    if (err && err != ESRCH) {
+         fprintf(stderr, "qemu:%s: %s", __func__, strerror(err));
+         exit(1);
+     }
+-- 
+1.8.3.1
+

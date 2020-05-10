@@ -1,0 +1,137 @@
+From 0ea414a81a3e1372257a54c8756a643b91ae773a Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:57 +0200
+Subject: [PATCH 72/89] block: add BDRV_REQ_SERIALISING flag
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-22-jsnow@redhat.com>
+Patchwork-id: 81421
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 21/35] block: add BDRV_REQ_SERIALISING flag
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Serialized writes should be used in copy-on-write of backup(sync=none)
+for image fleecing scheme.
+
+We need to change an assert in bdrv_aligned_pwritev, added in
+28de2dcd88de. The assert may fail now, because call to
+wait_serialising_requests here may become first call to it for this
+request with serializing flag set. It occurs if the request is aligned
+(otherwise, we should already set serializing flag before calling
+bdrv_aligned_pwritev and correspondingly waited for all intersecting
+requests). However, for aligned requests, we should not care about
+outdating of previously read data, as there no such data. Therefore,
+let's just update an assert to not care about aligned requests.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 09d2f948462f4979d18f573a0734d1daae8e67a9)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c            | 28 +++++++++++++++++++++++++++-
+ include/block/block.h | 14 +++++++++++++-
+ 2 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 2d04289..bb617de 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -535,6 +535,18 @@ static void mark_request_serialising(BdrvTrackedRequest *req, uint64_t align)
+     req->overlap_bytes = MAX(req->overlap_bytes, overlap_bytes);
+ }
+ 
++static bool is_request_serialising_and_aligned(BdrvTrackedRequest *req)
++{
++    /*
++     * If the request is serialising, overlap_offset and overlap_bytes are set,
++     * so we can check if the request is aligned. Otherwise, don't care and
++     * return false.
++     */
++
++    return req->serialising && (req->offset == req->overlap_offset) &&
++           (req->bytes == req->overlap_bytes);
++}
++
+ /**
+  * Round a region to cluster boundaries
+  */
+@@ -1206,6 +1218,9 @@ static int coroutine_fn bdrv_aligned_preadv(BdrvChild *child,
+         mark_request_serialising(req, bdrv_get_cluster_size(bs));
+     }
+ 
++    /* BDRV_REQ_SERIALISING is only for write operation */
++    assert(!(flags & BDRV_REQ_SERIALISING));
++
+     if (!(flags & BDRV_REQ_NO_SERIALISING)) {
+         wait_serialising_requests(req);
+     }
+@@ -1507,8 +1522,14 @@ static int coroutine_fn bdrv_aligned_pwritev(BdrvChild *child,
+ 
+     /* BDRV_REQ_NO_SERIALISING is only for read operation */
+     assert(!(flags & BDRV_REQ_NO_SERIALISING));
++
++    if (flags & BDRV_REQ_SERIALISING) {
++        mark_request_serialising(req, bdrv_get_cluster_size(bs));
++    }
++
+     waited = wait_serialising_requests(req);
+-    assert(!waited || !req->serialising);
++    assert(!waited || !req->serialising ||
++           is_request_serialising_and_aligned(req));
+     assert(req->overlap_offset <= offset);
+     assert(offset + bytes <= req->overlap_offset + req->overlap_bytes);
+     if (flags & BDRV_REQ_WRITE_UNCHANGED) {
+@@ -2881,6 +2902,8 @@ static int coroutine_fn bdrv_co_copy_range_internal(
+         tracked_request_begin(&req, src->bs, src_offset, bytes,
+                               BDRV_TRACKED_READ);
+ 
++        /* BDRV_REQ_SERIALISING is only for write operation */
++        assert(!(read_flags & BDRV_REQ_SERIALISING));
+         if (!(read_flags & BDRV_REQ_NO_SERIALISING)) {
+             wait_serialising_requests(&req);
+         }
+@@ -2900,6 +2923,9 @@ static int coroutine_fn bdrv_co_copy_range_internal(
+ 
+         /* BDRV_REQ_NO_SERIALISING is only for read operation */
+         assert(!(write_flags & BDRV_REQ_NO_SERIALISING));
++        if (write_flags & BDRV_REQ_SERIALISING) {
++            mark_request_serialising(&req, bdrv_get_cluster_size(dst->bs));
++        }
+         wait_serialising_requests(&req);
+ 
+         ret = dst->bs->drv->bdrv_co_copy_range_to(dst->bs,
+diff --git a/include/block/block.h b/include/block/block.h
+index 409db21..8f87eea 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -70,8 +70,20 @@ typedef enum {
+      * content. */
+     BDRV_REQ_WRITE_UNCHANGED    = 0x40,
+ 
++    /*
++     * BDRV_REQ_SERIALISING forces request serialisation for writes.
++     * It is used to ensure that writes to the backing file of a backup process
++     * target cannot race with a read of the backup target that defers to the
++     * backing file.
++     *
++     * Note, that BDRV_REQ_SERIALISING is _not_ opposite in meaning to
++     * BDRV_REQ_NO_SERIALISING. A more descriptive name for the latter might be
++     * _DO_NOT_WAIT_FOR_SERIALISING, except that is too long.
++     */
++    BDRV_REQ_SERIALISING        = 0x80,
++
+     /* Mask of valid flags */
+-    BDRV_REQ_MASK               = 0x7f,
++    BDRV_REQ_MASK               = 0xff,
+ } BdrvRequestFlags;
+ 
+ typedef struct BlockSizes {
+-- 
+1.8.3.1
+

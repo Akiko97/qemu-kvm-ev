@@ -1,0 +1,59 @@
+From d44774708b8db31c5e2658ea64ee930ffdae39be Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:42 +0200
+Subject: [PATCH 73/89] qemu-iotests: Add VM.qmp_log()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-60-kwolf@redhat.com>
+Patchwork-id: 81067
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 59/73] qemu-iotests: Add VM.qmp_log()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This adds a helper function that logs both the QMP request and the
+received response before returning it.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit e234398a8e142fd0cfe571f7efb0e6a2f34fe73d)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index 7e311ed..bc5731a 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -215,6 +215,10 @@ def filter_qmp_event(event):
+         event['timestamp']['microseconds'] = 'USECS'
+     return event
+ 
++def filter_testfiles(msg):
++    prefix = os.path.join(test_dir, "%s-" % (os.getpid()))
++    return msg.replace(prefix, 'TEST_DIR/PID-')
++
+ def log(msg, filters=[]):
+     for flt in filters:
+         msg = flt(msg)
+@@ -398,6 +402,13 @@ class VM(qtest.QEMUQtestMachine):
+             result.append(filter_qmp_event(ev))
+         return result
+ 
++    def qmp_log(self, cmd, filters=[filter_testfiles], **kwargs):
++        logmsg = "{'execute': '%s', 'arguments': %s}" % (cmd, kwargs)
++        log(logmsg, filters)
++        result = self.qmp(cmd, **kwargs)
++        log(str(result), filters)
++        return result
++
+ 
+ index_re = re.compile(r'([^\[]+)\[([^\]]+)\]')
+ 
+-- 
+1.8.3.1
+

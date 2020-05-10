@@ -1,0 +1,224 @@
+From 629f726f14a40cfe4edf74ec0d213eed935e5a79 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:29 +0100
+Subject: [PATCH 090/163] nbd: Merge nbd_export_set_name into nbd_export_new
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-17-jsnow@redhat.com>
+Patchwork-id: 85171
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 16/55] nbd: Merge nbd_export_set_name into nbd_export_new
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+The existing NBD code had a weird split where nbd_export_new()
+created an export but did not add it to the list of exported
+names until a later nbd_export_set_name() came along and grabbed
+a second reference on the object; later, the first call to
+nbd_export_close() drops the second reference while removing
+the export from the list.  This is in part because the QAPI
+NbdServerRemoveNode enum documents the possibility of adding a
+mode where we could do a soft disconnect: preventing new clients,
+but waiting for existing clients to gracefully quit, based on
+the mode used when calling nbd_export_close().
+
+But in spite of all that, note that we never change the name of
+an NBD export while it is exposed, which means it is easier to
+just inline the process of setting the name as part of creating
+the export.
+
+Inline the contents of nbd_export_set_name() and
+nbd_export_set_description() into the two points in an export
+lifecycle where they matter, then adjust both callers to pass
+the name up front.  Note that for creation, all callers pass a
+non-NULL name, (passing NULL at creation was for old style
+servers, but we removed support for that in commit 7f7dfe2a),
+so we can add an assert and do things unconditionally; but for
+cleanup, because of the dual nature of nbd_export_close(), we
+still have to be careful to avoid use-after-free.  Along the
+way, add a comment reminding ourselves of the potential of
+adding a middle mode disconnect.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20190111194720.15671-5-eblake@redhat.com>
+(cherry picked from commit 3fa4c76590569f9dc128beb3eee65aaefcb6321e)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev-nbd.c      |  5 ++---
+ include/block/nbd.h |  3 +--
+ nbd/server.c        | 52 +++++++++++++++++++++++-----------------------------
+ qemu-nbd.c          |  8 +++-----
+ 4 files changed, 29 insertions(+), 39 deletions(-)
+
+diff --git a/blockdev-nbd.c b/blockdev-nbd.c
+index ca58491..582ffde 100644
+--- a/blockdev-nbd.c
++++ b/blockdev-nbd.c
+@@ -174,14 +174,13 @@ void qmp_nbd_server_add(const char *device, bool has_name, const char *name,
+         writable = false;
+     }
+ 
+-    exp = nbd_export_new(bs, 0, -1, writable ? 0 : NBD_FLAG_READ_ONLY,
++    exp = nbd_export_new(bs, 0, -1, name, NULL,
++                         writable ? 0 : NBD_FLAG_READ_ONLY,
+                          NULL, false, on_eject_blk, errp);
+     if (!exp) {
+         return;
+     }
+ 
+-    nbd_export_set_name(exp, name);
+-
+     /* The list of named exports has a strong reference to this export now and
+      * our only way of accessing it is through nbd_export_find(), so we can drop
+      * the strong reference that is @exp. */
+diff --git a/include/block/nbd.h b/include/block/nbd.h
+index 65402d3..2f9a2ae 100644
+--- a/include/block/nbd.h
++++ b/include/block/nbd.h
+@@ -295,6 +295,7 @@ typedef struct NBDExport NBDExport;
+ typedef struct NBDClient NBDClient;
+ 
+ NBDExport *nbd_export_new(BlockDriverState *bs, off_t dev_offset, off_t size,
++                          const char *name, const char *description,
+                           uint16_t nbdflags, void (*close)(NBDExport *),
+                           bool writethrough, BlockBackend *on_eject_blk,
+                           Error **errp);
+@@ -306,8 +307,6 @@ void nbd_export_put(NBDExport *exp);
+ BlockBackend *nbd_export_get_blockdev(NBDExport *exp);
+ 
+ NBDExport *nbd_export_find(const char *name);
+-void nbd_export_set_name(NBDExport *exp, const char *name);
+-void nbd_export_set_description(NBDExport *exp, const char *description);
+ void nbd_export_close_all(void);
+ 
+ void nbd_client_new(QIOChannelSocket *sioc,
+diff --git a/nbd/server.c b/nbd/server.c
+index c0f2e85..6c02b57 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1456,6 +1456,7 @@ static void nbd_eject_notifier(Notifier *n, void *data)
+ }
+ 
+ NBDExport *nbd_export_new(BlockDriverState *bs, off_t dev_offset, off_t size,
++                          const char *name, const char *description,
+                           uint16_t nbdflags, void (*close)(NBDExport *),
+                           bool writethrough, BlockBackend *on_eject_blk,
+                           Error **errp)
+@@ -1471,6 +1472,7 @@ NBDExport *nbd_export_new(BlockDriverState *bs, off_t dev_offset, off_t size,
+      * that BDRV_O_INACTIVE is cleared and the image is ready for write
+      * access since the export could be available before migration handover.
+      */
++    assert(name);
+     ctx = bdrv_get_aio_context(bs);
+     aio_context_acquire(ctx);
+     bdrv_invalidate_cache(bs, NULL);
+@@ -1494,6 +1496,8 @@ NBDExport *nbd_export_new(BlockDriverState *bs, off_t dev_offset, off_t size,
+     QTAILQ_INIT(&exp->clients);
+     exp->blk = blk;
+     exp->dev_offset = dev_offset;
++    exp->name = g_strdup(name);
++    exp->description = g_strdup(description);
+     exp->nbdflags = nbdflags;
+     exp->size = size < 0 ? blk_getlength(blk) : size;
+     if (exp->size < 0) {
+@@ -1513,10 +1517,14 @@ NBDExport *nbd_export_new(BlockDriverState *bs, off_t dev_offset, off_t size,
+         exp->eject_notifier.notify = nbd_eject_notifier;
+         blk_add_remove_bs_notifier(on_eject_blk, &exp->eject_notifier);
+     }
++    QTAILQ_INSERT_TAIL(&exports, exp, next);
++    nbd_export_get(exp);
+     return exp;
+ 
+ fail:
+     blk_unref(blk);
++    g_free(exp->name);
++    g_free(exp->description);
+     g_free(exp);
+     return NULL;
+ }
+@@ -1533,43 +1541,29 @@ NBDExport *nbd_export_find(const char *name)
+     return NULL;
+ }
+ 
+-void nbd_export_set_name(NBDExport *exp, const char *name)
+-{
+-    if (exp->name == name) {
+-        return;
+-    }
+-
+-    nbd_export_get(exp);
+-    if (exp->name != NULL) {
+-        g_free(exp->name);
+-        exp->name = NULL;
+-        QTAILQ_REMOVE(&exports, exp, next);
+-        nbd_export_put(exp);
+-    }
+-    if (name != NULL) {
+-        nbd_export_get(exp);
+-        exp->name = g_strdup(name);
+-        QTAILQ_INSERT_TAIL(&exports, exp, next);
+-    }
+-    nbd_export_put(exp);
+-}
+-
+-void nbd_export_set_description(NBDExport *exp, const char *description)
+-{
+-    g_free(exp->description);
+-    exp->description = g_strdup(description);
+-}
+-
+ void nbd_export_close(NBDExport *exp)
+ {
+     NBDClient *client, *next;
+ 
+     nbd_export_get(exp);
++    /*
++     * TODO: Should we expand QMP NbdServerRemoveNode enum to allow a
++     * close mode that stops advertising the export to new clients but
++     * still permits existing clients to run to completion? Because of
++     * that possibility, nbd_export_close() can be called more than
++     * once on an export.
++     */
+     QTAILQ_FOREACH_SAFE(client, &exp->clients, next, next) {
+         client_close(client, true);
+     }
+-    nbd_export_set_name(exp, NULL);
+-    nbd_export_set_description(exp, NULL);
++    if (exp->name) {
++        nbd_export_put(exp);
++        g_free(exp->name);
++        exp->name = NULL;
++        QTAILQ_REMOVE(&exports, exp, next);
++    }
++    g_free(exp->description);
++    exp->description = NULL;
+     nbd_export_put(exp);
+ }
+ 
+diff --git a/qemu-nbd.c b/qemu-nbd.c
+index c37defb..c85aee4 100644
+--- a/qemu-nbd.c
++++ b/qemu-nbd.c
+@@ -1017,11 +1017,9 @@ int main(int argc, char **argv)
+         }
+     }
+ 
+-    export = nbd_export_new(bs, dev_offset, fd_size, nbdflags,
+-                            nbd_export_closed, writethrough,
+-                            NULL, &error_fatal);
+-    nbd_export_set_name(export, export_name);
+-    nbd_export_set_description(export, export_description);
++    export = nbd_export_new(bs, dev_offset, fd_size, export_name,
++                            export_description, nbdflags, nbd_export_closed,
++                            writethrough, NULL, &error_fatal);
+ 
+     if (device) {
+ #if HAVE_NBD_DEVICE
+-- 
+1.8.3.1
+

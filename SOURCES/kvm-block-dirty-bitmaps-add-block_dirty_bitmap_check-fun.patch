@@ -1,0 +1,324 @@
+From ac4ba4bb4b2118dab2e7f0b7c7e3daec3698d060 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:51 +0200
+Subject: [PATCH 146/163] block/dirty-bitmaps: add block_dirty_bitmap_check
+ function
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-16-jsnow@redhat.com>
+Patchwork-id: 85429
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 15/21] block/dirty-bitmaps: add block_dirty_bitmap_check function
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+Instead of checking against busy, inconsistent, or read only directly,
+use a check function with permissions bits that let us streamline the
+checks without reproducing them in many places.
+
+Included in this patch are permissions changes that simply add the
+inconsistent check to existing permissions call spots, without
+addressing existing bugs.
+
+In general, this means that busy+readonly checks become BDRV_BITMAP_DEFAULT,
+which checks against all three conditions. busy-only checks become
+BDRV_BITMAP_ALLOW_RO.
+
+Notably, remove allows inconsistent bitmaps, so it doesn't follow the pattern.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190301191545.8728-4-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 3ae96d66840f72ef54902d012dbdf87ef4e9fe0c)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c           | 42 +++++++++++++++++++++++++-----------
+ blockdev.c                     | 49 ++++++++----------------------------------
+ include/block/dirty-bitmap.h   | 13 ++++++++++-
+ migration/block-dirty-bitmap.c | 13 ++++-------
+ nbd/server.c                   |  3 +--
+ 5 files changed, 56 insertions(+), 64 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index 4a2349d..6170f3a 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -174,7 +174,7 @@ bool bdrv_dirty_bitmap_has_successor(BdrvDirtyBitmap *bitmap)
+     return bitmap->successor;
+ }
+ 
+-bool bdrv_dirty_bitmap_busy(BdrvDirtyBitmap *bitmap)
++static bool bdrv_dirty_bitmap_busy(const BdrvDirtyBitmap *bitmap)
+ {
+     return bitmap->busy;
+ }
+@@ -236,6 +236,33 @@ static bool bdrv_dirty_bitmap_recording(BdrvDirtyBitmap *bitmap)
+                                  !bitmap->successor->disabled);
+ }
+ 
++int bdrv_dirty_bitmap_check(const BdrvDirtyBitmap *bitmap, uint32_t flags,
++                            Error **errp)
++{
++    if ((flags & BDRV_BITMAP_BUSY) && bdrv_dirty_bitmap_busy(bitmap)) {
++        error_setg(errp, "Bitmap '%s' is currently in use by another"
++                   " operation and cannot be used", bitmap->name);
++        return -1;
++    }
++
++    if ((flags & BDRV_BITMAP_RO) && bdrv_dirty_bitmap_readonly(bitmap)) {
++        error_setg(errp, "Bitmap '%s' is readonly and cannot be modified",
++                   bitmap->name);
++        return -1;
++    }
++
++    if ((flags & BDRV_BITMAP_INCONSISTENT) &&
++        bdrv_dirty_bitmap_inconsistent(bitmap)) {
++        error_setg(errp, "Bitmap '%s' is inconsistent and cannot be used",
++                   bitmap->name);
++        error_append_hint(errp, "Try block-dirty-bitmap-remove to delete"
++                          " this bitmap from disk");
++        return -1;
++    }
++
++    return 0;
++}
++
+ /**
+  * Create a successor bitmap destined to replace this bitmap after an operation.
+  * Requires that the bitmap is not marked busy and has no successor.
+@@ -248,9 +275,7 @@ int bdrv_dirty_bitmap_create_successor(BlockDriverState *bs,
+     uint64_t granularity;
+     BdrvDirtyBitmap *child;
+ 
+-    if (bdrv_dirty_bitmap_busy(bitmap)) {
+-        error_setg(errp, "Cannot create a successor for a bitmap that is "
+-                   "in-use by an operation");
++    if (bdrv_dirty_bitmap_check(bitmap, BDRV_BITMAP_BUSY, errp)) {
+         return -1;
+     }
+     if (bdrv_dirty_bitmap_has_successor(bitmap)) {
+@@ -796,17 +821,10 @@ void bdrv_merge_dirty_bitmap(BdrvDirtyBitmap *dest, const BdrvDirtyBitmap *src,
+ 
+     qemu_mutex_lock(dest->mutex);
+ 
+-    if (bdrv_dirty_bitmap_busy(dest)) {
+-        error_setg(errp, "Bitmap '%s' is currently in use by another"
+-        " operation and cannot be modified", dest->name);
++    if (bdrv_dirty_bitmap_check(dest, BDRV_BITMAP_DEFAULT, errp)) {
+         goto out;
+     }
+ 
+-    if (bdrv_dirty_bitmap_readonly(dest)) {
+-        error_setg(errp, "Bitmap '%s' is readonly and cannot be modified",
+-                   dest->name);
+-        goto out;
+-    }
+ 
+     if (!hbitmap_can_merge(dest->bitmap, src->bitmap)) {
+         error_setg(errp, "Bitmaps are incompatible and can't be merged");
+diff --git a/blockdev.c b/blockdev.c
+index a9e2e1d..860cea6 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -2160,11 +2160,7 @@ static void block_dirty_bitmap_clear_prepare(BlkActionState *common,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_busy(state->bitmap)) {
+-        error_setg(errp, "Cannot modify a bitmap in use by another operation");
+-        return;
+-    } else if (bdrv_dirty_bitmap_readonly(state->bitmap)) {
+-        error_setg(errp, "Cannot clear a readonly bitmap");
++    if (bdrv_dirty_bitmap_check(state->bitmap, BDRV_BITMAP_DEFAULT, errp)) {
+         return;
+     }
+ 
+@@ -2209,10 +2205,7 @@ static void block_dirty_bitmap_enable_prepare(BlkActionState *common,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_busy(state->bitmap)) {
+-        error_setg(errp,
+-                   "Bitmap '%s' is currently in use by another operation"
+-                   " and cannot be enabled", action->name);
++    if (bdrv_dirty_bitmap_check(state->bitmap, BDRV_BITMAP_ALLOW_RO, errp)) {
+         return;
+     }
+ 
+@@ -2250,10 +2243,7 @@ static void block_dirty_bitmap_disable_prepare(BlkActionState *common,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_busy(state->bitmap)) {
+-        error_setg(errp,
+-                   "Bitmap '%s' is currently in use by another operation"
+-                   " and cannot be disabled", action->name);
++    if (bdrv_dirty_bitmap_check(state->bitmap, BDRV_BITMAP_ALLOW_RO, errp)) {
+         return;
+     }
+ 
+@@ -3044,10 +3034,7 @@ void qmp_block_dirty_bitmap_remove(const char *node, const char *name,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_busy(bitmap)) {
+-        error_setg(errp,
+-                   "Bitmap '%s' is currently in use by another operation and"
+-                   " cannot be removed", name);
++    if (bdrv_dirty_bitmap_check(bitmap, BDRV_BITMAP_BUSY, errp)) {
+         return;
+     }
+ 
+@@ -3083,13 +3070,7 @@ void qmp_block_dirty_bitmap_clear(const char *node, const char *name,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_busy(bitmap)) {
+-        error_setg(errp,
+-                   "Bitmap '%s' is currently in use by another operation"
+-                   " and cannot be cleared", name);
+-        return;
+-    } else if (bdrv_dirty_bitmap_readonly(bitmap)) {
+-        error_setg(errp, "Bitmap '%s' is readonly and cannot be cleared", name);
++    if (bdrv_dirty_bitmap_check(bitmap, BDRV_BITMAP_DEFAULT, errp)) {
+         return;
+     }
+ 
+@@ -3107,10 +3088,7 @@ void qmp_block_dirty_bitmap_enable(const char *node, const char *name,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_busy(bitmap)) {
+-        error_setg(errp,
+-                   "Bitmap '%s' is currently in use by another operation"
+-                   " and cannot be enabled", name);
++    if (bdrv_dirty_bitmap_check(bitmap, BDRV_BITMAP_ALLOW_RO, errp)) {
+         return;
+     }
+ 
+@@ -3128,10 +3106,7 @@ void qmp_block_dirty_bitmap_disable(const char *node, const char *name,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_busy(bitmap)) {
+-        error_setg(errp,
+-                   "Bitmap '%s' is currently in use by another operation"
+-                   " and cannot be disabled", name);
++    if (bdrv_dirty_bitmap_check(bitmap, BDRV_BITMAP_ALLOW_RO, errp)) {
+         return;
+     }
+ 
+@@ -3709,10 +3684,7 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
+             bdrv_unref(target_bs);
+             goto out;
+         }
+-        if (bdrv_dirty_bitmap_busy(bmap)) {
+-            error_setg(errp,
+-                       "Bitmap '%s' is currently in use by another operation"
+-                       " and cannot be used for backup", backup->bitmap);
++        if (bdrv_dirty_bitmap_check(bmap, BDRV_BITMAP_ALLOW_RO, errp)) {
+             goto out;
+         }
+     }
+@@ -3816,10 +3788,7 @@ BlockJob *do_blockdev_backup(BlockdevBackup *backup, JobTxn *txn,
+             error_setg(errp, "Bitmap '%s' could not be found", backup->bitmap);
+             goto out;
+         }
+-        if (bdrv_dirty_bitmap_busy(bmap)) {
+-            error_setg(errp,
+-                       "Bitmap '%s' is currently in use by another operation"
+-                       " and cannot be used for backup", backup->bitmap);
++        if (bdrv_dirty_bitmap_check(bmap, BDRV_BITMAP_ALLOW_RO, errp)) {
+             goto out;
+         }
+     }
+diff --git a/include/block/dirty-bitmap.h b/include/block/dirty-bitmap.h
+index bd1b647..2a78243 100644
+--- a/include/block/dirty-bitmap.h
++++ b/include/block/dirty-bitmap.h
+@@ -5,6 +5,16 @@
+ #include "qapi/qapi-types-block-core.h"
+ #include "qemu/hbitmap.h"
+ 
++typedef enum BitmapCheckFlags {
++    BDRV_BITMAP_BUSY = 1,
++    BDRV_BITMAP_RO = 2,
++    BDRV_BITMAP_INCONSISTENT = 4,
++} BitmapCheckFlags;
++
++#define BDRV_BITMAP_DEFAULT (BDRV_BITMAP_BUSY | BDRV_BITMAP_RO |        \
++                             BDRV_BITMAP_INCONSISTENT)
++#define BDRV_BITMAP_ALLOW_RO (BDRV_BITMAP_BUSY | BDRV_BITMAP_INCONSISTENT)
++
+ BdrvDirtyBitmap *bdrv_create_dirty_bitmap(BlockDriverState *bs,
+                                           uint32_t granularity,
+                                           const char *name,
+@@ -24,6 +34,8 @@ BdrvDirtyBitmap *bdrv_reclaim_dirty_bitmap(BlockDriverState *bs,
+ void bdrv_dirty_bitmap_enable_successor(BdrvDirtyBitmap *bitmap);
+ BdrvDirtyBitmap *bdrv_find_dirty_bitmap(BlockDriverState *bs,
+                                         const char *name);
++int bdrv_dirty_bitmap_check(const BdrvDirtyBitmap *bitmap, uint32_t flags,
++                            Error **errp);
+ void bdrv_release_dirty_bitmap(BlockDriverState *bs, BdrvDirtyBitmap *bitmap);
+ void bdrv_release_named_dirty_bitmaps(BlockDriverState *bs);
+ void bdrv_remove_persistent_dirty_bitmap(BlockDriverState *bs,
+@@ -93,7 +105,6 @@ bool bdrv_has_readonly_bitmaps(BlockDriverState *bs);
+ bool bdrv_dirty_bitmap_get_autoload(const BdrvDirtyBitmap *bitmap);
+ bool bdrv_dirty_bitmap_get_persistance(BdrvDirtyBitmap *bitmap);
+ bool bdrv_dirty_bitmap_inconsistent(const BdrvDirtyBitmap *bitmap);
+-bool bdrv_dirty_bitmap_busy(BdrvDirtyBitmap *bitmap);
+ bool bdrv_has_changed_persistent_bitmaps(BlockDriverState *bs);
+ BdrvDirtyBitmap *bdrv_dirty_bitmap_next(BlockDriverState *bs,
+                                         BdrvDirtyBitmap *bitmap);
+diff --git a/migration/block-dirty-bitmap.c b/migration/block-dirty-bitmap.c
+index 62f2806..06ab58d 100644
+--- a/migration/block-dirty-bitmap.c
++++ b/migration/block-dirty-bitmap.c
+@@ -274,6 +274,7 @@ static int init_dirty_bitmap_migration(void)
+     BdrvDirtyBitmap *bitmap;
+     DirtyBitmapMigBitmapState *dbms;
+     BdrvNextIterator it;
++    Error *local_err = NULL;
+ 
+     dirty_bitmap_mig_state.bulk_completed = false;
+     dirty_bitmap_mig_state.prev_bs = NULL;
+@@ -301,15 +302,9 @@ static int init_dirty_bitmap_migration(void)
+                 goto fail;
+             }
+ 
+-            if (bdrv_dirty_bitmap_busy(bitmap)) {
+-                error_report("Can't migrate a bitmap that is in use by another operation: '%s'",
+-                             bdrv_dirty_bitmap_name(bitmap));
+-                goto fail;
+-            }
+-
+-            if (bdrv_dirty_bitmap_readonly(bitmap)) {
+-                error_report("Can't migrate read-only dirty bitmap: '%s",
+-                             bdrv_dirty_bitmap_name(bitmap));
++            if (bdrv_dirty_bitmap_check(bitmap, BDRV_BITMAP_DEFAULT,
++                                        &local_err)) {
++                error_report_err(local_err);
+                 goto fail;
+             }
+ 
+diff --git a/nbd/server.c b/nbd/server.c
+index 02773e2..9b87c7f 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1510,8 +1510,7 @@ NBDExport *nbd_export_new(BlockDriverState *bs, uint64_t dev_offset,
+             goto fail;
+         }
+ 
+-        if (bdrv_dirty_bitmap_busy(bm)) {
+-            error_setg(errp, "Bitmap '%s' is in use", bitmap);
++        if (bdrv_dirty_bitmap_check(bm, BDRV_BITMAP_ALLOW_RO, errp)) {
+             goto fail;
+         }
+ 
+-- 
+1.8.3.1
+

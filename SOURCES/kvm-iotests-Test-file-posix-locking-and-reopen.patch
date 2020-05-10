@@ -1,0 +1,135 @@
+From bc3e5687b0f29cae1b5770aee8f4625b348deea1 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 4 Feb 2019 20:42:07 +0100
+Subject: [PATCH 07/33] iotests: Test file-posix locking and reopen
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20190204204207.18079-8-mreitz@redhat.com>
+Patchwork-id: 84226
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 7/7] iotests: Test file-posix locking and reopen
+Bugzilla: 1551486
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 6d0a4a0fb5c8f10c8eb68b52cfda0082b00ae963)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/182     | 71 ++++++++++++++++++++++++++++++++++++++++++++++
+ tests/qemu-iotests/182.out |  9 ++++++
+ 2 files changed, 80 insertions(+)
+
+diff --git a/tests/qemu-iotests/182 b/tests/qemu-iotests/182
+index 4b31592..3b7689c 100755
+--- a/tests/qemu-iotests/182
++++ b/tests/qemu-iotests/182
+@@ -31,6 +31,7 @@ status=1	# failure is the default!
+ _cleanup()
+ {
+     _cleanup_test_img
++    rm -f "$TEST_IMG.overlay"
+ }
+ trap "_cleanup; exit \$status" 0 1 2 3 15
+ 
+@@ -71,6 +72,76 @@ echo 'quit' | $QEMU -nographic -monitor stdio \
+ 
+ _cleanup_qemu
+ 
++echo
++echo '=== Testing reopen ==='
++echo
++
++# This tests that reopening does not unshare any permissions it should
++# not unshare
++# (There was a bug where reopening shared exactly the opposite of the
++# permissions it was supposed to share)
++
++_launch_qemu
++
++_send_qemu_cmd $QEMU_HANDLE \
++    "{'execute': 'qmp_capabilities'}" \
++    'return'
++
++# Open the image without any format layer (we are not going to access
++# it, so that is fine)
++# This should keep all permissions shared.
++success_or_failure=y _send_qemu_cmd $QEMU_HANDLE \
++    "{'execute': 'blockdev-add',
++      'arguments': {
++          'node-name': 'node0',
++          'driver': 'file',
++          'filename': '$TEST_IMG',
++          'locking': 'on'
++          } }" \
++    'return' \
++    'error'
++
++# This snapshot will perform a reopen to drop R/W to RO.
++# It should still keep all permissions shared.
++success_or_failure=y _send_qemu_cmd $QEMU_HANDLE \
++    "{'execute': 'blockdev-snapshot-sync',
++      'arguments': {
++          'node-name': 'node0',
++          'snapshot-file': '$TEST_IMG.overlay',
++          'snapshot-node-name': 'node1'
++      } }" \
++    'return' \
++    'error'
++
++# Now open the same file again
++# This does not require any permissions (and does not unshare any), so
++# this will not conflict with node0.
++success_or_failure=y _send_qemu_cmd $QEMU_HANDLE \
++    "{'execute': 'blockdev-add',
++      'arguments': {
++          'node-name': 'node1',
++          'driver': 'file',
++          'filename': '$TEST_IMG',
++          'locking': 'on'
++          } }" \
++    'return' \
++    'error'
++
++# Now we attach the image to a virtio-blk device.  This device does
++# require some permissions (at least WRITE and READ_CONSISTENT), so if
++# reopening node0 unshared any (which it should not have), this will
++# fail (but it should not).
++success_or_failure=y _send_qemu_cmd $QEMU_HANDLE \
++    "{'execute': 'device_add',
++      'arguments': {
++          'driver': 'virtio-blk',
++          'drive': 'node1'
++      } }" \
++    'return' \
++    'error'
++
++_cleanup_qemu
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/182.out b/tests/qemu-iotests/182.out
+index f1463c8..af501ca 100644
+--- a/tests/qemu-iotests/182.out
++++ b/tests/qemu-iotests/182.out
+@@ -5,4 +5,13 @@ Starting QEMU
+ Starting a second QEMU using the same image should fail
+ QEMU_PROG: -drive file=TEST_DIR/t.qcow2,if=none,id=drive0,file.locking=on: Failed to get "write" lock
+ Is another process using the image [TEST_DIR/t.qcow2]?
++
++=== Testing reopen ===
++
++{"return": {}}
++{"return": {}}
++Formatting 'TEST_DIR/t.qcow2.overlay', fmt=qcow2 size=197120 backing_file=TEST_DIR/t.qcow2 backing_fmt=file cluster_size=65536 lazy_refcounts=off refcount_bits=16
++{"return": {}}
++{"return": {}}
++{"return": {}}
+ *** done
+-- 
+1.8.3.1
+

@@ -1,0 +1,234 @@
+From 754dd8f2bfcfd5c98710e910f6343b32af7cd3af Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Fri, 31 Aug 2018 16:25:54 +0200
+Subject: [PATCH 12/29] memory, exec: switch file ram allocation functions to
+ 'flags' parameters
+
+RH-Author: plai@redhat.com
+Message-id: <1535732759-22481-5-git-send-email-plai@redhat.com>
+Patchwork-id: 82005
+O-Subject: [RHEL7.6 PATCH BZ 1539280 4/9] memory, exec: switch file ram allocation functions to 'flags' parameters
+Bugzilla: 1539280
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Junyan He <junyan.he@intel.com>
+
+As more flag parameters besides the existing 'share' are going to be
+added to following functions
+memory_region_init_ram_from_file
+qemu_ram_alloc_from_fd
+qemu_ram_alloc_from_file
+let's switch them to use the 'flags' parameters so as to ease future
+flag additions.
+
+The existing 'share' flag is converted to the RAM_SHARED bit in ram_flags,
+and other flag bits are ignored by above functions right now.
+
+Signed-off-by: Junyan He <junyan.he@intel.com>
+Signed-off-by: Haozhong Zhang <haozhong.zhang@intel.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+(cherry picked from commit cbfc01710362f3de6fca3010a17b0e1c866fc181)
+Signed-off-by: Paul Lai <plai@redhat.com>
+
+Resolved Conflicts:
+	include/exec/ram_addr.h
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ backends/hostmem-file.c |  3 ++-
+ exec.c                  | 10 +++++-----
+ include/exec/memory.h   |  7 +++++--
+ include/exec/ram_addr.h | 25 +++++++++++++++++++++++--
+ memory.c                |  8 +++++---
+ numa.c                  |  2 +-
+ 6 files changed, 41 insertions(+), 14 deletions(-)
+
+diff --git a/backends/hostmem-file.c b/backends/hostmem-file.c
+index 134b08d..34c68bb 100644
+--- a/backends/hostmem-file.c
++++ b/backends/hostmem-file.c
+@@ -58,7 +58,8 @@ file_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
+         path = object_get_canonical_path(OBJECT(backend));
+         memory_region_init_ram_from_file(&backend->mr, OBJECT(backend),
+                                  path,
+-                                 backend->size, fb->align, backend->share,
++                                 backend->size, fb->align,
++                                 backend->share ? RAM_SHARED : 0,
+                                  fb->mem_path, errp);
+         g_free(path);
+     }
+diff --git a/exec.c b/exec.c
+index f21be9c..295142b 100644
+--- a/exec.c
++++ b/exec.c
+@@ -2038,7 +2038,7 @@ static void ram_block_add(RAMBlock *new_block, Error **errp, bool shared)
+ 
+ #ifdef __linux__
+ RAMBlock *qemu_ram_alloc_from_fd(ram_addr_t size, MemoryRegion *mr,
+-                                 bool share, int fd,
++                                 uint32_t ram_flags, int fd,
+                                  Error **errp)
+ {
+     RAMBlock *new_block;
+@@ -2080,14 +2080,14 @@ RAMBlock *qemu_ram_alloc_from_fd(ram_addr_t size, MemoryRegion *mr,
+     new_block->mr = mr;
+     new_block->used_length = size;
+     new_block->max_length = size;
+-    new_block->flags = share ? RAM_SHARED : 0;
++    new_block->flags = ram_flags;
+     new_block->host = file_ram_alloc(new_block, size, fd, !file_size, errp);
+     if (!new_block->host) {
+         g_free(new_block);
+         return NULL;
+     }
+ 
+-    ram_block_add(new_block, &local_err, share);
++    ram_block_add(new_block, &local_err, ram_flags & RAM_SHARED);
+     if (local_err) {
+         g_free(new_block);
+         error_propagate(errp, local_err);
+@@ -2099,7 +2099,7 @@ RAMBlock *qemu_ram_alloc_from_fd(ram_addr_t size, MemoryRegion *mr,
+ 
+ 
+ RAMBlock *qemu_ram_alloc_from_file(ram_addr_t size, MemoryRegion *mr,
+-                                   bool share, const char *mem_path,
++                                   uint32_t ram_flags, const char *mem_path,
+                                    Error **errp)
+ {
+     int fd;
+@@ -2111,7 +2111,7 @@ RAMBlock *qemu_ram_alloc_from_file(ram_addr_t size, MemoryRegion *mr,
+         return NULL;
+     }
+ 
+-    block = qemu_ram_alloc_from_fd(size, mr, share, fd, errp);
++    block = qemu_ram_alloc_from_fd(size, mr, ram_flags, fd, errp);
+     if (!block) {
+         if (created) {
+             unlink(mem_path);
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index db46501..b3abe61 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -527,6 +527,7 @@ void memory_region_init_resizeable_ram(MemoryRegion *mr,
+                                                        void *host),
+                                        Error **errp);
+ #ifdef __linux__
++
+ /**
+  * memory_region_init_ram_from_file:  Initialize RAM memory region with a
+  *                                    mmap-ed backend.
+@@ -538,7 +539,9 @@ void memory_region_init_resizeable_ram(MemoryRegion *mr,
+  * @size: size of the region.
+  * @align: alignment of the region base address; if 0, the default alignment
+  *         (getpagesize()) will be used.
+- * @share: %true if memory must be mmaped with the MAP_SHARED flag
++ * @ram_flags: Memory region features:
++ *             - RAM_SHARED: memory must be mmaped with the MAP_SHARED flag
++ *             Other bits are ignored now.
+  * @path: the path in which to allocate the RAM.
+  * @errp: pointer to Error*, to store an error if it happens.
+  *
+@@ -550,7 +553,7 @@ void memory_region_init_ram_from_file(MemoryRegion *mr,
+                                       const char *name,
+                                       uint64_t size,
+                                       uint64_t align,
+-                                      bool share,
++                                      uint32_t ram_flags,
+                                       const char *path,
+                                       Error **errp);
+ 
+diff --git a/include/exec/ram_addr.h b/include/exec/ram_addr.h
+index cf2446a..67e163e 100644
+--- a/include/exec/ram_addr.h
++++ b/include/exec/ram_addr.h
+@@ -72,12 +72,33 @@ static inline unsigned long int ramblock_recv_bitmap_offset(void *host_addr,
+ 
+ long qemu_getrampagesize(void);
+ unsigned long last_ram_page(void);
++
++/**
++ * qemu_ram_alloc_from_file,
++ * qemu_ram_alloc_from_fd:  Allocate a ram block from the specified backing
++ *                          file or device
++ *
++ * Parameters:
++ *  @size: the size in bytes of the ram block
++ *  @mr: the memory region where the ram block is
++ *  @ram_flags: specify the properties of the ram block, which can be one
++ *              or bit-or of following values
++ *              - RAM_SHARED: mmap the backing file or device with MAP_SHARED
++ *              Other bits are ignored.
++ *  @mem_path or @fd: specify the backing file or device
++ *  @errp: pointer to Error*, to store an error if it happens
++ *
++ * Return:
++ *  On success, return a pointer to the ram block.
++ *  On failure, return NULL.
++ */
+ RAMBlock *qemu_ram_alloc_from_file(ram_addr_t size, MemoryRegion *mr,
+-                                   bool share, const char *mem_path,
++                                   uint32_t ram_flags, const char *mem_path,
+                                    Error **errp);
+ RAMBlock *qemu_ram_alloc_from_fd(ram_addr_t size, MemoryRegion *mr,
+-                                 bool share, int fd,
++                                 uint32_t ram_flags, int fd,
+                                  Error **errp);
++
+ RAMBlock *qemu_ram_alloc_from_ptr(ram_addr_t size, void *host,
+                                   MemoryRegion *mr, Error **errp);
+ RAMBlock *qemu_ram_alloc(ram_addr_t size, bool share, MemoryRegion *mr,
+diff --git a/memory.c b/memory.c
+index e70b64b..7b47f53 100644
+--- a/memory.c
++++ b/memory.c
+@@ -1552,7 +1552,7 @@ void memory_region_init_ram_from_file(MemoryRegion *mr,
+                                       const char *name,
+                                       uint64_t size,
+                                       uint64_t align,
+-                                      bool share,
++                                      uint32_t ram_flags,
+                                       const char *path,
+                                       Error **errp)
+ {
+@@ -1561,7 +1561,7 @@ void memory_region_init_ram_from_file(MemoryRegion *mr,
+     mr->terminates = true;
+     mr->destructor = memory_region_destructor_ram;
+     mr->align = align;
+-    mr->ram_block = qemu_ram_alloc_from_file(size, mr, share, path, errp);
++    mr->ram_block = qemu_ram_alloc_from_file(size, mr, ram_flags, path, errp);
+     mr->dirty_log_mask = tcg_enabled() ? (1 << DIRTY_MEMORY_CODE) : 0;
+ }
+ 
+@@ -1577,7 +1577,9 @@ void memory_region_init_ram_from_fd(MemoryRegion *mr,
+     mr->ram = true;
+     mr->terminates = true;
+     mr->destructor = memory_region_destructor_ram;
+-    mr->ram_block = qemu_ram_alloc_from_fd(size, mr, share, fd, errp);
++    mr->ram_block = qemu_ram_alloc_from_fd(size, mr,
++                                           share ? RAM_SHARED : 0,
++                                           fd, errp);
+     mr->dirty_log_mask = tcg_enabled() ? (1 << DIRTY_MEMORY_CODE) : 0;
+ }
+ #endif
+diff --git a/numa.c b/numa.c
+index bb8f773..e78fba5 100644
+--- a/numa.c
++++ b/numa.c
+@@ -456,7 +456,7 @@ static void allocate_system_memory_nonnuma(MemoryRegion *mr, Object *owner,
+     if (mem_path) {
+ #ifdef __linux__
+         Error *err = NULL;
+-        memory_region_init_ram_from_file(mr, owner, name, ram_size, 0, false,
++        memory_region_init_ram_from_file(mr, owner, name, ram_size, 0, 0,
+                                          mem_path, &err);
+         if (err) {
+             error_report_err(err);
+-- 
+1.8.3.1
+

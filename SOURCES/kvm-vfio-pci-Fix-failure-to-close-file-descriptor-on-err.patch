@@ -1,0 +1,44 @@
+From da8839a4373667b017e935d7c365af6cbfd97bb9 Mon Sep 17 00:00:00 2001
+From: Alex Williamson <alex.williamson@redhat.com>
+Date: Mon, 3 Dec 2018 21:54:02 +0100
+Subject: [PATCH 23/34] vfio/pci: Fix failure to close file descriptor on error
+
+RH-Author: Alex Williamson <alex.williamson@redhat.com>
+Message-id: <154387404228.26945.9774510369852793346.stgit@gimli.home>
+Patchwork-id: 83232
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 6/7] vfio/pci: Fix failure to close file descriptor on error
+Bugzilla: 1619778
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+
+Bugzilla: 1619778
+
+A new error path fails to close the device file descriptor when
+triggered by a ballooning incompatibility within the group.  Fix it.
+
+Fixes: 238e91728503 ("vfio/ccw/pci: Allow devices to opt-in for ballooning")
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+(cherry picked from commit 8709b3954d4161bad30ccc435408ec50e10f53cc)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/vfio/common.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index cda2d1f..3ab92bd 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1424,6 +1424,7 @@ int vfio_get_device(VFIOGroup *group, const char *name,
+         if (!QLIST_EMPTY(&group->device_list)) {
+             error_setg(errp,
+                        "Inconsistent device balloon setting within group");
++            close(fd);
+             return -1;
+         }
+ 
+-- 
+1.8.3.1
+

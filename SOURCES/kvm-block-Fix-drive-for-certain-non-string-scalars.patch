@@ -1,0 +1,123 @@
+From 0a45c26f9838054d3f97b35e82877239d4e7c920 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:18 +0200
+Subject: [PATCH 11/54] block: Fix -drive for certain non-string scalars
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-12-armbru@redhat.com>
+Patchwork-id: 80737
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 11/23] block: Fix -drive for certain non-string scalars
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+The previous commit fixed -blockdev breakage due to misuse of the
+qobject input visitor's keyval flavor in bdrv_file_open().  The commit
+message explain why using the plain flavor would be just as wrong; it
+would break -drive.  Turns out we break it in three places:
+nbd_open(), sd_open() and ssh_file_open().  They are even marked
+FIXME.  Example breakage:
+
+    $ qemu-system-x86 -drive node-name=n1,driver=nbd,server.type=inet,server.host=localhost,server.port=1234,server.numeric=off
+    qemu-system-x86: -drive node-name=n1,driver=nbd,server.type=inet,server.host=localhost,server.port=1234,server.numeric=off: Invalid parameter type for 'numeric', expected: boolean
+
+Fix it the same way: replace qdict_crumple() by
+qdict_crumple_for_keyval_qiv(), and switch from plain to the keyval
+flavor.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 374c52467a38c2e811f6c0db4edc9ea7d5f34341)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd.c      | 12 ++----------
+ block/sheepdog.c | 12 ++----------
+ block/ssh.c      | 12 ++----------
+ 3 files changed, 6 insertions(+), 30 deletions(-)
+
+diff --git a/block/nbd.c b/block/nbd.c
+index f499830..b0be357 100644
+--- a/block/nbd.c
++++ b/block/nbd.c
+@@ -273,20 +273,12 @@ static SocketAddress *nbd_config(BDRVNBDState *s, QDict *options,
+         goto done;
+     }
+ 
+-    crumpled_addr = qdict_crumple(addr, errp);
++    crumpled_addr = qdict_crumple_for_keyval_qiv(addr, errp);
+     if (!crumpled_addr) {
+         goto done;
+     }
+ 
+-    /*
+-     * FIXME .numeric, .to, .ipv4 or .ipv6 don't work with -drive
+-     * server.type=inet.  .to doesn't matter, it's ignored anyway.
+-     * That's because when @options come from -blockdev or
+-     * blockdev_add, members are typed according to the QAPI schema,
+-     * but when they come from -drive, they're all QString.  The
+-     * visitor expects the former.
+-     */
+-    iv = qobject_input_visitor_new(crumpled_addr);
++    iv = qobject_input_visitor_new_keyval(crumpled_addr);
+     visit_type_SocketAddress(iv, NULL, &saddr, &local_err);
+     if (local_err) {
+         error_propagate(errp, local_err);
+diff --git a/block/sheepdog.c b/block/sheepdog.c
+index 821a3c4..dd582d5 100644
+--- a/block/sheepdog.c
++++ b/block/sheepdog.c
+@@ -546,20 +546,12 @@ static SocketAddress *sd_server_config(QDict *options, Error **errp)
+ 
+     qdict_extract_subqdict(options, &server, "server.");
+ 
+-    crumpled_server = qdict_crumple(server, errp);
++    crumpled_server = qdict_crumple_for_keyval_qiv(server, errp);
+     if (!crumpled_server) {
+         goto done;
+     }
+ 
+-    /*
+-     * FIXME .numeric, .to, .ipv4 or .ipv6 don't work with -drive
+-     * server.type=inet.  .to doesn't matter, it's ignored anyway.
+-     * That's because when @options come from -blockdev or
+-     * blockdev_add, members are typed according to the QAPI schema,
+-     * but when they come from -drive, they're all QString.  The
+-     * visitor expects the former.
+-     */
+-    iv = qobject_input_visitor_new(crumpled_server);
++    iv = qobject_input_visitor_new_keyval(crumpled_server);
+     visit_type_SocketAddress(iv, NULL, &saddr, &local_err);
+     if (local_err) {
+         error_propagate(errp, local_err);
+diff --git a/block/ssh.c b/block/ssh.c
+index 5931064..2fc7cd9 100644
+--- a/block/ssh.c
++++ b/block/ssh.c
+@@ -623,20 +623,12 @@ static BlockdevOptionsSsh *ssh_parse_options(QDict *options, Error **errp)
+     }
+ 
+     /* Create the QAPI object */
+-    crumpled = qdict_crumple(options, errp);
++    crumpled = qdict_crumple_for_keyval_qiv(options, errp);
+     if (crumpled == NULL) {
+         goto fail;
+     }
+ 
+-    /*
+-     * FIXME .numeric, .to, .ipv4 or .ipv6 don't work with -drive.
+-     * .to doesn't matter, it's ignored anyway.
+-     * That's because when @options come from -blockdev or
+-     * blockdev_add, members are typed according to the QAPI schema,
+-     * but when they come from -drive, they're all QString.  The
+-     * visitor expects the former.
+-     */
+-    v = qobject_input_visitor_new(crumpled);
++    v = qobject_input_visitor_new_keyval(crumpled);
+     visit_type_BlockdevOptionsSsh(v, NULL, &result, &local_err);
+     visit_free(v);
+     qobject_unref(crumpled);
+-- 
+1.8.3.1
+

@@ -1,0 +1,465 @@
+From 8a66fde222f0192c1d9ce215f297964ab34235c7 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:20 +0200
+Subject: [PATCH 13/54] block: Factor out
+ qobject_input_visitor_new_flat_confused()
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-14-armbru@redhat.com>
+Patchwork-id: 80728
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 13/23] block: Factor out qobject_input_visitor_new_flat_confused()
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit af91062ee1408f7f5bb58389d355d29a5040c648)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd.c           |  7 ++-----
+ block/nfs.c           |  7 ++-----
+ block/parallels.c     |  7 ++-----
+ block/qcow.c          |  7 ++-----
+ block/qcow2.c         |  7 ++-----
+ block/qed.c           |  7 ++-----
+ block/rbd.c           |  7 ++-----
+ block/sheepdog.c      | 14 ++++----------
+ block/ssh.c           |  7 ++-----
+ block/vhdx.c          |  7 ++-----
+ block/vpc.c           |  7 ++-----
+ include/block/qdict.h |  3 ++-
+ qobject/block-qdict.c | 28 +++++++++++++++++++++++++++-
+ 13 files changed, 53 insertions(+), 62 deletions(-)
+
+diff --git a/block/nbd.c b/block/nbd.c
+index b0be357..10912c3 100644
+--- a/block/nbd.c
++++ b/block/nbd.c
+@@ -263,7 +263,6 @@ static SocketAddress *nbd_config(BDRVNBDState *s, QDict *options,
+ {
+     SocketAddress *saddr = NULL;
+     QDict *addr = NULL;
+-    QObject *crumpled_addr = NULL;
+     Visitor *iv = NULL;
+     Error *local_err = NULL;
+ 
+@@ -273,12 +272,11 @@ static SocketAddress *nbd_config(BDRVNBDState *s, QDict *options,
+         goto done;
+     }
+ 
+-    crumpled_addr = qdict_crumple_for_keyval_qiv(addr, errp);
+-    if (!crumpled_addr) {
++    iv = qobject_input_visitor_new_flat_confused(addr, errp);
++    if (!iv) {
+         goto done;
+     }
+ 
+-    iv = qobject_input_visitor_new_keyval(crumpled_addr);
+     visit_type_SocketAddress(iv, NULL, &saddr, &local_err);
+     if (local_err) {
+         error_propagate(errp, local_err);
+@@ -287,7 +285,6 @@ static SocketAddress *nbd_config(BDRVNBDState *s, QDict *options,
+ 
+ done:
+     qobject_unref(addr);
+-    qobject_unref(crumpled_addr);
+     visit_free(iv);
+     return saddr;
+ }
+diff --git a/block/nfs.c b/block/nfs.c
+index 4090d28..1e12958 100644
+--- a/block/nfs.c
++++ b/block/nfs.c
+@@ -556,19 +556,16 @@ static BlockdevOptionsNfs *nfs_options_qdict_to_qapi(QDict *options,
+                                                      Error **errp)
+ {
+     BlockdevOptionsNfs *opts = NULL;
+-    QObject *crumpled = NULL;
+     Visitor *v;
+     Error *local_err = NULL;
+ 
+-    crumpled = qdict_crumple_for_keyval_qiv(options, errp);
+-    if (crumpled == NULL) {
++    v = qobject_input_visitor_new_flat_confused(options, errp);
++    if (!v) {
+         return NULL;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(crumpled);
+     visit_type_BlockdevOptionsNfs(v, NULL, &opts, &local_err);
+     visit_free(v);
+-    qobject_unref(crumpled);
+ 
+     if (local_err) {
+         return NULL;
+diff --git a/block/parallels.c b/block/parallels.c
+index 1c96c39..b6ebe36 100644
+--- a/block/parallels.c
++++ b/block/parallels.c
+@@ -615,7 +615,6 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
+     Error *local_err = NULL;
+     BlockDriverState *bs = NULL;
+     QDict *qdict;
+-    QObject *qobj;
+     Visitor *v;
+     int ret;
+ 
+@@ -651,14 +650,12 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "parallels");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    if (!qobj) {
++    v = qobject_input_visitor_new_flat_confused(qdict, errp);
++    if (!v) {
+         ret = -EINVAL;
+         goto done;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(qobj);
+-    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/qcow.c b/block/qcow.c
+index 43a595a..4b3bc31 100644
+--- a/block/qcow.c
++++ b/block/qcow.c
+@@ -945,7 +945,6 @@ static int coroutine_fn qcow_co_create_opts(const char *filename,
+     BlockdevCreateOptions *create_options = NULL;
+     BlockDriverState *bs = NULL;
+     QDict *qdict;
+-    QObject *qobj;
+     Visitor *v;
+     const char *val;
+     Error *local_err = NULL;
+@@ -995,14 +994,12 @@ static int coroutine_fn qcow_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "qcow");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    if (!qobj) {
++    v = qobject_input_visitor_new_flat_confused(qdict, errp);
++    if (!v) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(qobj);
+-    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/qcow2.c b/block/qcow2.c
+index ede52a8..35842c5 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -3068,7 +3068,6 @@ static int coroutine_fn qcow2_co_create_opts(const char *filename, QemuOpts *opt
+ {
+     BlockdevCreateOptions *create_options = NULL;
+     QDict *qdict;
+-    QObject *qobj;
+     Visitor *v;
+     BlockDriverState *bs = NULL;
+     Error *local_err = NULL;
+@@ -3139,14 +3138,12 @@ static int coroutine_fn qcow2_co_create_opts(const char *filename, QemuOpts *opt
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     /* Now get the QAPI type BlockdevCreateOptions */
+-    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    if (!qobj) {
++    v = qobject_input_visitor_new_flat_confused(qdict, errp);
++    if (!v) {
+         ret = -EINVAL;
+         goto finish;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(qobj);
+-    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/qed.c b/block/qed.c
+index 3818888..4c5d7e8 100644
+--- a/block/qed.c
++++ b/block/qed.c
+@@ -723,7 +723,6 @@ static int coroutine_fn bdrv_qed_co_create_opts(const char *filename,
+ {
+     BlockdevCreateOptions *create_options = NULL;
+     QDict *qdict;
+-    QObject *qobj;
+     Visitor *v;
+     BlockDriverState *bs = NULL;
+     Error *local_err = NULL;
+@@ -763,14 +762,12 @@ static int coroutine_fn bdrv_qed_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "qed");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    if (!qobj) {
++    v = qobject_input_visitor_new_flat_confused(qdict, errp);
++    if (!v) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(qobj);
+-    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/rbd.c b/block/rbd.c
+index 0b5455f..c834d72 100644
+--- a/block/rbd.c
++++ b/block/rbd.c
+@@ -623,7 +623,6 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
+     BDRVRBDState *s = bs->opaque;
+     BlockdevOptionsRbd *opts = NULL;
+     Visitor *v;
+-    QObject *crumpled = NULL;
+     const QDictEntry *e;
+     Error *local_err = NULL;
+     char *keypairs, *secretid;
+@@ -640,16 +639,14 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
+     }
+ 
+     /* Convert the remaining options into a QAPI object */
+-    crumpled = qdict_crumple_for_keyval_qiv(options, errp);
+-    if (crumpled == NULL) {
++    v = qobject_input_visitor_new_flat_confused(options, errp);
++    if (!v) {
+         r = -EINVAL;
+         goto out;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(crumpled);
+     visit_type_BlockdevOptionsRbd(v, NULL, &opts, &local_err);
+     visit_free(v);
+-    qobject_unref(crumpled);
+ 
+     if (local_err) {
+         error_propagate(errp, local_err);
+diff --git a/block/sheepdog.c b/block/sheepdog.c
+index dd582d5..d1c9bf5 100644
+--- a/block/sheepdog.c
++++ b/block/sheepdog.c
+@@ -539,19 +539,17 @@ static void sd_aio_setup(SheepdogAIOCB *acb, BDRVSheepdogState *s,
+ static SocketAddress *sd_server_config(QDict *options, Error **errp)
+ {
+     QDict *server = NULL;
+-    QObject *crumpled_server = NULL;
+     Visitor *iv = NULL;
+     SocketAddress *saddr = NULL;
+     Error *local_err = NULL;
+ 
+     qdict_extract_subqdict(options, &server, "server.");
+ 
+-    crumpled_server = qdict_crumple_for_keyval_qiv(server, errp);
+-    if (!crumpled_server) {
++    iv = qobject_input_visitor_new_flat_confused(server, errp);
++    if (!iv) {
+         goto done;
+     }
+ 
+-    iv = qobject_input_visitor_new_keyval(crumpled_server);
+     visit_type_SocketAddress(iv, NULL, &saddr, &local_err);
+     if (local_err) {
+         error_propagate(errp, local_err);
+@@ -560,7 +558,6 @@ static SocketAddress *sd_server_config(QDict *options, Error **errp)
+ 
+ done:
+     visit_free(iv);
+-    qobject_unref(crumpled_server);
+     qobject_unref(server);
+     return saddr;
+ }
+@@ -2174,7 +2171,6 @@ static int coroutine_fn sd_co_create_opts(const char *filename, QemuOpts *opts,
+ {
+     BlockdevCreateOptions *create_options = NULL;
+     QDict *qdict, *location_qdict;
+-    QObject *crumpled;
+     Visitor *v;
+     const char *redundancy;
+     Error *local_err = NULL;
+@@ -2210,16 +2206,14 @@ static int coroutine_fn sd_co_create_opts(const char *filename, QemuOpts *opts,
+     }
+ 
+     /* Get the QAPI object */
+-    crumpled = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    if (crumpled == NULL) {
++    v = qobject_input_visitor_new_flat_confused(qdict, errp);
++    if (!v) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(crumpled);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+-    qobject_unref(crumpled);
+ 
+     if (local_err) {
+         error_propagate(errp, local_err);
+diff --git a/block/ssh.c b/block/ssh.c
+index 2fc7cd9..aab6996 100644
+--- a/block/ssh.c
++++ b/block/ssh.c
+@@ -606,7 +606,6 @@ static BlockdevOptionsSsh *ssh_parse_options(QDict *options, Error **errp)
+     BlockdevOptionsSsh *result = NULL;
+     QemuOpts *opts = NULL;
+     Error *local_err = NULL;
+-    QObject *crumpled;
+     const QDictEntry *e;
+     Visitor *v;
+ 
+@@ -623,15 +622,13 @@ static BlockdevOptionsSsh *ssh_parse_options(QDict *options, Error **errp)
+     }
+ 
+     /* Create the QAPI object */
+-    crumpled = qdict_crumple_for_keyval_qiv(options, errp);
+-    if (crumpled == NULL) {
++    v = qobject_input_visitor_new_flat_confused(options, errp);
++    if (!v) {
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(crumpled);
+     visit_type_BlockdevOptionsSsh(v, NULL, &result, &local_err);
+     visit_free(v);
+-    qobject_unref(crumpled);
+ 
+     if (local_err) {
+         error_propagate(errp, local_err);
+diff --git a/block/vhdx.c b/block/vhdx.c
+index 728d8b3..6731298 100644
+--- a/block/vhdx.c
++++ b/block/vhdx.c
+@@ -1964,7 +1964,6 @@ static int coroutine_fn vhdx_co_create_opts(const char *filename,
+ {
+     BlockdevCreateOptions *create_options = NULL;
+     QDict *qdict;
+-    QObject *qobj;
+     Visitor *v;
+     BlockDriverState *bs = NULL;
+     Error *local_err = NULL;
+@@ -2003,14 +2002,12 @@ static int coroutine_fn vhdx_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "vhdx");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    if (!qobj) {
++    v = qobject_input_visitor_new_flat_confused(qdict, errp);
++    if (!v) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(qobj);
+-    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/vpc.c b/block/vpc.c
+index a9bb041..bf294ab 100644
+--- a/block/vpc.c
++++ b/block/vpc.c
+@@ -1082,7 +1082,6 @@ static int coroutine_fn vpc_co_create_opts(const char *filename,
+ {
+     BlockdevCreateOptions *create_options = NULL;
+     QDict *qdict;
+-    QObject *qobj;
+     Visitor *v;
+     BlockDriverState *bs = NULL;
+     Error *local_err = NULL;
+@@ -1119,14 +1118,12 @@ static int coroutine_fn vpc_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "driver", "vpc");
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+-    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    if (!qobj) {
++    v = qobject_input_visitor_new_flat_confused(qdict, errp);
++    if (!v) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(qobj);
+-    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/include/block/qdict.h b/include/block/qdict.h
+index 47d9638..d8cb502 100644
+--- a/include/block/qdict.h
++++ b/include/block/qdict.h
+@@ -21,7 +21,6 @@ void qdict_extract_subqdict(QDict *src, QDict **dst, const char *start);
+ void qdict_array_split(QDict *src, QList **dst);
+ int qdict_array_entries(QDict *src, const char *subqdict);
+ QObject *qdict_crumple(const QDict *src, Error **errp);
+-QObject *qdict_crumple_for_keyval_qiv(QDict *qdict, Error **errp);
+ void qdict_flatten(QDict *qdict);
+ 
+ typedef struct QDictRenames {
+@@ -30,4 +29,6 @@ typedef struct QDictRenames {
+ } QDictRenames;
+ bool qdict_rename_keys(QDict *qdict, const QDictRenames *renames, Error **errp);
+ 
++Visitor *qobject_input_visitor_new_flat_confused(QDict *qdict,
++                                                 Error **errp);
+ #endif
+diff --git a/qobject/block-qdict.c b/qobject/block-qdict.c
+index aba372c..41f39ab 100644
+--- a/qobject/block-qdict.c
++++ b/qobject/block-qdict.c
+@@ -13,6 +13,7 @@
+ #include "qapi/qmp/qlist.h"
+ #include "qapi/qmp/qnum.h"
+ #include "qapi/qmp/qstring.h"
++#include "qapi/qobject-input-visitor.h"
+ #include "qemu/cutils.h"
+ #include "qapi/error.h"
+ 
+@@ -529,7 +530,7 @@ QObject *qdict_crumple(const QDict *src, Error **errp)
+  * used for anything else, and it should go away once the block
+  * subsystem has been cleaned up.
+  */
+-QObject *qdict_crumple_for_keyval_qiv(QDict *src, Error **errp)
++static QObject *qdict_crumple_for_keyval_qiv(QDict *src, Error **errp)
+ {
+     QDict *tmp = NULL;
+     char *buf;
+@@ -695,3 +696,28 @@ bool qdict_rename_keys(QDict *qdict, const QDictRenames *renames, Error **errp)
+     }
+     return true;
+ }
++
++/*
++ * Create a QObject input visitor for flat @qdict with possibly
++ * confused scalar types.
++ *
++ * The block subsystem uses this function to visit its flat QDict with
++ * possibly confused scalar types.  It should not be used for anything
++ * else, and it should go away once the block subsystem has been
++ * cleaned up.
++ */
++Visitor *qobject_input_visitor_new_flat_confused(QDict *qdict,
++                                                 Error **errp)
++{
++    QObject *crumpled;
++    Visitor *v;
++
++    crumpled = qdict_crumple_for_keyval_qiv(qdict, errp);
++    if (!crumpled) {
++        return NULL;
++    }
++
++    v = qobject_input_visitor_new_keyval(crumpled);
++    qobject_unref(crumpled);
++    return v;
++}
+-- 
+1.8.3.1
+

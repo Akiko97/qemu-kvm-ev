@@ -1,0 +1,102 @@
+From a174500971a42552a30d238bf9ec065d27fd4b32 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:36 +0200
+Subject: [PATCH 45/49] blockjob: Lie better in child_job_drained_poll()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-39-kwolf@redhat.com>
+Patchwork-id: 82192
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 38/42] blockjob: Lie better in child_job_drained_poll()
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Block jobs claim in .drained_poll() that they are in a quiescent state
+as soon as job->deferred_to_main_loop is true. This is obviously wrong,
+they still have a completion BH to run. We only get away with this
+because commit 91af091f923 added an unconditional aio_poll(false) to the
+drain functions, but this is bypassing the regular drain mechanisms.
+
+However, just removing this and telling that the job is still active
+doesn't work either: The completion callbacks themselves call drain
+functions (directly, or indirectly with bdrv_reopen), so they would
+deadlock then.
+
+As a better lie, tell that the job is active as long as the BH is
+pending, but falsely call it quiescent from the point in the BH when the
+completion callback is called. At this point, nested drain calls won't
+deadlock because they ignore the job, and outer drains will wait for the
+job to really reach a quiescent state because the callback is already
+running.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c         |  2 +-
+ include/qemu/job.h |  3 +++
+ job.c              | 11 ++++++++++-
+ 3 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index 8d27e8e..617d86f 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -164,7 +164,7 @@ static bool child_job_drained_poll(BdrvChild *c)
+     /* An inactive or completed job doesn't have any pending requests. Jobs
+      * with !job->busy are either already paused or have a pause point after
+      * being reentered, so no job driver code will run before they pause. */
+-    if (!job->busy || job_is_completed(job) || job->deferred_to_main_loop) {
++    if (!job->busy || job_is_completed(job)) {
+         return false;
+     }
+ 
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 35ac7a9..d1710f3 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -76,6 +76,9 @@ typedef struct Job {
+      * Set to false by the job while the coroutine has yielded and may be
+      * re-entered by job_enter(). There may still be I/O or event loop activity
+      * pending. Accessed under block_job_mutex (in blockjob.c).
++     *
++     * When the job is deferred to the main loop, busy is true as long as the
++     * bottom half is still pending.
+      */
+     bool busy;
+ 
+diff --git a/job.c b/job.c
+index 47b5a11..42af9e2 100644
+--- a/job.c
++++ b/job.c
+@@ -852,7 +852,16 @@ static void job_exit(void *opaque)
+     AioContext *ctx = job->aio_context;
+ 
+     aio_context_acquire(ctx);
++
++    /* This is a lie, we're not quiescent, but still doing the completion
++     * callbacks. However, completion callbacks tend to involve operations that
++     * drain block nodes, and if .drained_poll still returned true, we would
++     * deadlock. */
++    job->busy = false;
++    job_event_idle(job);
++
+     job_completed(job);
++
+     aio_context_release(ctx);
+ }
+ 
+@@ -867,8 +876,8 @@ static void coroutine_fn job_co_entry(void *opaque)
+     assert(job && job->driver && job->driver->run);
+     job_pause_point(job);
+     job->ret = job->driver->run(job, &job->err);
+-    job_event_idle(job);
+     job->deferred_to_main_loop = true;
++    job->busy = true;
+     aio_bh_schedule_oneshot(qemu_get_aio_context(), job_exit, job);
+ }
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,69 @@
+From 80e27f95206b2df21b9a53dd3a0956246de495db Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:25 +0200
+Subject: [PATCH 18/54] block-qdict: Simplify qdict_is_list() some
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-19-armbru@redhat.com>
+Patchwork-id: 80741
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 18/23] block-qdict: Simplify qdict_is_list() some
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit c78b8cfbfd53737353dc94dfb99c57d72ce31ab5)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qobject/block-qdict.c | 27 +++++++++++----------------
+ 1 file changed, 11 insertions(+), 16 deletions(-)
+
+diff --git a/qobject/block-qdict.c b/qobject/block-qdict.c
+index 36cf58a..e51a3d2 100644
+--- a/qobject/block-qdict.c
++++ b/qobject/block-qdict.c
+@@ -317,27 +317,22 @@ static int qdict_is_list(QDict *maybe_list, Error **errp)
+ 
+     for (ent = qdict_first(maybe_list); ent != NULL;
+          ent = qdict_next(maybe_list, ent)) {
++        int is_index = !qemu_strtoi64(ent->key, NULL, 10, &val);
+ 
+-        if (qemu_strtoi64(ent->key, NULL, 10, &val) == 0) {
+-            if (is_list == -1) {
+-                is_list = 1;
+-            } else if (!is_list) {
+-                error_setg(errp,
+-                           "Cannot mix list and non-list keys");
+-                return -1;
+-            }
++        if (is_list == -1) {
++            is_list = is_index;
++        }
++
++        if (is_index != is_list) {
++            error_setg(errp, "Cannot mix list and non-list keys");
++            return -1;
++        }
++
++        if (is_index) {
+             len++;
+             if (val > max) {
+                 max = val;
+             }
+-        } else {
+-            if (is_list == -1) {
+-                is_list = 0;
+-            } else if (is_list) {
+-                error_setg(errp,
+-                           "Cannot mix list and non-list keys");
+-                return -1;
+-            }
+         }
+     }
+ 
+-- 
+1.8.3.1
+

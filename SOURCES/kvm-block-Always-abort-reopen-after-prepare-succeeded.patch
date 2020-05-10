@@ -1,0 +1,84 @@
+From 168f27ca545f530ac694ed596bdafc8fa3c26860 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:10:00 +0100
+Subject: [PATCH 004/163] block: Always abort reopen after prepare succeeded
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-5-kwolf@redhat.com>
+Patchwork-id: 84881
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 04/14] block: Always abort reopen after prepare succeeded
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Max Reitz <mreitz@redhat.com>
+
+bdrv_reopen_multiple() does not invoke bdrv_reopen_abort() for the
+element of the reopen queue for which bdrv_reopen_prepare() failed,
+because it assumes that the prepare function will have rolled back all
+changes already.
+
+However, bdrv_reopen_prepare() does not do this in every case: It may
+notice an error after BlockDriver.bdrv_reopen_prepare() succeeded, and
+it will not invoke BlockDriver.bdrv_reopen_abort() then; and neither
+will bdrv_reopen_multiple(), as explained above.
+
+This is wrong because we must always call .bdrv_reopen_commit() or
+.bdrv_reopen_abort() after .bdrv_reopen_prepare() has succeeded.
+Otherwise, the block driver has no chance to undo what it has done in
+its implementation of .bdrv_reopen_prepare().
+
+To fix this, bdrv_reopen_prepare() has to call .bdrv_reopen_abort() if
+it wants to return an error after .bdrv_reopen_prepare() has succeeded.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 9ad08c44566bf4466c6263c71d43e9f7a354d4ba)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/block.c b/block.c
+index c3148cc..2f1b4d1 100644
+--- a/block.c
++++ b/block.c
+@@ -3191,6 +3191,7 @@ int bdrv_reopen_prepare(BDRVReopenState *reopen_state, BlockReopenQueue *queue,
+     QemuOpts *opts;
+     const char *value;
+     bool read_only;
++    bool drv_prepared = false;
+ 
+     assert(reopen_state != NULL);
+     assert(reopen_state->bs->drv != NULL);
+@@ -3260,6 +3261,8 @@ int bdrv_reopen_prepare(BDRVReopenState *reopen_state, BlockReopenQueue *queue,
+         goto error;
+     }
+ 
++    drv_prepared = true;
++
+     /* Options that are not handled are only okay if they are unchanged
+      * compared to the old state. It is expected that some options are only
+      * used for the initial open, but not reopen (e.g. filename) */
+@@ -3303,6 +3306,15 @@ int bdrv_reopen_prepare(BDRVReopenState *reopen_state, BlockReopenQueue *queue,
+     ret = 0;
+ 
+ error:
++    if (ret < 0 && drv_prepared) {
++        /* drv->bdrv_reopen_prepare() has succeeded, so we need to
++         * call drv->bdrv_reopen_abort() before signaling an error
++         * (bdrv_reopen_multiple() will not call bdrv_reopen_abort()
++         * when the respective bdrv_reopen_prepare() has failed) */
++        if (drv->bdrv_reopen_abort) {
++            drv->bdrv_reopen_abort(reopen_state);
++        }
++    }
+     qemu_opts_del(opts);
+     return ret;
+ }
+-- 
+1.8.3.1
+

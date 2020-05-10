@@ -1,0 +1,127 @@
+From b6bc2d692f4f3c41b61c0917d4709e91827c8432 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Mon, 3 Sep 2018 04:52:36 +0200
+Subject: [PATCH 21/29] intel-iommu: only do page walk for MAP notifiers
+
+RH-Author: Peter Xu <peterx@redhat.com>
+Message-id: <20180903045241.6456-5-peterx@redhat.com>
+Patchwork-id: 82024
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 4/9] intel-iommu: only do page walk for MAP notifiers
+Bugzilla: 1623859
+RH-Acked-by: Xiao Wang <jasowang@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+
+For UNMAP-only IOMMU notifiers, we don't need to walk the page tables.
+Fasten that procedure by skipping the page table walk.  That should
+boost performance for UNMAP-only notifiers like vhost.
+
+CC: QEMU Stable <qemu-stable@nongnu.org>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 4f8a62a933a79094e44bc1b16b63bb23e62d67b4)
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/intel_iommu.c         | 44 ++++++++++++++++++++++++++++++++++++++-----
+ include/hw/i386/intel_iommu.h |  2 ++
+ 2 files changed, 41 insertions(+), 5 deletions(-)
+
+diff --git a/hw/i386/intel_iommu.c b/hw/i386/intel_iommu.c
+index 8d4069d..38ccc74 100644
+--- a/hw/i386/intel_iommu.c
++++ b/hw/i386/intel_iommu.c
+@@ -138,6 +138,12 @@ static inline void vtd_iommu_unlock(IntelIOMMUState *s)
+     qemu_mutex_unlock(&s->iommu_lock);
+ }
+ 
++/* Whether the address space needs to notify new mappings */
++static inline gboolean vtd_as_has_map_notifier(VTDAddressSpace *as)
++{
++    return as->notifier_flags & IOMMU_NOTIFIER_MAP;
++}
++
+ /* GHashTable functions */
+ static gboolean vtd_uint64_equal(gconstpointer v1, gconstpointer v2)
+ {
+@@ -1436,14 +1442,36 @@ static void vtd_iotlb_page_invalidate_notify(IntelIOMMUState *s,
+     VTDAddressSpace *vtd_as;
+     VTDContextEntry ce;
+     int ret;
++    hwaddr size = (1 << am) * VTD_PAGE_SIZE;
+ 
+     QLIST_FOREACH(vtd_as, &(s->vtd_as_with_notifiers), next) {
+         ret = vtd_dev_to_context_entry(s, pci_bus_num(vtd_as->bus),
+                                        vtd_as->devfn, &ce);
+         if (!ret && domain_id == VTD_CONTEXT_ENTRY_DID(ce.hi)) {
+-            vtd_page_walk(&ce, addr, addr + (1 << am) * VTD_PAGE_SIZE,
+-                          vtd_page_invalidate_notify_hook,
+-                          (void *)&vtd_as->iommu, true, s->aw_bits);
++            if (vtd_as_has_map_notifier(vtd_as)) {
++                /*
++                 * As long as we have MAP notifications registered in
++                 * any of our IOMMU notifiers, we need to sync the
++                 * shadow page table.
++                 */
++                vtd_page_walk(&ce, addr, addr + size,
++                              vtd_page_invalidate_notify_hook,
++                              (void *)&vtd_as->iommu, true, s->aw_bits);
++            } else {
++                /*
++                 * For UNMAP-only notifiers, we don't need to walk the
++                 * page tables.  We just deliver the PSI down to
++                 * invalidate caches.
++                 */
++                IOMMUTLBEntry entry = {
++                    .target_as = &address_space_memory,
++                    .iova = addr,
++                    .translated_addr = 0,
++                    .addr_mask = size - 1,
++                    .perm = IOMMU_NONE,
++                };
++                memory_region_notify_iommu(&vtd_as->iommu, entry);
++            }
+         }
+     }
+ }
+@@ -2383,6 +2411,9 @@ static void vtd_iommu_notify_flag_changed(IOMMUMemoryRegion *iommu,
+         exit(1);
+     }
+ 
++    /* Update per-address-space notifier flags */
++    vtd_as->notifier_flags = new;
++
+     if (old == IOMMU_NOTIFIER_NONE) {
+         QLIST_INSERT_HEAD(&s->vtd_as_with_notifiers, vtd_as, next);
+     } else if (new == IOMMU_NOTIFIER_NONE) {
+@@ -2891,8 +2922,11 @@ static void vtd_iommu_replay(IOMMUMemoryRegion *iommu_mr, IOMMUNotifier *n)
+                                   PCI_FUNC(vtd_as->devfn),
+                                   VTD_CONTEXT_ENTRY_DID(ce.hi),
+                                   ce.hi, ce.lo);
+-        vtd_page_walk(&ce, 0, ~0ULL, vtd_replay_hook, (void *)n, false,
+-                      s->aw_bits);
++        if (vtd_as_has_map_notifier(vtd_as)) {
++            /* This is required only for MAP typed notifiers */
++            vtd_page_walk(&ce, 0, ~0ULL, vtd_replay_hook, (void *)n, false,
++                          s->aw_bits);
++        }
+     } else {
+         trace_vtd_replay_ce_invalid(bus_n, PCI_SLOT(vtd_as->devfn),
+                                     PCI_FUNC(vtd_as->devfn));
+diff --git a/include/hw/i386/intel_iommu.h b/include/hw/i386/intel_iommu.h
+index 016e74b..156f35e 100644
+--- a/include/hw/i386/intel_iommu.h
++++ b/include/hw/i386/intel_iommu.h
+@@ -93,6 +93,8 @@ struct VTDAddressSpace {
+     IntelIOMMUState *iommu_state;
+     VTDContextCacheEntry context_cache_entry;
+     QLIST_ENTRY(VTDAddressSpace) next;
++    /* Superset of notifier flags that this address space has */
++    IOMMUNotifierFlag notifier_flags;
+ };
+ 
+ struct VTDBus {
+-- 
+1.8.3.1
+

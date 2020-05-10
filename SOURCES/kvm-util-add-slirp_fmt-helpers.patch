@@ -1,0 +1,141 @@
+From d6d55297f9f1fc28accf2c6a87af0546aba8b3ca Mon Sep 17 00:00:00 2001
+From: jmaloy <jmaloy@redhat.com>
+Date: Wed, 19 Feb 2020 16:29:22 +0100
+Subject: [PATCH 1/2] util: add slirp_fmt() helpers
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Message-id: <20200219162923.18327-2-jmaloy@redhat.com>
+Patchwork-id: 93976
+O-Subject: [RHEL-7.8 qemu-kvm-rhev PATCH v2 1/2] util: add slirp_fmt() helpers
+Bugzilla: 1798972
+RH-Acked-by: Maxim Levitsky <mlevitsk@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+
+From: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+Various calls to snprintf() in libslirp assume that snprintf() returns
+"only" the number of bytes written (excluding terminating NUL).
+
+https://pubs.opengroup.org/onlinepubs/9699919799/functions/snprintf.html#tag_16_159_04
+
+"Upon successful completion, the snprintf() function shall return the
+number of bytes that would be written to s had n been sufficiently
+large excluding the terminating null byte."
+
+Introduce slirp_fmt() that handles several pathological cases the
+way libslirp usually expect:
+
+- treat error as fatal (instead of silently returning -1)
+
+- fmt0() will always \0 end
+
+- return the number of bytes actually written (instead of what would
+  have been written, which would usually result in OOB later), including
+  the ending \0 for fmt0()
+
+- warn if truncation happened (instead of ignoring)
+
+  Other less common cases can still be handled with strcpy/snprintf() etc.
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Samuel Thibault <samuel.thibault@ens-lyon.org>
+Message-Id: <20200127092414.169796-2-marcandre.lureau@redhat.com>
+
+(cherry picked from libslirp commit 30648c03b27fb8d9611b723184216cd3174b6775)
+
+Manually re-adapted, since there is no util.c file in this code version.
+We add the two functions as static functions in the file where they
+are going to be used.
+
+Signed-off-by: Jon Maloy <jmaloy@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ slirp/tcp_subr.c | 65 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 65 insertions(+)
+
+diff --git a/slirp/tcp_subr.c b/slirp/tcp_subr.c
+index b95ba23..c5196a4 100644
+--- a/slirp/tcp_subr.c
++++ b/slirp/tcp_subr.c
+@@ -45,6 +45,9 @@
+ /* Don't do rfc1323 performance enhancements */
+ #define TCP_DO_RFC1323 0
+ 
++static int slirp_fmt(char *str, size_t size, const char *format, ...);
++static int slirp_fmt0(char *str, size_t size, const char *format, ...);
++
+ /*
+  * Tcp initialization
+  */
+@@ -990,3 +993,65 @@ int tcp_ctl(struct socket *so)
+     sb->sb_wptr += sb->sb_cc;
+     return 0;
+ }
++
++static int slirp_vsnprintf(char *str, size_t size,
++                           const char *format, va_list args)
++{
++    int rv = vsnprintf(str, size, format, args);
++
++    if (rv < 0) {
++        g_error("vsnprintf() failed: %s", g_strerror(errno));
++    }
++
++    return rv;
++}
++
++/*
++ * A snprintf()-like function that:
++ * - returns the number of bytes written (excluding optional \0-ending)
++ * - dies on error
++ * - warn on truncation
++ */
++static int slirp_fmt(char *str, size_t size, const char *format, ...)
++{
++    va_list args;
++    int rv;
++
++    va_start(args, format);
++    rv = slirp_vsnprintf(str, size, format, args);
++    va_end(args);
++
++    if (rv > size) {
++        g_critical("vsnprintf() truncation");
++    }
++
++    return MIN(rv, size);
++}
++
++/*
++ * A snprintf()-like function that:
++ * - always \0-end (unless size == 0)
++ * - returns the number of bytes actually written, including \0 ending
++ * - dies on error
++ * - warn on truncation
++ */
++static int slirp_fmt0(char *str, size_t size, const char *format, ...)
++{
++    va_list args;
++    int rv;
++
++    va_start(args, format);
++    rv = slirp_vsnprintf(str, size, format, args);
++    va_end(args);
++
++    if (rv >= size) {
++        g_critical("vsnprintf() truncation");
++        if (size > 0)
++            str[size - 1] = '\0';
++        rv = size;
++    } else {
++        rv += 1; /* include \0 */
++    }
++
++    return rv;
++}
+-- 
+1.8.3.1
+

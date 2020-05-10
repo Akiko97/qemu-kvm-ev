@@ -1,0 +1,49 @@
+From d77dfec42fe78f5010780dadd10d7e20e0877867 Mon Sep 17 00:00:00 2001
+From: Xiao Wang <jasowang@redhat.com>
+Date: Thu, 16 Aug 2018 06:09:02 +0200
+Subject: [PATCH 1/5] e1000e: Do not auto-clear ICR bits which aren't set in
+ EIAC
+
+RH-Author: Xiao Wang <jasowang@redhat.com>
+Message-id: <1534399743-23973-2-git-send-email-jasowang@redhat.com>
+Patchwork-id: 81850
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] e1000e: Do not auto-clear ICR bits which aren't set in EIAC
+Bugzilla: 1596010
+RH-Acked-by: wexu@redhat.com
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+
+From: Jan Kiszka <jan.kiszka@siemens.com>
+
+The spec does not justify clearing of any E1000_ICR_OTHER_CAUSES when
+E1000_ICR_OTHER is set in EIAC. In fact, removing this code fixes the
+issue the Linux driver runs into since 4aea7a5c5e94 ("e1000e: Avoid
+receiver overrun interrupt bursts") and was worked around by
+745d0bd3af99 ("e1000e: Remove Other from EIAC").
+
+Signed-off-by: Jan Kiszka <jan.kiszka@siemens.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+(cherry picked from commit 2285a00c113469bb3e750ca4921cdb7baaae9e25)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/net/e1000e_core.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/hw/net/e1000e_core.c b/hw/net/e1000e_core.c
+index c93c466..9504891 100644
+--- a/hw/net/e1000e_core.c
++++ b/hw/net/e1000e_core.c
+@@ -2022,10 +2022,6 @@ e1000e_msix_notify_one(E1000ECore *core, uint32_t cause, uint32_t int_cfg)
+ 
+     effective_eiac = core->mac[EIAC] & cause;
+ 
+-    if (effective_eiac == E1000_ICR_OTHER) {
+-        effective_eiac |= E1000_ICR_OTHER_CAUSES;
+-    }
+-
+     core->mac[ICR] &= ~effective_eiac;
+ 
+     if (!(core->mac[CTRL_EXT] & E1000_CTRL_EXT_IAME)) {
+-- 
+1.8.3.1
+

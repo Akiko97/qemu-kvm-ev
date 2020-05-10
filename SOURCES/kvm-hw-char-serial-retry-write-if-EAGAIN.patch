@@ -1,0 +1,72 @@
+From d357e5f3a56416c6f5a7a9308b8c30f825d89cfa Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Fri, 20 Jul 2018 12:18:00 +0200
+Subject: [PATCH 88/89] hw/char/serial: retry write if EAGAIN
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: <20180720121800.18952-3-marcandre.lureau@redhat.com>
+Patchwork-id: 81455
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 2/2] hw/char/serial: retry write if EAGAIN
+Bugzilla: 1592817
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If the chardev returns -1 with EAGAIN errno on write(), it should try
+to send it again (EINTR is handled by the chardev itself).
+
+This fixes commit 019288bf137183bf3407c9824655b753bfafc99f
+"hw/char/serial: Only retry if qemu_chr_fe_write returns 0"
+
+Tested-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: Marc-AndrÃ© Lureau <marcandre.lureau@redhat.com>
+Message-Id: <20180716110755.12499-1-marcandre.lureau@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+
+(cherry picked from commit f3575af130c700cea060b51a89008a76dae22259)
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/char/serial.c | 23 ++++++++++++++---------
+ 1 file changed, 14 insertions(+), 9 deletions(-)
+
+diff --git a/hw/char/serial.c b/hw/char/serial.c
+index d4057bf..478f9a8 100644
+--- a/hw/char/serial.c
++++ b/hw/char/serial.c
+@@ -262,15 +262,20 @@ static void serial_xmit(SerialState *s)
+         if (s->mcr & UART_MCR_LOOP) {
+             /* in loopback mode, say that we just received a char */
+             serial_receive1(s, &s->tsr, 1);
+-        } else if (qemu_chr_fe_write(&s->chr, &s->tsr, 1) == 0 &&
+-                   s->tsr_retry < MAX_XMIT_RETRY) {
+-            assert(s->watch_tag == 0);
+-            s->watch_tag =
+-                qemu_chr_fe_add_watch(&s->chr, G_IO_OUT | G_IO_HUP,
+-                                      serial_watch_cb, s);
+-            if (s->watch_tag > 0) {
+-                s->tsr_retry++;
+-                return;
++        } else {
++            int rc = qemu_chr_fe_write(&s->chr, &s->tsr, 1);
++
++            if ((rc == 0 ||
++                 (rc == -1 && errno == EAGAIN)) &&
++                s->tsr_retry < MAX_XMIT_RETRY) {
++                assert(s->watch_tag == 0);
++                s->watch_tag =
++                    qemu_chr_fe_add_watch(&s->chr, G_IO_OUT | G_IO_HUP,
++                                          serial_watch_cb, s);
++                if (s->watch_tag > 0) {
++                    s->tsr_retry++;
++                    return;
++                }
+             }
+         }
+         s->tsr_retry = 0;
+-- 
+1.8.3.1
+

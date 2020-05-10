@@ -1,0 +1,90 @@
+From 1e5bf346765701c7301d3f86311b339288261558 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:18 +0100
+Subject: [PATCH 051/163] iotests: nbd: Stop qemu-nbd before remaking image
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-6-jsnow@redhat.com>
+Patchwork-id: 85093
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 05/28] iotests: nbd: Stop qemu-nbd before remaking image
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+197 is one example where _make_test_img is used twice without stopping
+the NBD server in between. An error will occur like this:
+
+    @@ -26,9 +26,13 @@
+
+     === Partial final cluster ===
+
+    +qemu-img: TEST_DIR/t.IMGFMT: Failed to get "resize" lock
+    +Is another process using the image?
+     Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=1024
+    +Failed to find an available port: Address already in use
+     read 1024/1024 bytes at offset 0
+
+Patch _make_test_img to stop the old qemu-nbd before starting a new one,
+which fixes this problem, and similarly 215.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 2f9d4083f7fdafe82138e983a24ef30b81b029d7)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/common.rc | 21 +++++++++++++++------
+ 1 file changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/tests/qemu-iotests/common.rc b/tests/qemu-iotests/common.rc
+index 9a65a11..1e567b0 100644
+--- a/tests/qemu-iotests/common.rc
++++ b/tests/qemu-iotests/common.rc
+@@ -190,6 +190,16 @@ _use_sample_img()
+     fi
+ }
+ 
++_stop_nbd_server()
++{
++    if [ -f "${QEMU_TEST_DIR}/qemu-nbd.pid" ]; then
++        local QEMU_NBD_PID
++        read QEMU_NBD_PID < "${QEMU_TEST_DIR}/qemu-nbd.pid"
++        kill ${QEMU_NBD_PID}
++        rm -f "${QEMU_TEST_DIR}/qemu-nbd.pid"
++    fi
++}
++
+ _make_test_img()
+ {
+     # extra qemu-img options can be added by tests
+@@ -229,6 +239,10 @@ _make_test_img()
+         extra_img_options="-o $optstr $extra_img_options"
+     fi
+ 
++    if [ $IMGPROTO = "nbd" ]; then
++        _stop_nbd_server
++    fi
++
+     # XXX(hch): have global image options?
+     (
+      if [ $use_backing = 1 ]; then
+@@ -269,12 +283,7 @@ _cleanup_test_img()
+     case "$IMGPROTO" in
+ 
+         nbd)
+-            if [ -f "${QEMU_TEST_DIR}/qemu-nbd.pid" ]; then
+-                local QEMU_NBD_PID
+-                read QEMU_NBD_PID < "${QEMU_TEST_DIR}/qemu-nbd.pid"
+-                kill ${QEMU_NBD_PID}
+-                rm -f "${QEMU_TEST_DIR}/qemu-nbd.pid"
+-            fi
++            _stop_nbd_server
+             rm -f "$TEST_IMG_FILE"
+             ;;
+         vxhs)
+-- 
+1.8.3.1
+

@@ -1,0 +1,56 @@
+From cbc01f1f70ca63d88bc80b38884a064957c9dc41 Mon Sep 17 00:00:00 2001
+From: Thomas Huth <thuth@redhat.com>
+Date: Tue, 28 Aug 2018 17:03:11 +0200
+Subject: [PATCH 01/29] linux-headers: asm-s390/kvm.h header sync
+
+RH-Author: Thomas Huth <thuth@redhat.com>
+Message-id: <1535475792-21136-2-git-send-email-thuth@redhat.com>
+Patchwork-id: 81947
+O-Subject: [RHEL-7.6 qemu-kvm-ma PATCH 1/2] linux-headers: asm-s390/kvm.h header sync
+Bugzilla: 1622962
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+RH-Acked-by: Jens Freimann <jfreimann@redhat.com>
+
+This is a header sync with the linux uapi header. The corresponding
+kernel commit id is a3da7b4a3be51f37f434f14e11e60491f098b6ea.
+
+Signed-off-by: Thomas Huth <thuth@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ linux-headers/asm-s390/kvm.h | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/linux-headers/asm-s390/kvm.h b/linux-headers/asm-s390/kvm.h
+index 11def14..1ab9901 100644
+--- a/linux-headers/asm-s390/kvm.h
++++ b/linux-headers/asm-s390/kvm.h
+@@ -4,7 +4,7 @@
+ /*
+  * KVM s390 specific structures and definitions
+  *
+- * Copyright IBM Corp. 2008
++ * Copyright IBM Corp. 2008, 2018
+  *
+  *    Author(s): Carsten Otte <cotte@de.ibm.com>
+  *               Christian Borntraeger <borntraeger@de.ibm.com>
+@@ -225,6 +225,7 @@ struct kvm_guest_debug_arch {
+ #define KVM_SYNC_FPRS   (1UL << 8)
+ #define KVM_SYNC_GSCB   (1UL << 9)
+ #define KVM_SYNC_BPBC   (1UL << 10)
++#define KVM_SYNC_ETOKEN (1UL << 11)
+ /* length and alignment of the sdnx as a power of two */
+ #define SDNXC 8
+ #define SDNXL (1UL << SDNXC)
+@@ -258,6 +259,8 @@ struct kvm_sync_regs {
+ 		struct {
+ 			__u64 reserved1[2];
+ 			__u64 gscb[4];
++			__u64 etoken;
++			__u64 etoken_extension;
+ 		};
+ 	};
+ };
+-- 
+1.8.3.1
+

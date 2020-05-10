@@ -1,0 +1,70 @@
+From 2002520b4c5e6ca74367f9db22a53d5a463b9de2 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:42 +0100
+Subject: [PATCH 32/33] iotests: improve 169
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-23-jsnow@redhat.com>
+Patchwork-id: 84281
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 22/23] iotests: improve 169
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Before previous patch, iotest 169 was actually broken for the case
+test_persistent__not_migbitmap__offline_shared, while formally
+passing.
+
+After migration log of vm_b had message:
+
+    qemu-system-x86_64: Could not reopen qcow2 layer: Bitmap already
+    exists: bitmap0
+
+which means that invalidation failed and bs->drv = NULL.
+
+It was because we've loaded bitmap twice: on open and on invalidation.
+
+Add code to 169, to catch such fails.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit b9247fc1a8ffe5c367fa049f295fbb58c8ca9d05)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/169 | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/tests/qemu-iotests/169 b/tests/qemu-iotests/169
+index df408f8..8b7947d 100755
+--- a/tests/qemu-iotests/169
++++ b/tests/qemu-iotests/169
+@@ -24,6 +24,7 @@ import time
+ import itertools
+ import operator
+ import new
++import re
+ from iotests import qemu_img
+ 
+ 
+@@ -133,6 +134,14 @@ class TestDirtyBitmapMigration(iotests.QMPTestCase):
+ 
+         if should_migrate:
+             self.vm_b.shutdown()
++
++            # catch 'Could not reopen qcow2 layer: Bitmap already exists'
++            # possible error
++            log = self.vm_b.get_log()
++            log = re.sub(r'^\[I \d+\.\d+\] OPENED\n', '', log)
++            log = re.sub(r'\[I \+\d+\.\d+\] CLOSED\n?$', '', log)
++            self.assertEqual(log, '')
++
+             # recreate vm_b, as we don't want -incoming option (this will lead
+             # to "cat" process left alive after test finish)
+             self.vm_b = iotests.VM(path_suffix='b')
+-- 
+1.8.3.1
+

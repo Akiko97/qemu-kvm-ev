@@ -1,0 +1,82 @@
+From d3f4feea8023be7c0c3db09e4ea1a24a34f8c4a9 Mon Sep 17 00:00:00 2001
+From: Igor Mammedov <imammedo@redhat.com>
+Date: Wed, 31 Jan 2018 10:44:31 +0100
+Subject: spapr: disable memory hotplug
+
+RH-Author: Igor Mammedov <imammedo@redhat.com>
+Message-id: <1517395471-44118-1-git-send-email-imammedo@redhat.com>
+Patchwork-id: 78748
+O-Subject: [RHV7.5 qemu-kvm-ma PATCH v3] spapr: disable memory hotplug
+Bugzilla: 1535952
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1535952
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=15146188
+Upstream: RHEL-only
+
+Disable memory hotplug for qemu-kvm-ma variant of QEMU where
+shouldn't be supported.
+Use CONFIG_RHV to switch feature off only for qemu-kvm-ma and
+not to affect RHEV variant built from the same source code.
+
+PS:
+Disable only (un)plug entry points from device_add/del and
+leave the rest of hotplug hw intact so that -ma machine
+could be migrated to -rhev.
+Note: backward migration would be broken if source -rhev
+machine used pc-dimm devices (either with -device/device_add)
+
+Signed-off-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+(cherry picked from commit bf05b668e4248781d24cfba88bfb9647ca6ca14e)
+(cherry picked from commit dd0871512012fbbe343361bd3ff6fa21545c41d5)
+(cherry picked from commit d42b9faa86dfd70e4ba6b8f2bf108d0e21a1a65d)
+---
+ hw/ppc/spapr.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index f71a62e..360a258 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -3070,6 +3070,9 @@ out:
+ static void spapr_memory_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
+                                   Error **errp)
+ {
++#if !defined(CONFIG_RHV)
++    error_setg(errp, "Memory hotplug not supported for this machine");
++#else
+     PCDIMMDevice *dimm = PC_DIMM(dev);
+     PCDIMMDeviceClass *ddc = PC_DIMM_GET_CLASS(dimm);
+     MemoryRegion *mr;
+@@ -3097,6 +3100,7 @@ static void spapr_memory_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
+ 
+ out:
+     g_free(mem_dev);
++#endif
+ }
+ 
+ struct sPAPRDIMMState {
+@@ -3210,6 +3214,9 @@ void spapr_lmb_release(DeviceState *dev)
+ static void spapr_memory_unplug_request(HotplugHandler *hotplug_dev,
+                                         DeviceState *dev, Error **errp)
+ {
++#if !defined(CONFIG_RHV)
++    error_setg(errp, "Memory hot unplug not supported for this machine");
++#else
+     sPAPRMachineState *spapr = SPAPR_MACHINE(hotplug_dev);
+     Error *local_err = NULL;
+     PCDIMMDevice *dimm = PC_DIMM(dev);
+@@ -3264,6 +3271,7 @@ static void spapr_memory_unplug_request(HotplugHandler *hotplug_dev,
+                                               nr_lmbs, spapr_drc_index(drc));
+ out:
+     error_propagate(errp, local_err);
++#endif
+ }
+ 
+ static void *spapr_populate_hotplug_cpu_dt(CPUState *cs, int *fdt_offset,
+-- 
+1.8.3.1
+

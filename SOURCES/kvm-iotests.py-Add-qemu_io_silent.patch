@@ -1,0 +1,52 @@
+From fc5822a57d255dd35ccb789dc03ac11d699007a1 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 16:43:11 +0200
+Subject: [PATCH 43/54] iotests.py: Add qemu_io_silent
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618164312.24423-5-mreitz@redhat.com>
+Patchwork-id: 80777
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 4/5] iotests.py: Add qemu_io_silent
+Bugzilla: 1519617
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+With qemu-io now returning a useful exit code, some tests may find it
+sufficient to just query that instead of logging (and filtering) the
+whole output.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-id: 20180509194302.21585-5-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 745f2bf4a5b973d1a69b21db97f9e4219da60624)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index b25d48a..9747ca9 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -119,6 +119,15 @@ def qemu_io(*args):
+         sys.stderr.write('qemu-io received signal %i: %s\n' % (-exitcode, ' '.join(args)))
+     return subp.communicate()[0]
+ 
++def qemu_io_silent(*args):
++    '''Run qemu-io and return the exit code, suppressing stdout'''
++    args = qemu_io_args + list(args)
++    exitcode = subprocess.call(args, stdout=open('/dev/null', 'w'))
++    if exitcode < 0:
++        sys.stderr.write('qemu-io received signal %i: %s\n' %
++                         (-exitcode, ' '.join(args)))
++    return exitcode
++
+ 
+ class QemuIoInteractive:
+     def __init__(self, *args):
+-- 
+1.8.3.1
+

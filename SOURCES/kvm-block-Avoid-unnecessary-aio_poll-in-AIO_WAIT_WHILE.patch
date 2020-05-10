@@ -1,0 +1,112 @@
+From 1a6556bc1317af4669d058e6df70bc1c036d37a5 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:04 +0200
+Subject: [PATCH 13/49] block: Avoid unnecessary aio_poll() in AIO_WAIT_WHILE()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-7-kwolf@redhat.com>
+Patchwork-id: 82158
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 06/42] block: Avoid unnecessary aio_poll() in AIO_WAIT_WHILE()
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Commit 91af091f923 added an additional aio_poll() to BDRV_POLL_WHILE()
+in order to make sure that all pending BHs are executed on drain. This
+was the wrong place to make the fix, as it is useless overhead for all
+other users of the macro and unnecessarily complicates the mechanism.
+
+This patch effectively reverts said commit (the context has changed a
+bit and the code has moved to AIO_WAIT_WHILE()) and instead polls in the
+loop condition for drain.
+
+The effect is probably hard to measure in any real-world use case
+because actual I/O will dominate, but if I run only the initialisation
+part of 'qemu-img convert' where it calls bdrv_block_status() for the
+whole image to find out how much data there is copy, this phase actually
+needs only roughly half the time after this patch.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 1cc8e54ada97f7ac479554e15ca9e426c895b158)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c               | 11 ++++++++++-
+ include/block/aio-wait.h | 22 ++++++++--------------
+ 2 files changed, 18 insertions(+), 15 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index e5fc42c..4d332c3 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -181,13 +181,22 @@ static void bdrv_drain_invoke(BlockDriverState *bs, bool begin)
+     BDRV_POLL_WHILE(bs, !data.done);
+ }
+ 
++/* Returns true if BDRV_POLL_WHILE() should go into a blocking aio_poll() */
++static bool bdrv_drain_poll(BlockDriverState *bs)
++{
++    /* Execute pending BHs first and check everything else only after the BHs
++     * have executed. */
++    while (aio_poll(bs->aio_context, false));
++    return atomic_read(&bs->in_flight);
++}
++
+ static bool bdrv_drain_recurse(BlockDriverState *bs)
+ {
+     BdrvChild *child, *tmp;
+     bool waited;
+ 
+     /* Wait for drained requests to finish */
+-    waited = BDRV_POLL_WHILE(bs, atomic_read(&bs->in_flight) > 0);
++    waited = BDRV_POLL_WHILE(bs, bdrv_drain_poll(bs));
+ 
+     QLIST_FOREACH_SAFE(child, &bs->children, next, tmp) {
+         BlockDriverState *bs = child->bs;
+diff --git a/include/block/aio-wait.h b/include/block/aio-wait.h
+index 8c90a2e..783d367 100644
+--- a/include/block/aio-wait.h
++++ b/include/block/aio-wait.h
+@@ -73,29 +73,23 @@ typedef struct {
+  */
+ #define AIO_WAIT_WHILE(wait, ctx, cond) ({                         \
+     bool waited_ = false;                                          \
+-    bool busy_ = true;                                             \
+     AioWait *wait_ = (wait);                                       \
+     AioContext *ctx_ = (ctx);                                      \
+     if (in_aio_context_home_thread(ctx_)) {                        \
+-        while ((cond) || busy_) {                                  \
+-            busy_ = aio_poll(ctx_, (cond));                        \
+-            waited_ |= !!(cond) | busy_;                           \
++        while ((cond)) {                                           \
++            aio_poll(ctx_, true);                                  \
++            waited_ = true;                                        \
+         }                                                          \
+     } else {                                                       \
+         assert(qemu_get_current_aio_context() ==                   \
+                qemu_get_aio_context());                            \
+         /* Increment wait_->num_waiters before evaluating cond. */ \
+         atomic_inc(&wait_->num_waiters);                           \
+-        while (busy_) {                                            \
+-            if ((cond)) {                                          \
+-                waited_ = busy_ = true;                            \
+-                aio_context_release(ctx_);                         \
+-                aio_poll(qemu_get_aio_context(), true);            \
+-                aio_context_acquire(ctx_);                         \
+-            } else {                                               \
+-                busy_ = aio_poll(ctx_, false);                     \
+-                waited_ |= busy_;                                  \
+-            }                                                      \
++        while ((cond)) {                                           \
++            aio_context_release(ctx_);                             \
++            aio_poll(qemu_get_aio_context(), true);                \
++            aio_context_acquire(ctx_);                             \
++            waited_ = true;                                        \
+         }                                                          \
+         atomic_dec(&wait_->num_waiters);                           \
+     }                                                              \
+-- 
+1.8.3.1
+

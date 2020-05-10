@@ -1,0 +1,69 @@
+From b7d8518d4d2e5d53c2f8eb6cc78d99a69dc4feff Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Mon, 4 Feb 2019 16:06:04 +0100
+Subject: [PATCH 7/8] block: Fix invalidate_cache error path for parent
+ activation
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190204160604.2723-2-kwolf@redhat.com>
+Patchwork-id: 84202
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/1] block: Fix invalidate_cache error path for parent activation
+Bugzilla: 1531888
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+
+bdrv_co_invalidate_cache() clears the BDRV_O_INACTIVE flag before
+actually activating a node so that the correct permissions etc. are
+taken. In case of errors, the flag must be restored so that the next
+call to bdrv_co_invalidate_cache() retries activation.
+
+Restoring the flag was missing in the error path for a failed
+parent->role->activate() call. The consequence is that this attempt to
+activate all images correctly fails because we still set errp, however
+on the next attempt BDRV_O_INACTIVE is already clear, so we return
+success without actually retrying the failed action.
+
+An example where this is observable in practice is migration to a QEMU
+instance that has a raw format block node attached to a guest device
+with share-rw=off (the default) while another process holds
+BLK_PERM_WRITE for the same image. In this case, all activation steps
+before parent->role->activate() succeed because raw can tolerate other
+writers to the image. Only the parent callback (in particular
+blk_root_activate()) tries to implement the share-rw=on property and
+requests exclusive write permissions. This fails when the migration
+completes and correctly displays an error. However, a manual 'cont' will
+incorrectly resume the VM without calling blk_root_activate() again.
+
+This case is described in more detail in the following bug report:
+https://bugzilla.redhat.com/show_bug.cgi?id=1531888
+
+Fix this by correctly restoring the BDRV_O_INACTIVE flag in the error
+path.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Tested-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 78fc3b3a26c145eebcdee992988644974b243a74)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block.c b/block.c
+index da9b1a6..ce85c65 100644
+--- a/block.c
++++ b/block.c
+@@ -4410,6 +4410,7 @@ static void coroutine_fn bdrv_co_invalidate_cache(BlockDriverState *bs,
+         if (parent->role->activate) {
+             parent->role->activate(parent, &local_err);
+             if (local_err) {
++                bs->open_flags |= BDRV_O_INACTIVE;
+                 error_propagate(errp, local_err);
+                 return;
+             }
+-- 
+1.8.3.1
+

@@ -1,0 +1,56 @@
+From 4251549eca8b113b508f6bf6a7aaca2541acda61 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Fri, 31 Aug 2018 16:25:58 +0200
+Subject: [PATCH 16/29] migration/ram: Add check and info message to nvdimm
+ post copy.
+
+RH-Author: plai@redhat.com
+Message-id: <1535732759-22481-9-git-send-email-plai@redhat.com>
+Patchwork-id: 82009
+O-Subject: [RHEL7.6 PATCH BZ 1539280 8/9] migration/ram: Add check and info message to nvdimm post copy.
+Bugzilla: 1539280
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Junyan He <junyan.he@intel.com>
+
+The nvdimm kind memory does not support post copy now.
+We disable post copy if we have nvdimm memory and print some
+log hint to user.
+
+Signed-off-by: Junyan He <junyan.he@intel.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 469dd51bc664979f159d47885997d482991394b8)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/ram.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 04b5df5..f850fd0 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -3120,6 +3120,15 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
+ 
+ static bool ram_has_postcopy(void *opaque)
+ {
++    RAMBlock *rb;
++    RAMBLOCK_FOREACH_MIGRATABLE(rb) {
++        if (ramblock_is_pmem(rb)) {
++            info_report("Block: %s, host: %p is a nvdimm memory, postcopy"
++                         "is not supported now!", rb->idstr, rb->host);
++            return false;
++        }
++    }
++
+     return migrate_postcopy_ram();
+ }
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,47 @@
+From bddd766e9d3109a4dfd6f099edf8f5870a24bbf1 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Thu, 26 Jul 2018 16:40:11 +0200
+Subject: [PATCH 11/15] e1000: Fix tso_props compat for 82540em
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180726164011.21660-2-dgilbert@redhat.com>
+Patchwork-id: 81522
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 1/1] e1000: Fix tso_props compat for 82540em
+Bugzilla: 1608778
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Xiao Wang <jasowang@redhat.com>
+
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+
+In RHEL when you ask for an e1000-82540em that's the device you get,
+however in upstream it's aliased to an e1000.
+Because of the difference, we need to change the compat entry
+for migrate_tso_props to the base type that changes e1000 as well.
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/hw/compat.h | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/include/hw/compat.h b/include/hw/compat.h
+index 5802e61..5804853 100644
+--- a/include/hw/compat.h
++++ b/include/hw/compat.h
+@@ -464,8 +464,9 @@
+         .driver   = "vhost-user-blk-pci",\
+         .property = "vectors",\
+         .value    = "2",\
+-    },{ /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_11 */ \
+-        .driver   = "e1000",\
++    },{ /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_11 but \
++           bz 1608778 modified for our naming */ \
++        .driver   = "e1000-82540em",\
+         .property = "migrate_tso_props",\
+         .value    = "off",\
+     },{ /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_10 */ \
+-- 
+1.8.3.1
+

@@ -1,0 +1,77 @@
+From aa707f9fe5e43d297d3ebc201087fba331373993 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:16 +0100
+Subject: [PATCH 077/163] iotests: make 083 specific to raw
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-4-jsnow@redhat.com>
+Patchwork-id: 85179
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 03/55] iotests: make 083 specific to raw
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Cleber Rosa <crosa@redhat.com>
+
+While testing the Python 3 changes which touch the 083 test, I noticed
+that it would fail with qcow2.  Expanding the testing, I noticed it
+had nothing to do with the Python 3 changes, and in fact, it would not
+pass on anything but raw:
+
+ raw: pass
+ bochs: not generic
+ cloop: not generic
+ parallels: fail
+ qcow: fail
+ qcow2: fail
+ qed: fail
+ vdi: fail
+ vhdx: fail
+ vmdk: fail
+ vpc: fail
+ luks: fail
+
+The errors are a mixture I/O and "image not in xxx format", such as:
+
+  === Check disconnect before data ===
+
+  Unexpected end-of-file before all bytes were read
+ -read failed: Input/output error
+ +can't open device nbd+tcp://127.0.0.1:PORT/foo: Could not open 'nbd://127.0.0.1:PORT/foo': Input/output error
+
+  === Check disconnect after data ===
+
+ -read 512/512 bytes at offset 0
+ -512 bytes, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+ +can't open device nbd+tcp://127.0.0.1:PORT/foo: Image not in qcow format
+
+I'm not aware if there's a quick fix, so, for the time being, it looks
+like the honest approach is to make the test known to work on raw
+only.
+
+Signed-off-by: Cleber Rosa <crosa@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit d98205c58667ca6750658834e8466ac41a3e572e)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/083 | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tests/qemu-iotests/083 b/tests/qemu-iotests/083
+index 982adec..89f67db 100755
+--- a/tests/qemu-iotests/083
++++ b/tests/qemu-iotests/083
+@@ -38,7 +38,7 @@ trap "_cleanup; exit \$status" 0 1 2 3 15
+ . ./common.rc
+ . ./common.filter
+ 
+-_supported_fmt generic
++_supported_fmt raw
+ _supported_proto nbd
+ _supported_os Linux
+ 
+-- 
+1.8.3.1
+

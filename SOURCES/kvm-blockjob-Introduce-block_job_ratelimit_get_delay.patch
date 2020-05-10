@@ -1,0 +1,154 @@
+From 0106ebf221d3cc30580249e7b9b4d90a0ad10c5c Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:47:55 +0200
+Subject: [PATCH 26/89] blockjob: Introduce block_job_ratelimit_get_delay()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-13-kwolf@redhat.com>
+Patchwork-id: 81079
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 12/73] blockjob: Introduce block_job_ratelimit_get_delay()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This gets us rid of more direct accesses to BlockJob fields from the
+job drivers.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit dee81d5111ff0e24ac63ab0dbbd19e84c2f87904)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/backup.c               | 18 +++++++-----------
+ block/commit.c               |  4 ++--
+ block/mirror.c               |  5 +----
+ block/stream.c               |  4 ++--
+ blockjob.c                   |  9 +++++++++
+ include/block/blockjob_int.h |  8 ++++++++
+ 6 files changed, 29 insertions(+), 19 deletions(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index 8468fd9..cfdb6ec 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -325,21 +325,17 @@ static void backup_complete(BlockJob *job, void *opaque)
+ 
+ static bool coroutine_fn yield_and_check(BackupBlockJob *job)
+ {
++    uint64_t delay_ns;
++
+     if (block_job_is_cancelled(&job->common)) {
+         return true;
+     }
+ 
+-    /* we need to yield so that bdrv_drain_all() returns.
+-     * (without, VM does not reboot)
+-     */
+-    if (job->common.speed) {
+-        uint64_t delay_ns = ratelimit_calculate_delay(&job->common.limit,
+-                                                      job->bytes_read);
+-        job->bytes_read = 0;
+-        block_job_sleep_ns(&job->common, delay_ns);
+-    } else {
+-        block_job_sleep_ns(&job->common, 0);
+-    }
++    /* We need to yield even for delay_ns = 0 so that bdrv_drain_all() can
++     * return. Without a yield, the VM would not reboot. */
++    delay_ns = block_job_ratelimit_get_delay(&job->common, job->bytes_read);
++    job->bytes_read = 0;
++    block_job_sleep_ns(&job->common, delay_ns);
+ 
+     if (block_job_is_cancelled(&job->common)) {
+         return true;
+diff --git a/block/commit.c b/block/commit.c
+index 46cbeae..ba5df6a 100644
+--- a/block/commit.c
++++ b/block/commit.c
+@@ -197,8 +197,8 @@ static void coroutine_fn commit_run(void *opaque)
+         /* Publish progress */
+         block_job_progress_update(&s->common, n);
+ 
+-        if (copy && s->common.speed) {
+-            delay_ns = ratelimit_calculate_delay(&s->common.limit, n);
++        if (copy) {
++            delay_ns = block_job_ratelimit_get_delay(&s->common, n);
+         } else {
+             delay_ns = 0;
+         }
+diff --git a/block/mirror.c b/block/mirror.c
+index d5e0ff2..a4197bb 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -447,10 +447,7 @@ static uint64_t coroutine_fn mirror_iteration(MirrorBlockJob *s)
+         assert(io_bytes);
+         offset += io_bytes;
+         nb_chunks -= DIV_ROUND_UP(io_bytes, s->granularity);
+-        if (s->common.speed) {
+-            delay_ns = ratelimit_calculate_delay(&s->common.limit,
+-                                                 io_bytes_acct);
+-        }
++        delay_ns = block_job_ratelimit_get_delay(&s->common, io_bytes_acct);
+     }
+     return delay_ns;
+ }
+diff --git a/block/stream.c b/block/stream.c
+index 797d7c4..df9660d 100644
+--- a/block/stream.c
++++ b/block/stream.c
+@@ -185,8 +185,8 @@ static void coroutine_fn stream_run(void *opaque)
+ 
+         /* Publish progress */
+         block_job_progress_update(&s->common, n);
+-        if (copy && s->common.speed) {
+-            delay_ns = ratelimit_calculate_delay(&s->common.limit, n);
++        if (copy) {
++            delay_ns = block_job_ratelimit_get_delay(&s->common, n);
+         } else {
+             delay_ns = 0;
+         }
+diff --git a/blockjob.c b/blockjob.c
+index 0f7214c..e30f5ec 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -688,6 +688,15 @@ void block_job_set_speed(BlockJob *job, int64_t speed, Error **errp)
+     block_job_enter_cond(job, block_job_timer_pending);
+ }
+ 
++int64_t block_job_ratelimit_get_delay(BlockJob *job, uint64_t n)
++{
++    if (!job->speed) {
++        return 0;
++    }
++
++    return ratelimit_calculate_delay(&job->limit, n);
++}
++
+ void block_job_complete(BlockJob *job, Error **errp)
+ {
+     /* Should not be reachable via external interface for internal jobs */
+diff --git a/include/block/blockjob_int.h b/include/block/blockjob_int.h
+index ad510d5..62ec964 100644
+--- a/include/block/blockjob_int.h
++++ b/include/block/blockjob_int.h
+@@ -166,6 +166,14 @@ void block_job_sleep_ns(BlockJob *job, int64_t ns);
+ void block_job_yield(BlockJob *job);
+ 
+ /**
++ * block_job_ratelimit_get_delay:
++ *
++ * Calculate and return delay for the next request in ns. See the documentation
++ * of ratelimit_calculate_delay() for details.
++ */
++int64_t block_job_ratelimit_get_delay(BlockJob *job, uint64_t n);
++
++/**
+  * block_job_early_fail:
+  * @bs: The block device.
+  *
+-- 
+1.8.3.1
+

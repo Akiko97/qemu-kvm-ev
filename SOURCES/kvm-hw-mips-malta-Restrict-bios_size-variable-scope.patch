@@ -1,0 +1,60 @@
+From 874453e6bed4da39f9860236148efdb09d285203 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:03 +0200
+Subject: [PATCH 36/53] hw/mips/malta: Restrict 'bios_size' variable scope
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-15-armbru@redhat.com>
+Patchwork-id: 88003
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 14/31] hw/mips/malta: Restrict 'bios_size' variable scope
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+The 'bios_size' variable is only used in the 'if (!kernel_filename &&
+!dinfo)' clause. This is the case when we don't provide -pflash command
+line option, and also don't provide a -kernel option. In this case we
+will check for the -bios option, or use the default BIOS_FILENAME file.
+
+The 'bios' term is valid in this if statement, but is confuse in the
+whole mips_malta_init() scope. Restrict his scope.
+
+Signed-off-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20190308094610.21210-13-armbru@redhat.com>
+(cherry picked from commit 74c02ebd80fa331361c431d8dbfcba45a2a36e85)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/mips/mips_malta.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/mips/mips_malta.c b/hw/mips/mips_malta.c
+index 0566d18..857bdb8 100644
+--- a/hw/mips/mips_malta.c
++++ b/hw/mips/mips_malta.c
+@@ -990,7 +990,6 @@ void mips_malta_init(MachineState *machine)
+     MemoryRegion *ram_low_preio = g_new(MemoryRegion, 1);
+     MemoryRegion *ram_low_postio;
+     MemoryRegion *bios, *bios_copy = g_new(MemoryRegion, 1);
+-    target_long bios_size = FLASH_SIZE;
+     const size_t smbus_eeprom_size = 8 * 256;
+     uint8_t *smbus_eeprom_buf = g_malloc0(smbus_eeprom_size);
+     int64_t kernel_entry, bootloader_run_addr;
+@@ -1097,6 +1096,7 @@ void mips_malta_init(MachineState *machine)
+                              bootloader_run_addr, kernel_entry);
+         }
+     } else {
++        target_long bios_size = FLASH_SIZE;
+         /* The flash region isn't executable from a KVM guest */
+         if (kvm_enabled()) {
+             error_report("KVM enabled but no -kernel argument was specified. "
+-- 
+1.8.3.1
+

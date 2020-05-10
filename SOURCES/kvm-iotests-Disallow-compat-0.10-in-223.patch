@@ -1,0 +1,46 @@
+From 97ef4db37dea9ef4fd5e082cc45be1ee7915be1f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:19 +0100
+Subject: [PATCH 052/163] iotests: Disallow compat=0.10 in 223
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-7-jsnow@redhat.com>
+Patchwork-id: 85089
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 06/28] iotests: Disallow compat=0.10 in 223
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Max Reitz <mreitz@redhat.com>
+
+223 tests persistent dirty bitmaps which are not supported in
+compat=0.10, so that option is unsupported for this test.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Tested-by: John Snow <jsnow@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 092b9c408fb22010747f17e2fb19521cfafd45d6)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/223 | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+index e59411e..d011b3e 100755
+--- a/tests/qemu-iotests/223
++++ b/tests/qemu-iotests/223
+@@ -40,6 +40,8 @@ trap "_cleanup; exit \$status" 0 1 2 3 15
+ _supported_fmt qcow2
+ _supported_proto file # uses NBD as well
+ _supported_os Linux
++# Persistent dirty bitmaps require compat=1.1
++_unsupported_imgopts 'compat=0.10'
+ 
+ function do_run_qemu()
+ {
+-- 
+1.8.3.1
+

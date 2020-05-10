@@ -1,0 +1,200 @@
+From 3c3163e2db902b0c585971f73308b6dc90ed45a0 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Thu, 21 Jun 2018 18:54:36 +0200
+Subject: [PATCH 27/57] vhost-user: add Net prefix to internal state structure
+
+RH-Author: plai@redhat.com
+Message-id: <1529607285-9942-2-git-send-email-plai@redhat.com>
+Patchwork-id: 80943
+O-Subject: [RHEL7.6 PATCH BZ 1526645 01/10] vhost-user: add Net prefix to internal state structure
+Bugzilla: 1526645
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Maxime Coquelin <maxime.coquelin@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Tiwei Bie <tiwei.bie@intel.com>
+
+We are going to introduce a shared vhost user state which
+will be named as 'VhostUserState'. So add 'Net' prefix to
+the existing internal state structure in the vhost-user
+netdev to avoid conflict.
+
+Signed-off-by: Tiwei Bie <tiwei.bie@intel.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 703878e2e0975123b1a89a006c0204c469333278)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ net/vhost-user.c | 38 +++++++++++++++++++-------------------
+ 1 file changed, 19 insertions(+), 19 deletions(-)
+
+diff --git a/net/vhost-user.c b/net/vhost-user.c
+index e0f16c8..fa28aad 100644
+--- a/net/vhost-user.c
++++ b/net/vhost-user.c
+@@ -20,38 +20,38 @@
+ #include "qemu/option.h"
+ #include "trace.h"
+ 
+-typedef struct VhostUserState {
++typedef struct NetVhostUserState {
+     NetClientState nc;
+     CharBackend chr; /* only queue index 0 */
+     VHostNetState *vhost_net;
+     guint watch;
+     uint64_t acked_features;
+     bool started;
+-} VhostUserState;
++} NetVhostUserState;
+ 
+ VHostNetState *vhost_user_get_vhost_net(NetClientState *nc)
+ {
+-    VhostUserState *s = DO_UPCAST(VhostUserState, nc, nc);
++    NetVhostUserState *s = DO_UPCAST(NetVhostUserState, nc, nc);
+     assert(nc->info->type == NET_CLIENT_DRIVER_VHOST_USER);
+     return s->vhost_net;
+ }
+ 
+ uint64_t vhost_user_get_acked_features(NetClientState *nc)
+ {
+-    VhostUserState *s = DO_UPCAST(VhostUserState, nc, nc);
++    NetVhostUserState *s = DO_UPCAST(NetVhostUserState, nc, nc);
+     assert(nc->info->type == NET_CLIENT_DRIVER_VHOST_USER);
+     return s->acked_features;
+ }
+ 
+ static void vhost_user_stop(int queues, NetClientState *ncs[])
+ {
+-    VhostUserState *s;
++    NetVhostUserState *s;
+     int i;
+ 
+     for (i = 0; i < queues; i++) {
+         assert(ncs[i]->info->type == NET_CLIENT_DRIVER_VHOST_USER);
+ 
+-        s = DO_UPCAST(VhostUserState, nc, ncs[i]);
++        s = DO_UPCAST(NetVhostUserState, nc, ncs[i]);
+ 
+         if (s->vhost_net) {
+             /* save acked features */
+@@ -68,7 +68,7 @@ static int vhost_user_start(int queues, NetClientState *ncs[], CharBackend *be)
+ {
+     VhostNetOptions options;
+     struct vhost_net *net = NULL;
+-    VhostUserState *s;
++    NetVhostUserState *s;
+     int max_queues;
+     int i;
+ 
+@@ -77,7 +77,7 @@ static int vhost_user_start(int queues, NetClientState *ncs[], CharBackend *be)
+     for (i = 0; i < queues; i++) {
+         assert(ncs[i]->info->type == NET_CLIENT_DRIVER_VHOST_USER);
+ 
+-        s = DO_UPCAST(VhostUserState, nc, ncs[i]);
++        s = DO_UPCAST(NetVhostUserState, nc, ncs[i]);
+ 
+         options.net_backend = ncs[i];
+         options.opaque      = be;
+@@ -123,7 +123,7 @@ static ssize_t vhost_user_receive(NetClientState *nc, const uint8_t *buf,
+        without GUEST_ANNOUNCE capability.
+      */
+     if (size == 60) {
+-        VhostUserState *s = DO_UPCAST(VhostUserState, nc, nc);
++        NetVhostUserState *s = DO_UPCAST(NetVhostUserState, nc, nc);
+         int r;
+         static int display_rarp_failure = 1;
+         char mac_addr[6];
+@@ -146,7 +146,7 @@ static ssize_t vhost_user_receive(NetClientState *nc, const uint8_t *buf,
+ 
+ static void vhost_user_cleanup(NetClientState *nc)
+ {
+-    VhostUserState *s = DO_UPCAST(VhostUserState, nc, nc);
++    NetVhostUserState *s = DO_UPCAST(NetVhostUserState, nc, nc);
+ 
+     if (s->vhost_net) {
+         vhost_net_cleanup(s->vhost_net);
+@@ -180,7 +180,7 @@ static bool vhost_user_has_ufo(NetClientState *nc)
+ 
+ static NetClientInfo net_vhost_user_info = {
+         .type = NET_CLIENT_DRIVER_VHOST_USER,
+-        .size = sizeof(VhostUserState),
++        .size = sizeof(NetVhostUserState),
+         .receive = vhost_user_receive,
+         .cleanup = vhost_user_cleanup,
+         .has_vnet_hdr = vhost_user_has_vnet_hdr,
+@@ -190,7 +190,7 @@ static NetClientInfo net_vhost_user_info = {
+ static gboolean net_vhost_user_watch(GIOChannel *chan, GIOCondition cond,
+                                            void *opaque)
+ {
+-    VhostUserState *s = opaque;
++    NetVhostUserState *s = opaque;
+ 
+     qemu_chr_fe_disconnect(&s->chr);
+ 
+@@ -203,7 +203,7 @@ static void chr_closed_bh(void *opaque)
+ {
+     const char *name = opaque;
+     NetClientState *ncs[MAX_QUEUE_NUM];
+-    VhostUserState *s;
++    NetVhostUserState *s;
+     Error *err = NULL;
+     int queues;
+ 
+@@ -212,7 +212,7 @@ static void chr_closed_bh(void *opaque)
+                                           MAX_QUEUE_NUM);
+     assert(queues < MAX_QUEUE_NUM);
+ 
+-    s = DO_UPCAST(VhostUserState, nc, ncs[0]);
++    s = DO_UPCAST(NetVhostUserState, nc, ncs[0]);
+ 
+     qmp_set_link(name, false, &err);
+     vhost_user_stop(queues, ncs);
+@@ -229,7 +229,7 @@ static void net_vhost_user_event(void *opaque, int event)
+ {
+     const char *name = opaque;
+     NetClientState *ncs[MAX_QUEUE_NUM];
+-    VhostUserState *s;
++    NetVhostUserState *s;
+     Chardev *chr;
+     Error *err = NULL;
+     int queues;
+@@ -239,7 +239,7 @@ static void net_vhost_user_event(void *opaque, int event)
+                                           MAX_QUEUE_NUM);
+     assert(queues < MAX_QUEUE_NUM);
+ 
+-    s = DO_UPCAST(VhostUserState, nc, ncs[0]);
++    s = DO_UPCAST(NetVhostUserState, nc, ncs[0]);
+     chr = qemu_chr_fe_get_driver(&s->chr);
+     trace_vhost_user_event(chr->label, event);
+     switch (event) {
+@@ -283,7 +283,7 @@ static int net_vhost_user_init(NetClientState *peer, const char *device,
+ {
+     Error *err = NULL;
+     NetClientState *nc, *nc0 = NULL;
+-    VhostUserState *s;
++    NetVhostUserState *s;
+     int i;
+ 
+     assert(name);
+@@ -296,7 +296,7 @@ static int net_vhost_user_init(NetClientState *peer, const char *device,
+         nc->queue_index = i;
+         if (!nc0) {
+             nc0 = nc;
+-            s = DO_UPCAST(VhostUserState, nc, nc);
++            s = DO_UPCAST(NetVhostUserState, nc, nc);
+             if (!qemu_chr_fe_init(&s->chr, chr, &err)) {
+                 error_report_err(err);
+                 return -1;
+@@ -305,7 +305,7 @@ static int net_vhost_user_init(NetClientState *peer, const char *device,
+ 
+     }
+ 
+-    s = DO_UPCAST(VhostUserState, nc, nc0);
++    s = DO_UPCAST(NetVhostUserState, nc, nc0);
+     do {
+         if (qemu_chr_fe_wait_connected(&s->chr, &err) < 0) {
+             error_report_err(err);
+-- 
+1.8.3.1
+

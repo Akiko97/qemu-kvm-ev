@@ -1,0 +1,96 @@
+From edb07556033d42de5dc065d03aef2ea1ae663d8d Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:11 +0200
+Subject: [PATCH 44/53] vl: Improve legibility of BlockdevOptions queue
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-23-armbru@redhat.com>
+Patchwork-id: 87992
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 22/31] vl: Improve legibility of BlockdevOptions queue
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Give the queue head type a name: BlockdevOptionsQueue.
+
+Rename the queue entry type from BlockdevOptions_queue to
+BlockdevOptionsQueueEntry.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20190308131445.17502-6-armbru@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+(cherry picked from commit 651af51c0882a4c60704716819878043c1b8a215)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ vl.c | 22 ++++++++++++----------
+ 1 file changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/vl.c b/vl.c
+index d89ac3a..a5c17a0 100644
+--- a/vl.c
++++ b/vl.c
+@@ -1271,6 +1271,14 @@ static void default_drive(int enable, int snapshot, BlockInterfaceType type,
+ 
+ }
+ 
++typedef struct BlockdevOptionsQueueEntry {
++    BlockdevOptions *bdo;
++    Location loc;
++    QSIMPLEQ_ENTRY(BlockdevOptionsQueueEntry) entry;
++} BlockdevOptionsQueueEntry;
++
++typedef QSIMPLEQ_HEAD(, BlockdevOptionsQueueEntry) BlockdevOptionsQueue;
++
+ static QemuOptsList qemu_smp_opts = {
+     .name = "smp-opts",
+     .implied_opt_name = "cpus",
+@@ -3087,13 +3095,7 @@ int main(int argc, char **argv, char **envp)
+     Error *err = NULL;
+     bool list_data_dirs = false;
+     char *dir, **dirs;
+-    typedef struct BlockdevOptions_queue {
+-        BlockdevOptions *bdo;
+-        Location loc;
+-        QSIMPLEQ_ENTRY(BlockdevOptions_queue) entry;
+-    } BlockdevOptions_queue;
+-    QSIMPLEQ_HEAD(, BlockdevOptions_queue) bdo_queue
+-        = QSIMPLEQ_HEAD_INITIALIZER(bdo_queue);
++    BlockdevOptionsQueue bdo_queue = QSIMPLEQ_HEAD_INITIALIZER(bdo_queue);
+ 
+     module_call_init(MODULE_INIT_TRACE);
+ 
+@@ -3224,7 +3226,7 @@ int main(int argc, char **argv, char **envp)
+             case QEMU_OPTION_blockdev:
+                 {
+                     Visitor *v;
+-                    BlockdevOptions_queue *bdo;
++                    BlockdevOptionsQueueEntry *bdo;
+ 
+                     v = qobject_input_visitor_new_str(optarg, "driver", &err);
+                     if (!v) {
+@@ -3232,7 +3234,7 @@ int main(int argc, char **argv, char **envp)
+                         exit(1);
+                     }
+ 
+-                    bdo = g_new(BlockdevOptions_queue, 1);
++                    bdo = g_new(BlockdevOptionsQueueEntry, 1);
+                     visit_type_BlockdevOptions(v, NULL, &bdo->bdo,
+                                                &error_fatal);
+                     visit_free(v);
+@@ -4557,7 +4559,7 @@ int main(int argc, char **argv, char **envp)
+ 
+     /* open the virtual block devices */
+     while (!QSIMPLEQ_EMPTY(&bdo_queue)) {
+-        BlockdevOptions_queue *bdo = QSIMPLEQ_FIRST(&bdo_queue);
++        BlockdevOptionsQueueEntry *bdo = QSIMPLEQ_FIRST(&bdo_queue);
+ 
+         QSIMPLEQ_REMOVE_HEAD(&bdo_queue, entry);
+         loc_push_restore(&bdo->loc);
+-- 
+1.8.3.1
+

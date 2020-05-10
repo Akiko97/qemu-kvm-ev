@@ -1,0 +1,87 @@
+From 9cfc0299d10213160701c07ed5f4feb1c98d4f2a Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:23:02 +0100
+Subject: [PATCH 124/163] block/nbd-client: don't check ioc
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-50-jsnow@redhat.com>
+Patchwork-id: 85214
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 49/55] block/nbd-client: don't check ioc
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+We have several paranoid checks for ioc != NULL. But ioc may become
+NULL only on close, which should not happen during requests handling.
+Also, we check ioc only sometimes, not after each yield, which is
+inconsistent. Let's drop these checks. However, for safety, let's leave
+asserts instead.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190201130138.94525-6-vsementsov@virtuozzo.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 88ed4e1bf0c7017c04fac2166ec9a7687aa21f97)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c | 16 +++++-----------
+ 1 file changed, 5 insertions(+), 11 deletions(-)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index 5d22f8b..5f3a67f 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -53,9 +53,7 @@ static void nbd_teardown_connection(BlockDriverState *bs)
+ {
+     NBDClientSession *client = nbd_get_client_session(bs);
+ 
+-    if (!client->ioc) { /* Already closed */
+-        return;
+-    }
++    assert(client->ioc);
+ 
+     /* finish any pending coroutines */
+     qio_channel_shutdown(client->ioc,
+@@ -153,10 +151,7 @@ static int nbd_co_send_request(BlockDriverState *bs,
+         rc = -EIO;
+         goto err;
+     }
+-    if (!s->ioc) {
+-        rc = -EPIPE;
+-        goto err;
+-    }
++    assert(s->ioc);
+ 
+     if (qiov) {
+         qio_channel_set_cork(s->ioc, true);
+@@ -428,10 +423,11 @@ static coroutine_fn int nbd_co_do_receive_one_chunk(
+     s->requests[i].receiving = true;
+     qemu_coroutine_yield();
+     s->requests[i].receiving = false;
+-    if (!s->ioc || s->quit) {
++    if (s->quit) {
+         error_setg(errp, "Connection closed");
+         return -EIO;
+     }
++    assert(s->ioc);
+ 
+     assert(s->reply.handle == handle);
+ 
+@@ -981,9 +977,7 @@ void nbd_client_close(BlockDriverState *bs)
+     NBDClientSession *client = nbd_get_client_session(bs);
+     NBDRequest request = { .type = NBD_CMD_DISC };
+ 
+-    if (client->ioc == NULL) {
+-        return;
+-    }
++    assert(client->ioc);
+ 
+     nbd_send_request(client->ioc, &request);
+ 
+-- 
+1.8.3.1
+

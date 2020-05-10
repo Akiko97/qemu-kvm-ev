@@ -1,0 +1,91 @@
+From ee5342df3b512da1ac1e85a7a65a50942d220019 Mon Sep 17 00:00:00 2001
+From: Stefan Hajnoczi <stefanha@redhat.com>
+Date: Wed, 24 Apr 2019 09:29:42 +0200
+Subject: [PATCH 02/12] scsi-generic: prevent guest from exceeding SG_IO limits
+
+RH-Author: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: <20190424092942.29071-2-stefanha@redhat.com>
+Patchwork-id: 85876
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/1] scsi-generic: prevent guest from exceeding SG_IO limits
+Bugzilla: 1693879
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+From: Paolo Bonzini <pbonzini@redhat.com>
+
+Bugzilla: 1693879
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=21260328
+Upstream status: downstream only, see below
+
+Until Linux 4.5, the kernel placed a limit of UIO_MAXIOV pages on
+SG_IO ioctls (and if the limit is exceeded, a confusing ENOMEM error is
+returned[1]).  The patches that removed the limitation are not easy to
+backport to RHEL7, so instead we work around it in QEMU: just prevent
+the guest from exceeding these limits by capping the maximum transfer
+length to that value in the block limits VPD page.
+
+The customer has already tested the workaround of changing
+max_sectors_kb in the guest.  This fix has the same effect on the guest
+but does not require manually setting max_sectors_kb inside the guest.
+
+RHEL8 does not have the problem; because this is for SCSI passthrough,
+live migration is not an issue.
+
+[1] Oh well, at least it was easier to follow the kernel source knowing
+    it had to end as ENOMEM...
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/scsi-generic.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/hw/scsi/scsi-generic.c b/hw/scsi/scsi-generic.c
+index e21adf9..b815b91 100644
+--- a/hw/scsi/scsi-generic.c
++++ b/hw/scsi/scsi-generic.c
+@@ -144,6 +144,17 @@ static int execute_command(BlockBackend *blk,
+     return 0;
+ }
+ 
++/*
++ * RHEL: Linux placed a hard limit on SG_IO transfers equal to UIO_MAXIOV
++ * pages until 4.5, which we need to factor in the block limits we return.
++ */
++static uint32_t rhel_sg_max_transfer(SCSIDevice *s)
++{
++    uint32_t max_transfer = blk_get_max_transfer(s->conf.blk);
++    max_transfer = MIN_NON_ZERO(max_transfer, UIO_MAXIOV * qemu_real_host_page_size);
++    return max_transfer;
++}
++
+ static void scsi_handle_inquiry_reply(SCSIGenericReq *r, SCSIDevice *s)
+ {
+     uint8_t page, page_idx;
+@@ -175,10 +186,8 @@ static void scsi_handle_inquiry_reply(SCSIGenericReq *r, SCSIDevice *s)
+     if (s->type == TYPE_DISK && (r->req.cmd.buf[1] & 0x01)) {
+         page = r->req.cmd.buf[2];
+         if (page == 0xb0) {
+-            uint32_t max_transfer =
+-                blk_get_max_transfer(s->conf.blk) / s->blocksize;
++            uint32_t max_transfer = rhel_sg_max_transfer(s) / s->blocksize;
+ 
+-            assert(max_transfer);
+             stl_be_p(&r->buf[8], max_transfer);
+             /* Also take care of the opt xfer len. */
+             stl_be_p(&r->buf[12],
+@@ -219,7 +228,7 @@ static int scsi_generic_emulate_block_limits(SCSIGenericReq *r, SCSIDevice *s)
+     uint8_t buf[64];
+ 
+     SCSIBlockLimits bl = {
+-        .max_io_sectors = blk_get_max_transfer(s->conf.blk) / s->blocksize
++        .max_io_sectors = rhel_sg_max_transfer(s) / s->blocksize
+     };
+ 
+     memset(r->buf, 0, r->buflen);
+-- 
+1.8.3.1
+

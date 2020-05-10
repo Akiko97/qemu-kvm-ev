@@ -1,0 +1,71 @@
+From e5d7e4bd2388cebecc64469ea957676caba9bbe1 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:23:07 +0100
+Subject: [PATCH 129/163] iotests: Wait for qemu to end in 223
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-55-jsnow@redhat.com>
+Patchwork-id: 85219
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 54/55] iotests: Wait for qemu to end in 223
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+When iotest 223 was first written, it didn't matter if we waited for
+the qemu process to clean up. But with the introduction of a later
+qemu-nbd process trying to reuse the same file, there is a race where
+even though the asynchronous qemu process has responded to "quit", it
+has not yet had time to unlock the file and exit, resulting in:
+
+-[{ "start": 0, "length": 65536, "depth": 0, "zero": false, "data": false},
+-{ "start": 65536, "length": 2031616, "depth": 0, "zero": false, "data": true},
+-{ "start": 2097152, "length": 2097152, "depth": 0, "zero": false, "data": false}]
++qemu-nbd: Failed to blk_new_open 'tests/qemu-iotests/scratch/t.qcow2': Failed to get shared "write" lock
++Is another process using the image [tests/qemu-iotests/scratch/t.qcow2]?
++qemu-img: Could not open 'driver=nbd,server.type=unix,server.path=tests/qemu-iotests/scratch/qemu-nbd.sock,x-dirty-bitmap=qemu:dirty-bitmap:b': Failed to connect socket tests/qemu-iotests/scratch/qemu-nbd.sock: Connection refused
++./common.nbd: line 33: kill: (11122) - No such process
+
+Fixes: ddd09448
+Reported-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190305182908.13557-1-eblake@redhat.com>
+Tested-by: Alberto Garcia <berto@igalia.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 054be3605459d4342e9ee5a82ae0fcffeeb09e4d)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/223     | 1 +
+ tests/qemu-iotests/223.out | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+index f120a01..c0a4f9c 100755
+--- a/tests/qemu-iotests/223
++++ b/tests/qemu-iotests/223
+@@ -179,6 +179,7 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "error" # Again
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"quit"}' "return"
++wait=yes _cleanup_qemu
+ 
+ echo
+ echo "=== Use qemu-nbd as server ==="
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+index 963ae28..0524ffb 100644
+--- a/tests/qemu-iotests/223.out
++++ b/tests/qemu-iotests/223.out
+@@ -89,6 +89,7 @@ read 2097152/2097152 bytes at offset 2097152
+ {"return": {}}
+ {"error": {"class": "GenericError", "desc": "NBD server not running"}}
+ {"return": {}}
++{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
+ 
+ === Use qemu-nbd as server ===
+ 
+-- 
+1.8.3.1
+

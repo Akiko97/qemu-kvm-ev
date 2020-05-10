@@ -1,0 +1,63 @@
+From d9da0aedd0dc6aeee5751855eda3560f1757910c Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:47:44 +0200
+Subject: [PATCH 15/89] sheepdog: Fix sd_co_create_opts() memory leaks
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-2-kwolf@redhat.com>
+Patchwork-id: 81074
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 01/73] sheepdog: Fix sd_co_create_opts() memory leaks
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Both the option string for the 'redundancy' option and the
+SheepdogRedundancy object that is created accordingly could be leaked in
+error paths. This fixes the memory leaks.
+
+Reported by Coverity (CID 1390614 and 1390641).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Message-id: 20180503153509.22223-1-kwolf@redhat.com
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit a2cb9239b7610ffb00f9ced5cd7640d40b0e1ccf)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/sheepdog.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/block/sheepdog.c b/block/sheepdog.c
+index d1c9bf5..933880c 100644
+--- a/block/sheepdog.c
++++ b/block/sheepdog.c
+@@ -1977,6 +1977,7 @@ static SheepdogRedundancy *parse_redundancy_str(const char *opt)
+     } else {
+         ret = qemu_strtol(n2, NULL, 10, &parity);
+         if (ret < 0) {
++            g_free(redundancy);
+             return NULL;
+         }
+ 
+@@ -2172,7 +2173,7 @@ static int coroutine_fn sd_co_create_opts(const char *filename, QemuOpts *opts,
+     BlockdevCreateOptions *create_options = NULL;
+     QDict *qdict, *location_qdict;
+     Visitor *v;
+-    const char *redundancy;
++    char *redundancy;
+     Error *local_err = NULL;
+     int ret;
+ 
+@@ -2240,6 +2241,7 @@ static int coroutine_fn sd_co_create_opts(const char *filename, QemuOpts *opts,
+ fail:
+     qapi_free_BlockdevCreateOptions(create_options);
+     qobject_unref(qdict);
++    g_free(redundancy);
+     return ret;
+ }
+ 
+-- 
+1.8.3.1
+

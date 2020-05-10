@@ -1,0 +1,57 @@
+From 3c3659acadf5891119a70e6dd7a2525c2706e1de Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 1 Mar 2019 14:27:45 +0100
+Subject: [PATCH 3/9] block: Fix AioContext switch for drained node
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190301142747.12251-4-kwolf@redhat.com>
+Patchwork-id: 84763
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/5] block: Fix AioContext switch for drained node
+Bugzilla: 1671173
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+When a drained node changes its AioContext, we need to move its
+aio_disable_external() to the new context, too.
+
+Without this fix, drain_end will try to reenable the new context, which
+has never been disabled, so an assertion failure is triggered.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit e64f25f30b80a71bd4e409ed518c39eeb5905166)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/block.c b/block.c
+index a69d0a2..7cd3651 100644
+--- a/block.c
++++ b/block.c
+@@ -4954,6 +4954,9 @@ void bdrv_detach_aio_context(BlockDriverState *bs)
+         bdrv_detach_aio_context(child->bs);
+     }
+ 
++    if (bs->quiesce_counter) {
++        aio_enable_external(bs->aio_context);
++    }
+     bs->aio_context = NULL;
+ }
+ 
+@@ -4967,6 +4970,10 @@ void bdrv_attach_aio_context(BlockDriverState *bs,
+         return;
+     }
+ 
++    if (bs->quiesce_counter) {
++        aio_disable_external(new_context);
++    }
++
+     bs->aio_context = new_context;
+ 
+     QLIST_FOREACH(child, &bs->children, next) {
+-- 
+1.8.3.1
+

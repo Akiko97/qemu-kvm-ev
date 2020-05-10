@@ -1,0 +1,59 @@
+From e106165de465520a2bd1153dd41fe409e0157a77 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Fri, 4 Oct 2019 19:57:14 +0200
+Subject: [PATCH 4/4] i386: remove the 'INTEL_PT' CPUID bit from
+ Cascadelake-Server
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20191004195714.10176-4-ehabkost@redhat.com>
+Patchwork-id: 90961
+O-Subject: [RHEL-7.8 qemu-kvm-rhev PATCH 3/3] i386: remove the 'INTEL_PT' CPUID bit from Cascadelake-Server
+Bugzilla: 1638472
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+
+From: Paolo Bonzini <pbonzini@redhat.com>
+
+This is a partial cherry pick of upstream commit:
+
+commit 4c257911dcc7c4189768e9651755c849ce9db4e8
+Author: Paolo Bonzini <pbonzini@redhat.com>
+Date:   Fri Dec 21 12:35:56 2018 +0100
+
+    i386: remove the 'INTEL_PT' CPUID bit from named CPU models
+
+    Processor tracing is not yet implemented for KVM and it will be an
+    opt in feature requiring a special module parameter.
+    Disable it, because it is wrong to enable it by default and
+    it is impossible that no one has ever used it.
+
+    Cc: qemu-stable@nongnu.org
+    Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+
+It includes only the Cascadelake-Server change, because the other
+CPU models are not present in the RHEL7 tree.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index b377564..6a1d59c 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -2515,8 +2515,7 @@ static X86CPUDefinition builtin_x86_defs[] = {
+             CPUID_7_0_EBX_SMAP | CPUID_7_0_EBX_MPX | CPUID_7_0_EBX_CLWB |
+             CPUID_7_0_EBX_AVX512F | CPUID_7_0_EBX_AVX512DQ |
+             CPUID_7_0_EBX_AVX512BW | CPUID_7_0_EBX_AVX512CD |
+-            CPUID_7_0_EBX_AVX512VL | CPUID_7_0_EBX_CLFLUSHOPT |
+-            CPUID_7_0_EBX_INTEL_PT,
++            CPUID_7_0_EBX_AVX512VL | CPUID_7_0_EBX_CLFLUSHOPT,
+         .features[FEAT_7_0_ECX] =
+             CPUID_7_0_ECX_PKU |
+             CPUID_7_0_ECX_AVX512VNNI,
+-- 
+1.8.3.1
+

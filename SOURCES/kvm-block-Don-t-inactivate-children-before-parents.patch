@@ -1,0 +1,182 @@
+From 747fd28a2c5947940c5f17426ba7a91738f1481c Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Wed, 28 Nov 2018 09:29:46 +0100
+Subject: [PATCH 15/34] block: Don't inactivate children before parents
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181128092947.24543-2-kwolf@redhat.com>
+Patchwork-id: 83179
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH 1/2] block: Don't inactivate children before parents
+Bugzilla: 1633536
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+bdrv_child_cb_inactivate() asserts that parents are already inactive
+when children get inactivated. This precondition is necessary because
+parents could still issue requests in their inactivation code.
+
+When block nodes are created individually with -blockdev, all of them
+are monitor owned and will be returned by bdrv_next() in an undefined
+order (in practice, in the order of their creation, which is usually
+children before parents), which obviously fails the assertion:
+
+qemu: block.c:899: bdrv_child_cb_inactivate: Assertion `bs->open_flags & BDRV_O_INACTIVE' failed.
+
+This patch fixes the ordering by skipping nodes with still active
+parents in bdrv_inactivate_recurse() because we know that they will be
+covered by recursion when the last active parent becomes inactive.
+
+With the correct parents-before-children ordering, we also got rid of
+the reason why commit aad0b7a0bfb introduced two passes, so we can go
+back to a single-pass recursion. This is necessary so we can rely on the
+BDRV_O_INACTIVE flag to skip nodes with active parents (the flag used
+to be set only in pass 2, so we would always skip non-root nodes in
+pass 1 because all parents would still be considered active; setting the
+flag in pass 1 would mean, that we never skip anything in pass 2 because
+all parents are already considered inactive).
+
+Because of the change to single pass, this patch is best reviewed with
+whitespace changes ignored.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 9e37271f50ec2e95f299dc297ac08f9be0096b48)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 84 +++++++++++++++++++++++++++++++++++++++++------------------------
+ 1 file changed, 53 insertions(+), 31 deletions(-)
+
+diff --git a/block.c b/block.c
+index 037d2b0..da9b1a6 100644
+--- a/block.c
++++ b/block.c
+@@ -4469,45 +4469,68 @@ void bdrv_invalidate_cache_all(Error **errp)
+     }
+ }
+ 
+-static int bdrv_inactivate_recurse(BlockDriverState *bs,
+-                                   bool setting_flag)
++static bool bdrv_has_bds_parent(BlockDriverState *bs, bool only_active)
++{
++    BdrvChild *parent;
++
++    QLIST_FOREACH(parent, &bs->parents, next_parent) {
++        if (parent->role->parent_is_bds) {
++            BlockDriverState *parent_bs = parent->opaque;
++            if (!only_active || !(parent_bs->open_flags & BDRV_O_INACTIVE)) {
++                return true;
++            }
++        }
++    }
++
++    return false;
++}
++
++static int bdrv_inactivate_recurse(BlockDriverState *bs)
+ {
+     BdrvChild *child, *parent;
++    uint64_t perm, shared_perm;
+     int ret;
+ 
+     if (!bs->drv) {
+         return -ENOMEDIUM;
+     }
+ 
+-    if (!setting_flag && bs->drv->bdrv_inactivate) {
++    /* Make sure that we don't inactivate a child before its parent.
++     * It will be covered by recursion from the yet active parent. */
++    if (bdrv_has_bds_parent(bs, true)) {
++        return 0;
++    }
++
++    assert(!(bs->open_flags & BDRV_O_INACTIVE));
++
++    /* Inactivate this node */
++    if (bs->drv->bdrv_inactivate) {
+         ret = bs->drv->bdrv_inactivate(bs);
+         if (ret < 0) {
+             return ret;
+         }
+     }
+ 
+-    if (setting_flag && !(bs->open_flags & BDRV_O_INACTIVE)) {
+-        uint64_t perm, shared_perm;
+-
+-        QLIST_FOREACH(parent, &bs->parents, next_parent) {
+-            if (parent->role->inactivate) {
+-                ret = parent->role->inactivate(parent);
+-                if (ret < 0) {
+-                    return ret;
+-                }
++    QLIST_FOREACH(parent, &bs->parents, next_parent) {
++        if (parent->role->inactivate) {
++            ret = parent->role->inactivate(parent);
++            if (ret < 0) {
++                return ret;
+             }
+         }
++    }
+ 
+-        bs->open_flags |= BDRV_O_INACTIVE;
++    bs->open_flags |= BDRV_O_INACTIVE;
++
++    /* Update permissions, they may differ for inactive nodes */
++    bdrv_get_cumulative_perm(bs, &perm, &shared_perm);
++    bdrv_check_perm(bs, NULL, perm, shared_perm, NULL, &error_abort);
++    bdrv_set_perm(bs, perm, shared_perm);
+ 
+-        /* Update permissions, they may differ for inactive nodes */
+-        bdrv_get_cumulative_perm(bs, &perm, &shared_perm);
+-        bdrv_check_perm(bs, NULL, perm, shared_perm, NULL, &error_abort);
+-        bdrv_set_perm(bs, perm, shared_perm);
+-    }
+ 
++    /* Recursively inactivate children */
+     QLIST_FOREACH(child, &bs->children, next) {
+-        ret = bdrv_inactivate_recurse(child->bs, setting_flag);
++        ret = bdrv_inactivate_recurse(child->bs);
+         if (ret < 0) {
+             return ret;
+         }
+@@ -4525,7 +4548,6 @@ int bdrv_inactivate_all(void)
+     BlockDriverState *bs = NULL;
+     BdrvNextIterator it;
+     int ret = 0;
+-    int pass;
+     GSList *aio_ctxs = NULL, *ctx;
+ 
+     for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
+@@ -4537,17 +4559,17 @@ int bdrv_inactivate_all(void)
+         }
+     }
+ 
+-    /* We do two passes of inactivation. The first pass calls to drivers'
+-     * .bdrv_inactivate callbacks recursively so all cache is flushed to disk;
+-     * the second pass sets the BDRV_O_INACTIVE flag so that no further write
+-     * is allowed. */
+-    for (pass = 0; pass < 2; pass++) {
+-        for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
+-            ret = bdrv_inactivate_recurse(bs, pass);
+-            if (ret < 0) {
+-                bdrv_next_cleanup(&it);
+-                goto out;
+-            }
++    for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
++        /* Nodes with BDS parents are covered by recursion from the last
++         * parent that gets inactivated. Don't inactivate them a second
++         * time if that has already happened. */
++        if (bdrv_has_bds_parent(bs, false)) {
++            continue;
++        }
++        ret = bdrv_inactivate_recurse(bs);
++        if (ret < 0) {
++            bdrv_next_cleanup(&it);
++            goto out;
+         }
+     }
+ 
+-- 
+1.8.3.1
+

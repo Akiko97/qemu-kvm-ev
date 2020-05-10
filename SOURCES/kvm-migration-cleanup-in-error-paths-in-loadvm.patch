@@ -1,0 +1,54 @@
+From 5496cb7128658bd4b3cb24ce741bba4df3c09656 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Mon, 19 Nov 2018 16:19:21 +0100
+Subject: [PATCH 22/22] migration: cleanup in error paths in loadvm
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20181119161921.15191-3-dgilbert@redhat.com>
+Patchwork-id: 83049
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 2/2] migration: cleanup in error paths in loadvm
+Bugzilla: 1608877
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+
+There's a couple of error paths in qemu_loadvm_state
+which happen early on but after we've initialised the
+load state; that needs to be cleaned up otherwise
+we can hit asserts if the state gets reinitialised later.
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-Id: <20180914170430.54271-3-dgilbert@redhat.com>
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit 096c83b7219c5a2145435afc8be750281e9cb447)
+Signed-off-by: Danilo C. L. de Paula <ddepaula@redhat.com>
+(cherry picked from commit 020674a9569df103bdd6a8cef29ce8013c92a8b8)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/savevm.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/migration/savevm.c b/migration/savevm.c
+index 7a5d9ff..e5d57fa 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -2146,11 +2146,13 @@ int qemu_loadvm_state(QEMUFile *f)
+     if (migrate_get_current()->send_configuration) {
+         if (qemu_get_byte(f) != QEMU_VM_CONFIGURATION) {
+             error_report("Configuration section missing");
++            qemu_loadvm_state_cleanup();
+             return -EINVAL;
+         }
+         ret = vmstate_load_state(f, &vmstate_configuration, &savevm_state, 0);
+ 
+         if (ret) {
++            qemu_loadvm_state_cleanup();
+             return ret;
+         }
+     }
+-- 
+1.8.3.1
+

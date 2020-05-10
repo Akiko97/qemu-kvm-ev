@@ -1,0 +1,43 @@
+From 8510a5a2d268749fd0a55072375ba8e4618717b0 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:38 +0200
+Subject: [PATCH 69/89] vhdx: Fix vhdx_co_create() return value
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-56-kwolf@redhat.com>
+Patchwork-id: 81127
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 55/73] vhdx: Fix vhdx_co_create() return value
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+.bdrv_co_create() is supposed to return 0 on success, but vhdx could
+return a positive value instead. Fix this.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit 4a5f2779bad769184550869931937acd0707ec3b)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/vhdx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/vhdx.c b/block/vhdx.c
+index 6731298..31ac53b 100644
+--- a/block/vhdx.c
++++ b/block/vhdx.c
+@@ -1950,7 +1950,7 @@ static int coroutine_fn vhdx_co_create(BlockdevCreateOptions *opts,
+         goto delete_and_exit;
+     }
+ 
+-
++    ret = 0;
+ delete_and_exit:
+     blk_unref(blk);
+     bdrv_unref(bs);
+-- 
+1.8.3.1
+

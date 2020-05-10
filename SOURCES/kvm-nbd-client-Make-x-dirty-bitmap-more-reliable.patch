@@ -1,0 +1,57 @@
+From 4a378f730e73452bf9bf3a5c761f7d0efdae9d27 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:39 +0100
+Subject: [PATCH 072/163] nbd/client: Make x-dirty-bitmap more reliable
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-27-jsnow@redhat.com>
+Patchwork-id: 85106
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 26/28] nbd/client: Make x-dirty-bitmap more reliable
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+The implementation of x-dirty-bitmap in qemu 3.0 (commit 216ee365)
+silently falls back to treating the server as not supporting
+NBD_CMD_BLOCK_STATUS if a requested meta_context name was not
+negotiated, which in turn means treating the _entire_ image as
+data. Since our hack relied on using 'qemu-img map' to view
+which portions of the image were dirty by seeing what the
+redirected bdrv_block_status() treats as holes, this means
+that our fallback treats the entire image as clean.  Better
+would have been to treat the entire image as dirty, or to fail
+to connect because the user's request for a specific context
+could not be honored. This patch goes with the latter.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20181130023232.3079982-3-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit 47829c40794160debdb33b4a042d182e776876d4)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index 76e9ca3..e6e27da 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -992,6 +992,11 @@ int nbd_client_init(BlockDriverState *bs,
+         logout("Failed to negotiate with the NBD server\n");
+         return ret;
+     }
++    if (x_dirty_bitmap && !client->info.base_allocation) {
++        error_setg(errp, "requested x-dirty-bitmap %s not found",
++                   x_dirty_bitmap);
++        return -EINVAL;
++    }
+     if (client->info.flags & NBD_FLAG_READ_ONLY) {
+         ret = bdrv_apply_auto_read_only(bs, "NBD export is read-only", errp);
+         if (ret < 0) {
+-- 
+1.8.3.1
+

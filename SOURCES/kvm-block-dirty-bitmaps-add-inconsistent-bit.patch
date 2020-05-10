@@ -1,0 +1,136 @@
+From a955ea9fa72ac1a0e21b66d0958e582fbbc3f716 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:49 +0200
+Subject: [PATCH 144/163] block/dirty-bitmaps: add inconsistent bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-14-jsnow@redhat.com>
+Patchwork-id: 85419
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 13/21] block/dirty-bitmaps: add inconsistent bit
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+Add an inconsistent bit to dirty-bitmaps that allows us to report a bitmap as
+persistent but potentially inconsistent, i.e. if we find bitmaps on a qcow2
+that have been marked as "in use".
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190301191545.8728-2-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit b0f455599d0f092abc11aa3daba693be1453d29a)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c         | 20 ++++++++++++++++++++
+ include/block/dirty-bitmap.h |  2 ++
+ qapi/block-core.json         | 13 +++++++++----
+ 3 files changed, 31 insertions(+), 4 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index e090237..096c1b7 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -46,6 +46,9 @@ struct BdrvDirtyBitmap {
+                                    and this bitmap must remain unchanged while
+                                    this flag is set. */
+     bool persistent;            /* bitmap must be saved to owner disk image */
++    bool inconsistent;          /* bitmap is persistent, but inconsistent.
++                                   It cannot be used at all in any way, except
++                                   a QMP user can remove it. */
+     bool migration;             /* Bitmap is selected for migration, it should
+                                    not be stored on the next inactivation
+                                    (persistent flag doesn't matter until next
+@@ -465,6 +468,8 @@ BlockDirtyInfoList *bdrv_query_dirty_bitmaps(BlockDriverState *bs)
+         info->recording = bdrv_dirty_bitmap_recording(bm);
+         info->busy = bdrv_dirty_bitmap_busy(bm);
+         info->persistent = bm->persistent;
++        info->has_inconsistent = bm->inconsistent;
++        info->inconsistent = bm->inconsistent;
+         entry->value = info;
+         *plist = entry;
+         plist = &entry->next;
+@@ -713,6 +718,16 @@ void bdrv_dirty_bitmap_set_persistance(BdrvDirtyBitmap *bitmap, bool persistent)
+ }
+ 
+ /* Called with BQL taken. */
++void bdrv_dirty_bitmap_set_inconsistent(BdrvDirtyBitmap *bitmap)
++{
++    qemu_mutex_lock(bitmap->mutex);
++    assert(bitmap->persistent == true);
++    bitmap->inconsistent = true;
++    bitmap->disabled = true;
++    qemu_mutex_unlock(bitmap->mutex);
++}
++
++/* Called with BQL taken. */
+ void bdrv_dirty_bitmap_set_migration(BdrvDirtyBitmap *bitmap, bool migration)
+ {
+     qemu_mutex_lock(bitmap->mutex);
+@@ -725,6 +740,11 @@ bool bdrv_dirty_bitmap_get_persistance(BdrvDirtyBitmap *bitmap)
+     return bitmap->persistent && !bitmap->migration;
+ }
+ 
++bool bdrv_dirty_bitmap_inconsistent(const BdrvDirtyBitmap *bitmap)
++{
++    return bitmap->inconsistent;
++}
++
+ bool bdrv_has_changed_persistent_bitmaps(BlockDriverState *bs)
+ {
+     BdrvDirtyBitmap *bm;
+diff --git a/include/block/dirty-bitmap.h b/include/block/dirty-bitmap.h
+index ba8477b..bd1b647 100644
+--- a/include/block/dirty-bitmap.h
++++ b/include/block/dirty-bitmap.h
+@@ -68,6 +68,7 @@ void bdrv_dirty_bitmap_deserialize_finish(BdrvDirtyBitmap *bitmap);
+ void bdrv_dirty_bitmap_set_readonly(BdrvDirtyBitmap *bitmap, bool value);
+ void bdrv_dirty_bitmap_set_persistance(BdrvDirtyBitmap *bitmap,
+                                        bool persistent);
++void bdrv_dirty_bitmap_set_inconsistent(BdrvDirtyBitmap *bitmap);
+ void bdrv_dirty_bitmap_set_busy(BdrvDirtyBitmap *bitmap, bool busy);
+ void bdrv_merge_dirty_bitmap(BdrvDirtyBitmap *dest, const BdrvDirtyBitmap *src,
+                              HBitmap **backup, Error **errp);
+@@ -91,6 +92,7 @@ bool bdrv_dirty_bitmap_readonly(const BdrvDirtyBitmap *bitmap);
+ bool bdrv_has_readonly_bitmaps(BlockDriverState *bs);
+ bool bdrv_dirty_bitmap_get_autoload(const BdrvDirtyBitmap *bitmap);
+ bool bdrv_dirty_bitmap_get_persistance(BdrvDirtyBitmap *bitmap);
++bool bdrv_dirty_bitmap_inconsistent(const BdrvDirtyBitmap *bitmap);
+ bool bdrv_dirty_bitmap_busy(BdrvDirtyBitmap *bitmap);
+ bool bdrv_has_changed_persistent_bitmaps(BlockDriverState *bs);
+ BdrvDirtyBitmap *bdrv_dirty_bitmap_next(BlockDriverState *bs,
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 98bd3a8..92a42ef 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -468,15 +468,20 @@
+ #        and cannot be modified via QMP or used by another operation.
+ #        Replaces `locked` and `frozen` statuses. (since 4.0)
+ #
+-# @persistent: true if the bitmap will eventually be flushed to persistent
+-#              storage (since 4.0)
++# @persistent: true if the bitmap was stored on disk, is scheduled to be stored
++#              on disk, or both. (since 4.0)
++#
++# @inconsistent: true if this is a persistent bitmap that was improperly
++#                stored. Implies @persistent to be true; @recording and
++#                @busy to be false. This bitmap cannot be used. To remove
++#                it, use @block-dirty-bitmap-remove. (Since 4.0)
+ #
+ # Since: 1.3
+ ##
+ { 'struct': 'BlockDirtyInfo',
+   'data': {'*name': 'str', 'count': 'int', 'granularity': 'uint32',
+-           'recording': 'bool', 'busy': 'bool',
+-           'status': 'DirtyBitmapStatus', 'persistent': 'bool' } }
++           'recording': 'bool', 'busy': 'bool', 'status': 'DirtyBitmapStatus',
++           'persistent': 'bool', '*inconsistent': 'bool' } }
+ 
+ ##
+ # @Qcow2BitmapInfoFlags:
+-- 
+1.8.3.1
+

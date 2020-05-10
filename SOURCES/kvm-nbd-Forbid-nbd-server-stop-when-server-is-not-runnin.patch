@@ -1,0 +1,78 @@
+From 4c382f6bee06a3af0b05e321beca89e39b6caa1f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:27 +0100
+Subject: [PATCH 088/163] nbd: Forbid nbd-server-stop when server is not
+ running
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-15-jsnow@redhat.com>
+Patchwork-id: 85187
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 14/55] nbd: Forbid nbd-server-stop when server is not running
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Since we already forbid other nbd-server commands when not
+in the right state, it is unlikely that any caller was relying
+on a second stop to behave as a silent no-op.  Update iotest
+223 to show the improved behavior.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190111194720.15671-3-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit 7801c3a7fd7042fd2f9435af4b9a6d2094073174)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev-nbd.c             | 5 +++++
+ tests/qemu-iotests/223     | 2 +-
+ tests/qemu-iotests/223.out | 2 +-
+ 3 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/blockdev-nbd.c b/blockdev-nbd.c
+index 1d170c8..ca58491 100644
+--- a/blockdev-nbd.c
++++ b/blockdev-nbd.c
+@@ -214,6 +214,11 @@ void qmp_nbd_server_remove(const char *name,
+ 
+ void qmp_nbd_server_stop(Error **errp)
+ {
++    if (!nbd_server) {
++        error_setg(errp, "NBD server not running");
++        return;
++    }
++
+     nbd_export_close_all();
+ 
+     nbd_server_free(nbd_server);
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+index 61b46a2..a401609 100755
+--- a/tests/qemu-iotests/223
++++ b/tests/qemu-iotests/223
+@@ -172,7 +172,7 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
+   "arguments":{"name":"n2"}}' "error" # Attempt duplicate clean
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "return"
+-_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "return" # Oops
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "error" # Again
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"quit"}' "return"
+ 
+ # success, all done
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+index c1eed62..7d28c1a 100644
+--- a/tests/qemu-iotests/223.out
++++ b/tests/qemu-iotests/223.out
+@@ -69,6 +69,6 @@ read 2097152/2097152 bytes at offset 2097152
+ {"return": {}}
+ {"error": {"class": "GenericError", "desc": "Export 'n2' is not found"}}
+ {"return": {}}
+-{"return": {}}
++{"error": {"class": "GenericError", "desc": "NBD server not running"}}
+ {"return": {}}
+ *** done
+-- 
+1.8.3.1
+

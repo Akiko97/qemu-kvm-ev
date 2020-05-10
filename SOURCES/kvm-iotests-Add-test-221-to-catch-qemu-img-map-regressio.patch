@@ -1,0 +1,142 @@
+From 267cb4b010be63dd4d8af995f496ae03cffe5f8f Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 6 Aug 2018 16:35:53 +0200
+Subject: [PATCH 04/13] iotests: Add test 221 to catch qemu-img map regression
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180806163553.13344-3-mreitz@redhat.com>
+Patchwork-id: 81649
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 2/2] iotests: Add test 221 to catch qemu-img map regression
+Bugzilla: 1601310
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Although qemu-img creates aligned files (by rounding up), it
+must also gracefully handle files that are not sector-aligned.
+Test that the bug fixed in the previous patch does not recur.
+
+It's a bit annoying that we can see the (implicit) hole past
+the end of the file on to the next sector boundary, so if we
+ever reach the point where we report a byte-accurate size rather
+than our current behavior of always rounding up, this test will
+probably need a slight modification.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit c6a9d2f6f9bc0c163b3a3073126464a2446bad5f)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/221     | 60 ++++++++++++++++++++++++++++++++++++++++++++++
+ tests/qemu-iotests/221.out | 16 +++++++++++++
+ tests/qemu-iotests/group   |  1 +
+ 3 files changed, 77 insertions(+)
+ create mode 100755 tests/qemu-iotests/221
+ create mode 100644 tests/qemu-iotests/221.out
+
+diff --git a/tests/qemu-iotests/221 b/tests/qemu-iotests/221
+new file mode 100755
+index 0000000..41c4e4b
+--- /dev/null
++++ b/tests/qemu-iotests/221
+@@ -0,0 +1,60 @@
++#!/bin/bash
++#
++# Test qemu-img vs. unaligned images
++#
++# Copyright (C) 2018 Red Hat, Inc.
++#
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 2 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++#
++
++seq="$(basename $0)"
++echo "QA output created by $seq"
++
++here="$PWD"
++status=1 # failure is the default!
++
++_cleanup()
++{
++    _cleanup_test_img
++}
++trap "_cleanup; exit \$status" 0 1 2 3 15
++
++# get standard environment, filters and checks
++. ./common.rc
++. ./common.filter
++
++_supported_fmt raw
++_supported_proto file
++_supported_os Linux
++
++echo
++echo "=== Check mapping of unaligned raw image ==="
++echo
++
++_make_test_img 43009 # qemu-img create rounds size up
++$QEMU_IMG map --output=json "$TEST_IMG" | _filter_qemu_img_map
++
++truncate --size=43009 "$TEST_IMG" # so we resize it and check again
++$QEMU_IMG map --output=json "$TEST_IMG" | _filter_qemu_img_map
++
++$QEMU_IO -c 'w 43008 1' "$TEST_IMG" | _filter_qemu_io # writing also rounds up
++$QEMU_IMG map --output=json "$TEST_IMG" | _filter_qemu_img_map
++
++truncate --size=43009 "$TEST_IMG" # so we resize it and check again
++$QEMU_IMG map --output=json "$TEST_IMG" | _filter_qemu_img_map
++
++# success, all done
++echo '*** done'
++rm -f $seq.full
++status=0
+diff --git a/tests/qemu-iotests/221.out b/tests/qemu-iotests/221.out
+new file mode 100644
+index 0000000..a9c0190
+--- /dev/null
++++ b/tests/qemu-iotests/221.out
+@@ -0,0 +1,16 @@
++QA output created by 221
++
++=== Check mapping of unaligned raw image ===
++
++Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=43009
++[{ "start": 0, "length": 43520, "depth": 0, "zero": true, "data": false, "offset": OFFSET}]
++[{ "start": 0, "length": 43520, "depth": 0, "zero": true, "data": false, "offset": OFFSET}]
++wrote 1/1 bytes at offset 43008
++1 bytes, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++[{ "start": 0, "length": 40960, "depth": 0, "zero": true, "data": false, "offset": OFFSET},
++{ "start": 40960, "length": 2049, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
++{ "start": 43009, "length": 511, "depth": 0, "zero": true, "data": false, "offset": OFFSET}]
++[{ "start": 0, "length": 40960, "depth": 0, "zero": true, "data": false, "offset": OFFSET},
++{ "start": 40960, "length": 2049, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
++{ "start": 43009, "length": 511, "depth": 0, "zero": true, "data": false, "offset": OFFSET}]
++*** done
+diff --git a/tests/qemu-iotests/group b/tests/qemu-iotests/group
+index 401258f..e479fe1 100644
+--- a/tests/qemu-iotests/group
++++ b/tests/qemu-iotests/group
+@@ -218,6 +218,7 @@
+ 217 rw auto quick
+ 218 rw auto quick
+ 219 rw auto
++221 rw auto quick
+ 222 rw auto quick
+ 223 rw auto quick
+ 226 auto quick
+-- 
+1.8.3.1
+

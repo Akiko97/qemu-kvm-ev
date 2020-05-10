@@ -1,0 +1,118 @@
+From d6d700d511612f621c0b6dcbd3d7996126f3da80 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 6 Jul 2018 17:56:56 +0200
+Subject: [PATCH 22/89] pr-manager-helper: report event on
+ connection/disconnection
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20180706175659.30615-7-pbonzini@redhat.com>
+Patchwork-id: 81247
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 6/9] pr-manager-helper: report event on connection/disconnection
+Bugzilla: 1533158
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Michal Privoznik <mprivozn@redhat.com>
+
+Let management know if there were any problems communicating with
+qemu-pr-helper.  The event is edge-triggered, and is sent every time
+the connection status of the pr-manager-helper object changes.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit e2c81a45101fdddfd47477a1805806f2c76639bf)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qapi/block.json          | 24 ++++++++++++++++++++++++
+ scsi/pr-manager-helper.c | 14 ++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/qapi/block.json b/qapi/block.json
+index c636354..f05b91a 100644
+--- a/qapi/block.json
++++ b/qapi/block.json
+@@ -403,6 +403,30 @@
+   'data': { 'device': 'str', 'id': 'str', 'tray-open': 'bool' } }
+ 
+ ##
++# @PR_MANAGER_STATUS_CHANGED:
++#
++# Emitted whenever the connected status of a persistent reservation
++# manager changes.
++#
++# @id: The id of the PR manager object
++#
++# @connected: true if the PR manager is connected to a backend
++#
++# Since: 3.0
++#
++# Example:
++#
++# <- { "event": "PR_MANAGER_STATUS_CHANGED",
++#      "data": { "id": "pr-helper0",
++#                "connected": true
++#      },
++#      "timestamp": { "seconds": 1519840375, "microseconds": 450486 } }
++#
++##
++{ 'event': 'PR_MANAGER_STATUS_CHANGED',
++  'data': { 'id': 'str', 'connected': 'bool' } }
++
++##
+ # @QuorumOpType:
+ #
+ # An enumeration of the quorum operation types
+diff --git a/scsi/pr-manager-helper.c b/scsi/pr-manager-helper.c
+index b11481b..519a296 100644
+--- a/scsi/pr-manager-helper.c
++++ b/scsi/pr-manager-helper.c
+@@ -17,6 +17,7 @@
+ #include "io/channel.h"
+ #include "io/channel-socket.h"
+ #include "pr-helper.h"
++#include "qapi/qapi-events-block.h"
+ 
+ #include <scsi/sg.h>
+ 
+@@ -38,6 +39,16 @@ typedef struct PRManagerHelper {
+     QIOChannel *ioc;
+ } PRManagerHelper;
+ 
++static void pr_manager_send_status_changed_event(PRManagerHelper *pr_mgr)
++{
++    char *id = object_get_canonical_path_component(OBJECT(pr_mgr));
++
++    if (id) {
++        qapi_event_send_pr_manager_status_changed(id, !!pr_mgr->ioc,
++                                                  &error_abort);
++    }
++}
++
+ /* Called with lock held.  */
+ static int pr_manager_helper_read(PRManagerHelper *pr_mgr,
+                                   void *buf, int sz, Error **errp)
+@@ -47,6 +58,7 @@ static int pr_manager_helper_read(PRManagerHelper *pr_mgr,
+     if (r < 0) {
+         object_unref(OBJECT(pr_mgr->ioc));
+         pr_mgr->ioc = NULL;
++        pr_manager_send_status_changed_event(pr_mgr);
+         return -EINVAL;
+     }
+ 
+@@ -72,6 +84,7 @@ static int pr_manager_helper_write(PRManagerHelper *pr_mgr,
+             assert(n_written != QIO_CHANNEL_ERR_BLOCK);
+             object_unref(OBJECT(pr_mgr->ioc));
+             pr_mgr->ioc = NULL;
++            pr_manager_send_status_changed_event(pr_mgr);
+             return n_written < 0 ? -EINVAL : 0;
+         }
+ 
+@@ -127,6 +140,7 @@ static int pr_manager_helper_initialize(PRManagerHelper *pr_mgr,
+         goto out_close;
+     }
+ 
++    pr_manager_send_status_changed_event(pr_mgr);
+     return 0;
+ 
+ out_close:
+-- 
+1.8.3.1
+

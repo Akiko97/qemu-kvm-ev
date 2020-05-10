@@ -1,0 +1,57 @@
+From ed04f30927017781f0aa6aa5f9bd734320f4a330 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 21 Aug 2018 18:53:11 +0200
+Subject: [PATCH 4/5] i386: Disable TOPOEXT by default on "-cpu host"
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180821185311.27865-1-ehabkost@redhat.com>
+Patchwork-id: 81903
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] i386: Disable TOPOEXT by default on "-cpu host"
+Bugzilla: 1613277
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1613277
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=17980585
+
+Enabling TOPOEXT is always allowed, but it can't be enabled
+blindly by "-cpu host" because it may make guests crash if the
+rest of the cache topology information isn't provided or isn't
+consistent.
+
+This addresses the bug reported at:
+https://bugzilla.redhat.com/show_bug.cgi?id=1613277
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <20180809221852.15285-1-ehabkost@redhat.com>
+Tested-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Babu Moger <babu.moger@amd.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 7210a02c58572b2686a3a8d610c6628f87864aed)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index eabe4ea..e6ad66c 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -852,6 +852,12 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+         },
+         .cpuid_eax = 0x80000001, .cpuid_reg = R_ECX,
+         .tcg_features = TCG_EXT3_FEATURES,
++        /*
++         * TOPOEXT is always allowed but can't be enabled blindly by
++         * "-cpu host", as it requires consistent cache topology info
++         * to be provided so it doesn't confuse guests.
++         */
++        .no_autoenable_flags = CPUID_EXT3_TOPOEXT,
+     },
+     [FEAT_C000_0001_EDX] = {
+         .feat_names = {
+-- 
+1.8.3.1
+

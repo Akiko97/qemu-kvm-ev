@@ -1,0 +1,100 @@
+From 504f6ad36108eb4d710cd1e29694bb4a2bcdb8bd Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 10 Sep 2018 18:17:49 +0200
+Subject: [PATCH 11/25] block/mirror: add block job creation flags
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180910181803.11781-12-jsnow@redhat.com>
+Patchwork-id: 82088
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 11/25] block/mirror: add block job creation flags
+Bugzilla: 1626061
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Add support for taking and passing forward job creation flags.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Message-id: 20180906130225.5118-3-jsnow@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit bbb6798d0caa79cd4e899b33777c577d0bd04399)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/mirror.c            | 5 +++--
+ blockdev.c                | 3 ++-
+ include/block/block_int.h | 5 ++++-
+ 3 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index 0ab0822..a80c359 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -1270,7 +1270,8 @@ fail:
+ 
+ void mirror_start(const char *job_id, BlockDriverState *bs,
+                   BlockDriverState *target, const char *replaces,
+-                  int64_t speed, uint32_t granularity, int64_t buf_size,
++                  int creation_flags, int64_t speed,
++                  uint32_t granularity, int64_t buf_size,
+                   MirrorSyncMode mode, BlockMirrorBackingMode backing_mode,
+                   BlockdevOnError on_source_error,
+                   BlockdevOnError on_target_error,
+@@ -1285,7 +1286,7 @@ void mirror_start(const char *job_id, BlockDriverState *bs,
+     }
+     is_none_mode = mode == MIRROR_SYNC_MODE_NONE;
+     base = mode == MIRROR_SYNC_MODE_TOP ? backing_bs(bs) : NULL;
+-    mirror_start_job(job_id, bs, JOB_DEFAULT, target, replaces,
++    mirror_start_job(job_id, bs, creation_flags, target, replaces,
+                      speed, granularity, buf_size, backing_mode,
+                      on_source_error, on_target_error, unmap, NULL, NULL,
+                      &mirror_job_driver, is_none_mode, base, false,
+diff --git a/blockdev.c b/blockdev.c
+index 20dbcf5..5d38e17 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3746,6 +3746,7 @@ static void blockdev_mirror_common(const char *job_id, BlockDriverState *bs,
+                                    const char *filter_node_name,
+                                    Error **errp)
+ {
++    int job_flags = JOB_DEFAULT;
+ 
+     if (!has_speed) {
+         speed = 0;
+@@ -3795,7 +3796,7 @@ static void blockdev_mirror_common(const char *job_id, BlockDriverState *bs,
+      * and will allow to check whether the node still exist at mirror completion
+      */
+     mirror_start(job_id, bs, target,
+-                 has_replaces ? replaces : NULL,
++                 has_replaces ? replaces : NULL, job_flags,
+                  speed, granularity, buf_size, sync, backing_mode,
+                  on_source_error, on_target_error, unmap, filter_node_name,
+                  errp);
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index 25ad363..07517cf 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -1000,6 +1000,8 @@ void commit_active_start(const char *job_id, BlockDriverState *bs,
+  * @target: Block device to write to.
+  * @replaces: Block graph node name to replace once the mirror is done. Can
+  *            only be used when full mirroring is selected.
++ * @creation_flags: Flags that control the behavior of the Job lifetime.
++ *                  See @BlockJobCreateFlags
+  * @speed: The maximum speed, in bytes per second, or 0 for unlimited.
+  * @granularity: The chosen granularity for the dirty bitmap.
+  * @buf_size: The amount of data that can be in flight at one time.
+@@ -1020,7 +1022,8 @@ void commit_active_start(const char *job_id, BlockDriverState *bs,
+  */
+ void mirror_start(const char *job_id, BlockDriverState *bs,
+                   BlockDriverState *target, const char *replaces,
+-                  int64_t speed, uint32_t granularity, int64_t buf_size,
++                  int creation_flags, int64_t speed,
++                  uint32_t granularity, int64_t buf_size,
+                   MirrorSyncMode mode, BlockMirrorBackingMode backing_mode,
+                   BlockdevOnError on_source_error,
+                   BlockdevOnError on_target_error,
+-- 
+1.8.3.1
+

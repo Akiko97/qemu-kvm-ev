@@ -1,0 +1,66 @@
+From 9a021c064ee477faa45d396ab2c0174483711733 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Wed, 13 Jun 2018 10:40:25 +0200
+Subject: [PATCH 3/9] remove duplicate HW_COMPAT_RHEL7_5
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20180613104026.4395-2-kraxel@redhat.com>
+Patchwork-id: 80654
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] remove duplicate HW_COMPAT_RHEL7_5
+Bugzilla: 1542080
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Daniel P. Berrange <berrange@redhat.com>
+
+There are *two* HW_COMPAT_RHEL7_5 #defines in include/hw/compat.h.
+Looks like a mismerge.  Drop the second one.  The first seems to be
+the one we want keep as it documents which upstream release the compat
+settings are coming from.
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/hw/compat.h | 29 -----------------------------
+ 1 file changed, 29 deletions(-)
+
+diff --git a/include/hw/compat.h b/include/hw/compat.h
+index d711b5c5..666eed9 100644
+--- a/include/hw/compat.h
++++ b/include/hw/compat.h
+@@ -478,33 +478,4 @@
+         .value    = "false",\
+     },
+ 
+-/* like HW_COMPAT_2_10 and HW_COMPAT_2_11
+- */
+-#define HW_COMPAT_RHEL7_5 \
+-    {  /* HW_COMPAT_RHEL7_5 */ \
+-        .driver   = "hpet",\
+-        .property = "hpet-offset-saved",\
+-        .value    = "false",\
+-    },{ /* HW_COMPAT_RHEL7_5 */ \
+-        .driver   = "virtio-blk-pci",\
+-        .property = "vectors",\
+-        .value    = "2",\
+-    },{ /* HW_COMPAT_RHEL7_5 */ \
+-        .driver   = "vhost-user-blk-pci",\
+-        .property = "vectors",\
+-        .value    = "2",\
+-    },{ /* HW_COMPAT_RHEL7_5 */ \
+-        .driver   = "e1000",\
+-        .property = "migrate_tso_props",\
+-        .value    = "off",\
+-    },{ /* HW_COMPAT_RHEL7_5 */ \
+-        .driver   = "virtio-mouse-device",\
+-        .property = "wheel-axis",\
+-        .value    = "false",\
+-    },{ /* HW_COMPAT_RHEL7_5 */ \
+-        .driver   = "virtio-tablet-device",\
+-        .property = "wheel-axis",\
+-        .value    = "false",\
+-    },
+-
+ #endif /* HW_COMPAT_H */
+-- 
+1.8.3.1
+

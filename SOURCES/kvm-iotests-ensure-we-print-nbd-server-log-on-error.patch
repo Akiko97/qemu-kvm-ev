@@ -1,0 +1,60 @@
+From c5f12193572b8d67f30a7a2b4e33ff6eef97558d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:23:05 +0100
+Subject: [PATCH 127/163] iotests: ensure we print nbd server log on error
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-53-jsnow@redhat.com>
+Patchwork-id: 85222
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 52/55] iotests: ensure we print nbd server log on error
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Daniel P. Berrangé <berrange@redhat.com>
+
+If we abort the iotest early the server.log file might contain useful
+information for diagnosing the problem. Ensure its contents are
+displayed in this case.
+
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <20190220145819.30969-2-berrange@redhat.com>
+[eblake: fix shell quoting]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 84f8b840a2d9ed248c80b3601d2d212cdf60cecf)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/233 | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/tests/qemu-iotests/233 b/tests/qemu-iotests/233
+index fc345a1..adb742f 100755
+--- a/tests/qemu-iotests/233
++++ b/tests/qemu-iotests/233
+@@ -30,6 +30,8 @@ _cleanup()
+ {
+     nbd_server_stop
+     _cleanup_test_img
++    # If we aborted early we want to see this log for diagnosis
++    test -f "$TEST_DIR/server.log" && cat "$TEST_DIR/server.log"
+     rm -f "$TEST_DIR/server.log"
+     tls_x509_cleanup
+ }
+@@ -120,6 +122,7 @@ $QEMU_IO -f $IMGFMT -r -U -c 'r -P 0x22 1m 1m' "$TEST_IMG" | _filter_qemu_io
+ echo
+ echo "== final server log =="
+ cat "$TEST_DIR/server.log"
++rm -f "$TEST_DIR/server.log"
+ 
+ # success, all done
+ echo "*** done"
+-- 
+1.8.3.1
+

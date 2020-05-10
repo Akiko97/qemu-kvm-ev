@@ -1,0 +1,297 @@
+From 630e021373d8b88a5d9698c843811a518463072a Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Thu, 12 Jul 2018 14:42:56 +0200
+Subject: [PATCH 37/89] block: Move bdrv_truncate() implementation to io.c
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180712144258.17303-5-kwolf@redhat.com>
+Patchwork-id: 81328
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 4/6] block: Move bdrv_truncate() implementation to io.c
+Bugzilla: 1595173
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+This moves the bdrv_truncate() implementation from block.c to block/io.c
+so it can have access to the tracked requests infrastructure.
+
+This involves making refresh_total_sectors() public (in block_int.h).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 3d9f2d2af63fda5f0404fb85ea80161837a4e4e3)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c                   | 111 +---------------------------------------------
+ block/io.c                | 109 +++++++++++++++++++++++++++++++++++++++++++++
+ include/block/block_int.h |   2 +
+ 3 files changed, 112 insertions(+), 110 deletions(-)
+
+diff --git a/block.c b/block.c
+index 0af08ca..10a1ece 100644
+--- a/block.c
++++ b/block.c
+@@ -721,7 +721,7 @@ static int find_image_format(BlockBackend *file, const char *filename,
+  * Set the current 'total_sectors' value
+  * Return 0 on success, -errno on error.
+  */
+-static int refresh_total_sectors(BlockDriverState *bs, int64_t hint)
++int refresh_total_sectors(BlockDriverState *bs, int64_t hint)
+ {
+     BlockDriver *drv = bs->drv;
+ 
+@@ -2200,16 +2200,6 @@ static void bdrv_parent_cb_change_media(BlockDriverState *bs, bool load)
+     }
+ }
+ 
+-static void bdrv_parent_cb_resize(BlockDriverState *bs)
+-{
+-    BdrvChild *c;
+-    QLIST_FOREACH(c, &bs->parents, next_parent) {
+-        if (c->role->resize) {
+-            c->role->resize(c);
+-        }
+-    }
+-}
+-
+ /*
+  * Sets the backing file link of a BDS. A new reference is created; callers
+  * which don't need their own reference any more must call bdrv_unref().
+@@ -3736,105 +3726,6 @@ exit:
+ }
+ 
+ /**
+- * Truncate file to 'offset' bytes (needed only for file protocols)
+- */
+-int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset,
+-                                  PreallocMode prealloc, Error **errp)
+-{
+-    BlockDriverState *bs = child->bs;
+-    BlockDriver *drv = bs->drv;
+-    int ret;
+-
+-    assert(child->perm & BLK_PERM_RESIZE);
+-
+-    /* if bs->drv == NULL, bs is closed, so there's nothing to do here */
+-    if (!drv) {
+-        error_setg(errp, "No medium inserted");
+-        return -ENOMEDIUM;
+-    }
+-    if (offset < 0) {
+-        error_setg(errp, "Image size cannot be negative");
+-        return -EINVAL;
+-    }
+-
+-    bdrv_inc_in_flight(bs);
+-
+-    if (!drv->bdrv_co_truncate) {
+-        if (bs->file && drv->is_filter) {
+-            ret = bdrv_co_truncate(bs->file, offset, prealloc, errp);
+-            goto out;
+-        }
+-        error_setg(errp, "Image format driver does not support resize");
+-        ret = -ENOTSUP;
+-        goto out;
+-    }
+-    if (bs->read_only) {
+-        error_setg(errp, "Image is read-only");
+-        ret = -EACCES;
+-        goto out;
+-    }
+-
+-    assert(!(bs->open_flags & BDRV_O_INACTIVE));
+-
+-    ret = drv->bdrv_co_truncate(bs, offset, prealloc, errp);
+-    if (ret < 0) {
+-        goto out;
+-    }
+-    ret = refresh_total_sectors(bs, offset >> BDRV_SECTOR_BITS);
+-    if (ret < 0) {
+-        error_setg_errno(errp, -ret, "Could not refresh total sector count");
+-    } else {
+-        offset = bs->total_sectors * BDRV_SECTOR_SIZE;
+-    }
+-    bdrv_dirty_bitmap_truncate(bs, offset);
+-    bdrv_parent_cb_resize(bs);
+-    atomic_inc(&bs->write_gen);
+-
+-out:
+-    bdrv_dec_in_flight(bs);
+-    return ret;
+-}
+-
+-typedef struct TruncateCo {
+-    BdrvChild *child;
+-    int64_t offset;
+-    PreallocMode prealloc;
+-    Error **errp;
+-    int ret;
+-} TruncateCo;
+-
+-static void coroutine_fn bdrv_truncate_co_entry(void *opaque)
+-{
+-    TruncateCo *tco = opaque;
+-    tco->ret = bdrv_co_truncate(tco->child, tco->offset, tco->prealloc,
+-                                tco->errp);
+-}
+-
+-int bdrv_truncate(BdrvChild *child, int64_t offset, PreallocMode prealloc,
+-                  Error **errp)
+-{
+-    Coroutine *co;
+-    TruncateCo tco = {
+-        .child      = child,
+-        .offset     = offset,
+-        .prealloc   = prealloc,
+-        .errp       = errp,
+-        .ret        = NOT_DONE,
+-    };
+-
+-    if (qemu_in_coroutine()) {
+-        /* Fast-path if already in coroutine context */
+-        bdrv_truncate_co_entry(&tco);
+-    } else {
+-        co = qemu_coroutine_create(bdrv_truncate_co_entry, &tco);
+-        qemu_coroutine_enter(co);
+-        BDRV_POLL_WHILE(child->bs, tco.ret == NOT_DONE);
+-    }
+-
+-    return tco.ret;
+-}
+-
+-/**
+  * Length of a allocated file in bytes. Sparse files are counted by actual
+  * allocated space. Return < 0 if error or unknown.
+  */
+diff --git a/block/io.c b/block/io.c
+index 5c043a4..32a82e3 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -2929,3 +2929,112 @@ int coroutine_fn bdrv_co_copy_range(BdrvChild *src, uint64_t src_offset,
+     bdrv_dec_in_flight(dst_bs);
+     return ret;
+ }
++
++static void bdrv_parent_cb_resize(BlockDriverState *bs)
++{
++    BdrvChild *c;
++    QLIST_FOREACH(c, &bs->parents, next_parent) {
++        if (c->role->resize) {
++            c->role->resize(c);
++        }
++    }
++}
++
++/**
++ * Truncate file to 'offset' bytes (needed only for file protocols)
++ */
++int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset,
++                                  PreallocMode prealloc, Error **errp)
++{
++    BlockDriverState *bs = child->bs;
++    BlockDriver *drv = bs->drv;
++    int ret;
++
++    assert(child->perm & BLK_PERM_RESIZE);
++
++    /* if bs->drv == NULL, bs is closed, so there's nothing to do here */
++    if (!drv) {
++        error_setg(errp, "No medium inserted");
++        return -ENOMEDIUM;
++    }
++    if (offset < 0) {
++        error_setg(errp, "Image size cannot be negative");
++        return -EINVAL;
++    }
++
++    bdrv_inc_in_flight(bs);
++
++    if (!drv->bdrv_co_truncate) {
++        if (bs->file && drv->is_filter) {
++            ret = bdrv_co_truncate(bs->file, offset, prealloc, errp);
++            goto out;
++        }
++        error_setg(errp, "Image format driver does not support resize");
++        ret = -ENOTSUP;
++        goto out;
++    }
++    if (bs->read_only) {
++        error_setg(errp, "Image is read-only");
++        ret = -EACCES;
++        goto out;
++    }
++
++    assert(!(bs->open_flags & BDRV_O_INACTIVE));
++
++    ret = drv->bdrv_co_truncate(bs, offset, prealloc, errp);
++    if (ret < 0) {
++        goto out;
++    }
++    ret = refresh_total_sectors(bs, offset >> BDRV_SECTOR_BITS);
++    if (ret < 0) {
++        error_setg_errno(errp, -ret, "Could not refresh total sector count");
++    } else {
++        offset = bs->total_sectors * BDRV_SECTOR_SIZE;
++    }
++    bdrv_dirty_bitmap_truncate(bs, offset);
++    bdrv_parent_cb_resize(bs);
++    atomic_inc(&bs->write_gen);
++
++out:
++    bdrv_dec_in_flight(bs);
++    return ret;
++}
++
++typedef struct TruncateCo {
++    BdrvChild *child;
++    int64_t offset;
++    PreallocMode prealloc;
++    Error **errp;
++    int ret;
++} TruncateCo;
++
++static void coroutine_fn bdrv_truncate_co_entry(void *opaque)
++{
++    TruncateCo *tco = opaque;
++    tco->ret = bdrv_co_truncate(tco->child, tco->offset, tco->prealloc,
++                                tco->errp);
++}
++
++int bdrv_truncate(BdrvChild *child, int64_t offset, PreallocMode prealloc,
++                  Error **errp)
++{
++    Coroutine *co;
++    TruncateCo tco = {
++        .child      = child,
++        .offset     = offset,
++        .prealloc   = prealloc,
++        .errp       = errp,
++        .ret        = NOT_DONE,
++    };
++
++    if (qemu_in_coroutine()) {
++        /* Fast-path if already in coroutine context */
++        bdrv_truncate_co_entry(&tco);
++    } else {
++        co = qemu_coroutine_create(bdrv_truncate_co_entry, &tco);
++        qemu_coroutine_enter(co);
++        BDRV_POLL_WHILE(child->bs, tco.ret == NOT_DONE);
++    }
++
++    return tco.ret;
++}
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index 46b2f87..6a844ec 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -1129,4 +1129,6 @@ int coroutine_fn bdrv_co_copy_range_to(BdrvChild *src, uint64_t src_offset,
+                                        BdrvChild *dst, uint64_t dst_offset,
+                                        uint64_t bytes, BdrvRequestFlags flags);
+ 
++int refresh_total_sectors(BlockDriverState *bs, int64_t hint);
++
+ #endif /* BLOCK_INT_H */
+-- 
+1.8.3.1
+

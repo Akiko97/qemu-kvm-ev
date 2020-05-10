@@ -1,0 +1,62 @@
+From 399ed639cc85835eb7a4a7241df6c1741c0578ba Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 1 Mar 2019 14:27:44 +0100
+Subject: [PATCH 2/9] virtio-blk: Increase in_flight for request restart BH
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190301142747.12251-3-kwolf@redhat.com>
+Patchwork-id: 84762
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 2/5] virtio-blk: Increase in_flight for request restart BH
+Bugzilla: 1671173
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+virtio_blk_dma_restart_bh() submits new requests, so in order to make
+sure that these requests are not started inside a drained section of the
+attached BlockBackend, we need to make sure that draining the
+BlockBackend waits for the BH to be executed.
+
+This BH is still questionable because its scheduled in the main thread
+instead of the configured iothread. Leave a FIXME comment for this.
+
+But with this fix, enabling the data plane at least waits for these
+requests (in bdrv_set_aio_context()) instead of changing the AioContext
+under their feet and making them run in the wrong thread, causing
+crashes and failures (e.g. due to missing locking).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 680f200217748e0920b79ec1d524717c2f50935b)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/block/virtio-blk.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/hw/block/virtio-blk.c b/hw/block/virtio-blk.c
+index b1532e4..691ade4 100644
+--- a/hw/block/virtio-blk.c
++++ b/hw/block/virtio-blk.c
+@@ -678,6 +678,7 @@ static void virtio_blk_dma_restart_bh(void *opaque)
+     if (mrb.num_reqs) {
+         virtio_blk_submit_multireq(s->blk, &mrb);
+     }
++    blk_dec_in_flight(s->conf.conf.blk);
+     aio_context_release(blk_get_aio_context(s->conf.conf.blk));
+ }
+ 
+@@ -691,8 +692,11 @@ static void virtio_blk_dma_restart_cb(void *opaque, int running,
+     }
+ 
+     if (!s->bh) {
++        /* FIXME The data plane is not started yet, so these requests are
++         * processed in the main thread. */
+         s->bh = aio_bh_new(blk_get_aio_context(s->conf.conf.blk),
+                            virtio_blk_dma_restart_bh, s);
++        blk_inc_in_flight(s->conf.conf.blk);
+         qemu_bh_schedule(s->bh);
+     }
+ }
+-- 
+1.8.3.1
+

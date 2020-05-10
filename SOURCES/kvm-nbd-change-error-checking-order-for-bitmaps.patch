@@ -1,0 +1,62 @@
+From 4118dc26c6ad7a69c11522d25ead648ffdf0088e Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:43 +0200
+Subject: [PATCH 138/163] nbd: change error checking order for bitmaps
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-8-jsnow@redhat.com>
+Patchwork-id: 85414
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 07/21] nbd: change error checking order for bitmaps
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+Check that the bitmap is not in use prior to it checking if it is
+not enabled/recording guest writes. The bitmap being busy was likely
+at the behest of the user, so this error has a greater chance of being
+understood by the user.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190223000614.13894-6-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 3b78a92776bf1199b6864f2f38d9d341fb741f36)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 0910d09..de21c64 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1510,6 +1510,11 @@ NBDExport *nbd_export_new(BlockDriverState *bs, uint64_t dev_offset,
+             goto fail;
+         }
+ 
++        if (bdrv_dirty_bitmap_user_locked(bm)) {
++            error_setg(errp, "Bitmap '%s' is in use", bitmap);
++            goto fail;
++        }
++
+         if ((nbdflags & NBD_FLAG_READ_ONLY) && bdrv_is_writable(bs) &&
+             bdrv_dirty_bitmap_enabled(bm)) {
+             error_setg(errp,
+@@ -1518,11 +1523,6 @@ NBDExport *nbd_export_new(BlockDriverState *bs, uint64_t dev_offset,
+             goto fail;
+         }
+ 
+-        if (bdrv_dirty_bitmap_user_locked(bm)) {
+-            error_setg(errp, "Bitmap '%s' is in use", bitmap);
+-            goto fail;
+-        }
+-
+         bdrv_dirty_bitmap_set_qmp_locked(bm, true);
+         exp->export_bitmap = bm;
+         exp->export_bitmap_context = g_strdup_printf("qemu:dirty-bitmap:%s",
+-- 
+1.8.3.1
+

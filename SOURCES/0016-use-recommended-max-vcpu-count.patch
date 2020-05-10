@@ -1,0 +1,115 @@
+From 0abcd4ae8344b523f2b462a182fddf181d2b2fa5 Mon Sep 17 00:00:00 2001
+From: Andrew Jones <drjones@redhat.com>
+Date: Tue, 21 Jan 2014 10:46:52 +0100
+Subject: use recommended max vcpu count
+
+RH-Author: Andrew Jones <drjones@redhat.com>
+Message-id: <1390301212-15344-1-git-send-email-drjones@redhat.com>
+Patchwork-id: 56862
+O-Subject: [RHEL7.0 qemu-kvm PATCH v6] use recommended max vcpu count
+Bugzilla: 998708
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Marcelo Tosatti <mtosatti@redhat.com>
+
+The recommended vcpu max limit (KVM_CAP_NR_VCPUS) should be used instead
+of the actual max vcpu limit (KVM_CAP_MAX_VCPUS) to give an error.
+
+This commit matches the limit to current KVM_CAP_NR_VCPUS value.
+
+Rebase notes (2.11.0):
+- Update commit log
+
+Merged patches 2.12.0:
+- 6553300 redhat: globally limit the maximum number of CPUs
+- 8453db7 redhat: remove manual max_cpus limitations for ppc
+
+Merged patches (2.11.0):
+- fdeef3c1c7 RHEL: Set vcpus hard limit to 240 for Power
+- 0584216921 Match POWER max cpus to x86
+
+Signed-off-by: Andrew Jones <drjones@redhat.com>
+(cherry picked from commit a4ceb63bdc5cbac19f5f633ec761b9de0dedb55e)
+(cherry picked from commit a1f26d85171b4d554225150053700e93ba6eba10)
+(cherry picked from commit 00b09fb8ae2fa23abfaba4e89f7daa1ba0ef9ec5)
+(cherry picked from commit bd420a814a24c56d1ff1564d92f36219106ef81b)
+(cherry picked from commit 79b73eacc15f2c06587734c6259b49d911327369)
+---
+ accel/kvm/kvm-all.c | 12 ++++++++++++
+ vl.c                | 23 +++++++++++++++++++++++
+ 2 files changed, 35 insertions(+)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index ffee68e..3f1c06e 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -1587,6 +1587,18 @@ static int kvm_init(MachineState *ms)
+     soft_vcpus_limit = kvm_recommended_vcpus(s);
+     hard_vcpus_limit = kvm_max_vcpus(s);
+ 
++#ifdef HOST_PPC64
++    /*
++     * On POWER, the kernel advertises a soft limit based on the
++     * number of CPU threads on the host.  We want to allow exceeding
++     * this for testing purposes, so we don't want to set hard limit
++     * to soft limit as on x86.
++     */
++#else
++    /* RHEL doesn't support nr_vcpus > soft_vcpus_limit */
++    hard_vcpus_limit = soft_vcpus_limit;
++#endif
++
+     while (nc->name) {
+         if (nc->num > soft_vcpus_limit) {
+             warn_report("Number of %s cpus requested (%d) exceeds "
+diff --git a/vl.c b/vl.c
+index cbd6bcc..f3acab3 100644
+--- a/vl.c
++++ b/vl.c
+@@ -135,6 +135,12 @@ int main(int argc, char **argv)
+ #define MAX_VIRTIO_CONSOLES 1
+ #define MAX_SCLP_CONSOLES 1
+ 
++#if defined(CONFIG_RHV)
++#define RHEL_MAX_CPUS 384
++#else
++#define RHEL_MAX_CPUS 240
++#endif
++
+ static const char *data_dir[16];
+ static int data_dir_idx;
+ const char *bios_name = NULL;
+@@ -1520,6 +1526,20 @@ MachineClass *find_default_machine(void)
+     return mc;
+ }
+ 
++/* Maximum number of CPUs limited for Red Hat Enterprise Linux */
++static void limit_max_cpus_in_machines(void)
++{
++    GSList *el, *machines = object_class_get_list(TYPE_MACHINE, false);
++
++    for (el = machines; el; el = el->next) {
++        MachineClass *mc = el->data;
++
++        if (mc->max_cpus > RHEL_MAX_CPUS) {
++            mc->max_cpus = RHEL_MAX_CPUS;
++        }
++    }
++}
++
+ MachineInfoList *qmp_query_machines(Error **errp)
+ {
+     GSList *el, *machines = object_class_get_list(TYPE_MACHINE, false);
+@@ -4084,6 +4104,9 @@ int main(int argc, char **argv, char **envp)
+ 
+     replay_configure(icount_opts);
+ 
++    /* Maximum number of CPUs limited for Red Hat Enterprise Linux */
++    limit_max_cpus_in_machines();
++
+     machine_class = select_machine();
+ 
+     set_memory_options(&ram_slots, &maxram_size, machine_class);
+-- 
+1.8.3.1
+

@@ -1,0 +1,106 @@
+From d215f56d789b8d6a2cb27501c89a516d213b1af3 Mon Sep 17 00:00:00 2001
+From: Jeffrey Cody <jcody@redhat.com>
+Date: Wed, 20 Jun 2018 17:44:46 +0200
+Subject: [PATCH 51/54] main-loop: drop spin_counter
+
+RH-Author: Jeffrey Cody <jcody@redhat.com>
+Message-id: <835200bb37bc622f0f6f9c471c809a1b73a08482.1529516334.git.jcody@redhat.com>
+Patchwork-id: 80906
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 1/1] main-loop: drop spin_counter
+Bugzilla: 1168213
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+From: Stefan Hajnoczi <stefanha@redhat.com>
+
+Commit d759c951f3287fad04210a52f2dc93f94cf58c7f ("replay: push
+replay_mutex_lock up the call tree") removed the !timeout lock
+optimization in the main loop.
+
+The idea of the optimization was to avoid ping-pongs between threads by
+keeping the Big QEMU Lock held across non-blocking (!timeout) main loop
+iterations.
+
+A warning is printed when the main loop spins without releasing BQL for
+long periods of time.  These warnings were supposed to aid debugging but
+in practice they just alarm users.  They are considered noise because
+the cause of spinning is not shown and is hard to find.
+
+Now that the lock optimization has been removed, there is no danger of
+hogging the BQL.  Drop the spin counter and the infamous warning.
+
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit 21891a5a3011608845b5d7f1f9cce60cdc2bcc62)
+Note: The original patch series from Stefan makes note that the
+      patch can be dropped because the lock optimization changed
+      upstream.
+
+      However, even without that optimization change upstream, this
+      warning / debug message is not very useful, and is just noise that
+      does not aid in debugging.  Go ahead and remove it anyway.
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/common.filter |  1 -
+ util/main-loop.c                 | 25 -------------------------
+ 2 files changed, 26 deletions(-)
+
+diff --git a/tests/qemu-iotests/common.filter b/tests/qemu-iotests/common.filter
+index c5f4bcf..7acb454 100644
+--- a/tests/qemu-iotests/common.filter
++++ b/tests/qemu-iotests/common.filter
+@@ -77,7 +77,6 @@ _filter_qemu()
+ {
+     sed -e "s#\\(^\\|(qemu) \\)$(basename $QEMU_PROG):#\1QEMU_PROG:#" \
+         -e 's#^QEMU [0-9]\+\.[0-9]\+\.[0-9]\+ monitor#QEMU X.Y.Z monitor#' \
+-        -e '/main-loop: WARNING: I\/O thread spun for [0-9]\+ iterations/d' \
+         -e $'s#\r##' # QEMU monitor uses \r\n line endings
+ }
+ 
+diff --git a/util/main-loop.c b/util/main-loop.c
+index 992f9b0..affe040 100644
+--- a/util/main-loop.c
++++ b/util/main-loop.c
+@@ -222,36 +222,11 @@ static int os_host_main_loop_wait(int64_t timeout)
+ {
+     GMainContext *context = g_main_context_default();
+     int ret;
+-    static int spin_counter;
+ 
+     g_main_context_acquire(context);
+ 
+     glib_pollfds_fill(&timeout);
+ 
+-    /* If the I/O thread is very busy or we are incorrectly busy waiting in
+-     * the I/O thread, this can lead to starvation of the BQL such that the
+-     * VCPU threads never run.  To make sure we can detect the later case,
+-     * print a message to the screen.  If we run into this condition, create
+-     * a fake timeout in order to give the VCPU threads a chance to run.
+-     */
+-    if (!timeout && (spin_counter > MAX_MAIN_LOOP_SPIN)) {
+-        static bool notified;
+-
+-        if (!notified && !qtest_enabled() && !qtest_driver()) {
+-            warn_report("I/O thread spun for %d iterations",
+-                        MAX_MAIN_LOOP_SPIN);
+-            notified = true;
+-        }
+-
+-        timeout = SCALE_MS;
+-    }
+-
+-
+-    if (timeout) {
+-        spin_counter = 0;
+-    } else {
+-        spin_counter++;
+-    }
+     qemu_mutex_unlock_iothread();
+     replay_mutex_unlock();
+ 
+-- 
+1.8.3.1
+

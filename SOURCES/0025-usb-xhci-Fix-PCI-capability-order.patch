@@ -1,0 +1,96 @@
+From 273826f0427e0e62be20ea42349dfb591dbcdf14 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 5 May 2017 19:06:14 +0200
+Subject: usb-xhci: Fix PCI capability order
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20170505190614.15987-2-dgilbert@redhat.com>
+Patchwork-id: 75038
+O-Subject: [RHEL-7.4 qemu-kvm-rhev PATCH 1/1] usb-xhci: Fix PCI capability order
+Bugzilla: 1447874
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+
+Upstream commit 1108b2f8a9 in 2.7.0 changed the order
+of the PCI capability chain in the XHCI pci device in the case
+where the device has the PCIe endpoint capability (i.e. only
+older machine types, pc-i440fx-2.0 upstream, pc-i440fx-rhel7.0.0
+apparently for us).
+
+Changing the order breaks migration compatibility; fixing this
+upstream would mean breaking the same case going from 2.7.0->current
+that currently works 2.7.0->2.9.0 - so upstream it's a choice
+of two breakages.
+
+Since we never released 2.7.0/2.8.0 we can fix this downstream.
+
+This reverts the order so that we create the capabilities in the
+order:
+   PCIe
+   MSI
+   MSI-X
+
+The symptom is:
+qemu-kvm: get_pci_config_device: Bad config data: i=0x71 read: a0 device: 0 cmask: ff wmask: 0 w1cmask:0
+qemu-kvm: Failed to load PCIDevice:config
+qemu-kvm: Failed to load xhci:parent_obj
+qemu-kvm: error while loading state for instance 0x0 of device '0000:00:0d.0/xhci'
+qemu-kvm: load of migration failed: Invalid argument
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+--
+Rebase notes (2.9.0):
+- Change in assert condition (upstream)
+
+(cherry picked from commit aad727a5ecde1ad4935eb8427604d4df5a1f1f35)
+(cherry picked from commit 2dd7402227e77d748a7375233ac9e7feab244bda)
+
+Conflicts:
+	hw/usb/hcd-xhci.c
+
+(cherry picked from commit a42f86dc906cc7d2c16d02bf125ed76847b469cb)
+(cherry picked from commit 992ab2e4f6e15d3e51bc716763aa8d6f45c6d29d)
+(cherry picked from commit 5b7b0303b6dd70c32bd03a9d8facd7eb7cf72be8)
+---
+ hw/usb/hcd-xhci.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index 883141f..181e803 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -3368,6 +3368,12 @@ static void usb_xhci_realize(struct PCIDevice *dev, Error **errp)
+         xhci->max_pstreams_mask = 0;
+     }
+ 
++    if (pci_bus_is_express(pci_get_bus(dev)) ||
++        xhci_get_flag(xhci, XHCI_FLAG_FORCE_PCIE_ENDCAP)) {
++        ret = pcie_endpoint_cap_init(dev, 0xa0);
++        assert(ret > 0);
++    }
++
+     if (xhci->msi != ON_OFF_AUTO_OFF) {
+         ret = msi_init(dev, 0x70, xhci->numintrs, true, false, &err);
+         /* Any error other than -ENOTSUP(board's MSI support is broken)
+@@ -3416,12 +3422,6 @@ static void usb_xhci_realize(struct PCIDevice *dev, Error **errp)
+                      PCI_BASE_ADDRESS_SPACE_MEMORY|PCI_BASE_ADDRESS_MEM_TYPE_64,
+                      &xhci->mem);
+ 
+-    if (pci_bus_is_express(pci_get_bus(dev)) ||
+-        xhci_get_flag(xhci, XHCI_FLAG_FORCE_PCIE_ENDCAP)) {
+-        ret = pcie_endpoint_cap_init(dev, 0xa0);
+-        assert(ret > 0);
+-    }
+-
+     if (xhci->msix != ON_OFF_AUTO_OFF) {
+         /* TODO check for errors, and should fail when msix=on */
+         msix_init(dev, xhci->numintrs,
+-- 
+1.8.3.1
+

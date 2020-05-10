@@ -1,0 +1,74 @@
+From 5233d49067a64ecb2c6ab2c91f4345a254f832f2 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 18:59:54 +0200
+Subject: [PATCH 15/57] migration: move calling control_save_page to the common
+ place
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-8-dgilbert@redhat.com>
+Patchwork-id: 81000
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 07/18] migration: move calling control_save_page to the common place
+Bugzilla: 1584139
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Xiao Guangrong <xiaoguangrong@tencent.com>
+
+The function is called by both ram_save_page and ram_save_target_page,
+so move it to the common caller to cleanup the code
+
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Xiao Guangrong <xiaoguangrong@tencent.com>
+Message-Id: <20180330075128.26919-8-xiaoguangrong@tencent.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit a8ec91f941c5f83123796331c09333d3557eb5fc)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/ram.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 106fcf1..9d6c41c 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1038,10 +1038,6 @@ static int ram_save_page(RAMState *rs, PageSearchStatus *pss, bool last_stage)
+     p = block->host + offset;
+     trace_ram_save_page(block->idstr, (uint64_t)offset, p);
+ 
+-    if (control_save_page(rs, block, offset, &pages)) {
+-        return pages;
+-    }
+-
+     XBZRLE_cache_lock();
+     pages = save_zero_page(rs, block, offset);
+     if (pages > 0) {
+@@ -1199,10 +1195,6 @@ static int ram_save_compressed_page(RAMState *rs, PageSearchStatus *pss,
+ 
+     p = block->host + offset;
+ 
+-    if (control_save_page(rs, block, offset, &pages)) {
+-        return pages;
+-    }
+-
+     /* When starting the process of a new block, the first page of
+      * the block should be sent out before other pages in the same
+      * block, and all the pages in last block should have been sent
+@@ -1490,6 +1482,14 @@ err:
+ static int ram_save_target_page(RAMState *rs, PageSearchStatus *pss,
+                                 bool last_stage)
+ {
++    RAMBlock *block = pss->block;
++    ram_addr_t offset = pss->page << TARGET_PAGE_BITS;
++    int res;
++
++    if (control_save_page(rs, block, offset, &res)) {
++        return res;
++    }
++
+     /*
+      * If xbzrle is on, stop using the data compression after first
+      * round of migration even if compression is enabled. In theory,
+-- 
+1.8.3.1
+

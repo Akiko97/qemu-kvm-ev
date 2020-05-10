@@ -1,0 +1,107 @@
+From 00a6c6f0214ad15a68870ad753e656e17a12afe6 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Fri, 4 Oct 2019 19:57:12 +0200
+Subject: [PATCH 2/4] i386: Add new model of Cascadelake-Server
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20191004195714.10176-2-ehabkost@redhat.com>
+Patchwork-id: 90960
+O-Subject: [RHEL-7.8 qemu-kvm-rhev PATCH 1/3] i386: Add new model of Cascadelake-Server
+Bugzilla: 1638472
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+
+From: Tao Xu <tao3.xu@intel.com>
+
+New CPU models mostly inherit features from ancestor Skylake-Server,
+while addin new features: AVX512_VNNI, Intel PT.
+SSBD support for speculative execution
+side channel mitigations.
+
+Note:
+
+On Cascadelake, some capabilities (RDCL_NO, IBRS_ALL, RSBA,
+SKIP_L1DFL_VMENTRY and SSB_NO) are enumerated by MSR.
+These features rely on MSR based feature support patch.
+Will be added later after that patch's in.
+http://lists.nongnu.org/archive/html/qemu-devel/2018-09/msg00074.html
+
+Signed-off-by: Tao Xu <tao3.xu@intel.com>
+Message-Id: <20180919031122.28487-2-tao3.xu@intel.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit c7a88b52f62b30c04158eeb07f73e3f72221b6a8)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 54 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 54 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 5d6b45b..2b85193 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -2483,6 +2483,60 @@ static X86CPUDefinition builtin_x86_defs[] = {
+         .model_id = "Intel Xeon Processor (Skylake, IBRS)",
+     },
+     {
++        .name = "Cascadelake-Server",
++        .level = 0xd,
++        .vendor = CPUID_VENDOR_INTEL,
++        .family = 6,
++        .model = 85,
++        .stepping = 5,
++        .features[FEAT_1_EDX] =
++            CPUID_VME | CPUID_SSE2 | CPUID_SSE | CPUID_FXSR | CPUID_MMX |
++            CPUID_CLFLUSH | CPUID_PSE36 | CPUID_PAT | CPUID_CMOV | CPUID_MCA |
++            CPUID_PGE | CPUID_MTRR | CPUID_SEP | CPUID_APIC | CPUID_CX8 |
++            CPUID_MCE | CPUID_PAE | CPUID_MSR | CPUID_TSC | CPUID_PSE |
++            CPUID_DE | CPUID_FP87,
++        .features[FEAT_1_ECX] =
++            CPUID_EXT_AVX | CPUID_EXT_XSAVE | CPUID_EXT_AES |
++            CPUID_EXT_POPCNT | CPUID_EXT_X2APIC | CPUID_EXT_SSE42 |
++            CPUID_EXT_SSE41 | CPUID_EXT_CX16 | CPUID_EXT_SSSE3 |
++            CPUID_EXT_PCLMULQDQ | CPUID_EXT_SSE3 |
++            CPUID_EXT_TSC_DEADLINE_TIMER | CPUID_EXT_FMA | CPUID_EXT_MOVBE |
++            CPUID_EXT_PCID | CPUID_EXT_F16C | CPUID_EXT_RDRAND,
++        .features[FEAT_8000_0001_EDX] =
++            CPUID_EXT2_LM | CPUID_EXT2_PDPE1GB | CPUID_EXT2_RDTSCP |
++            CPUID_EXT2_NX | CPUID_EXT2_SYSCALL,
++        .features[FEAT_8000_0001_ECX] =
++            CPUID_EXT3_ABM | CPUID_EXT3_LAHF_LM | CPUID_EXT3_3DNOWPREFETCH,
++        .features[FEAT_7_0_EBX] =
++            CPUID_7_0_EBX_FSGSBASE | CPUID_7_0_EBX_BMI1 |
++            CPUID_7_0_EBX_HLE | CPUID_7_0_EBX_AVX2 | CPUID_7_0_EBX_SMEP |
++            CPUID_7_0_EBX_BMI2 | CPUID_7_0_EBX_ERMS | CPUID_7_0_EBX_INVPCID |
++            CPUID_7_0_EBX_RTM | CPUID_7_0_EBX_RDSEED | CPUID_7_0_EBX_ADX |
++            CPUID_7_0_EBX_SMAP | CPUID_7_0_EBX_MPX | CPUID_7_0_EBX_CLWB |
++            CPUID_7_0_EBX_AVX512F | CPUID_7_0_EBX_AVX512DQ |
++            CPUID_7_0_EBX_AVX512BW | CPUID_7_0_EBX_AVX512CD |
++            CPUID_7_0_EBX_AVX512VL | CPUID_7_0_EBX_CLFLUSHOPT |
++            CPUID_7_0_EBX_INTEL_PT,
++        .features[FEAT_7_0_ECX] =
++            CPUID_7_0_ECX_PKU | CPUID_7_0_ECX_OSPKE |
++            CPUID_7_0_ECX_AVX512VNNI,
++        .features[FEAT_7_0_EDX] =
++            CPUID_7_0_EDX_SPEC_CTRL | CPUID_7_0_EDX_SPEC_CTRL_SSBD,
++        /* Missing: XSAVES (not supported by some Linux versions,
++                * including v4.1 to v4.12).
++                * KVM doesn't yet expose any XSAVES state save component,
++                * and the only one defined in Skylake (processor tracing)
++                * probably will block migration anyway.
++                */
++        .features[FEAT_XSAVE] =
++            CPUID_XSAVE_XSAVEOPT | CPUID_XSAVE_XSAVEC |
++            CPUID_XSAVE_XGETBV1,
++        .features[FEAT_6_EAX] =
++            CPUID_6_EAX_ARAT,
++        .xlevel = 0x80000008,
++        .model_id = "Intel Xeon Processor (Cascadelake)",
++    },
++    {
+         .name = "Opteron_G1",
+         .level = 5,
+         .vendor = CPUID_VENDOR_AMD,
+-- 
+1.8.3.1
+

@@ -1,0 +1,102 @@
+From 8a3d5f5ed54868329ab665e6f2ebe7eb2fcb2055 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 14:53:36 +0200
+Subject: [PATCH 07/57] block/file-posix: File locking during creation
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618145337.633-3-mreitz@redhat.com>
+Patchwork-id: 80749
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 2/3] block/file-posix: File locking during creation
+Bugzilla: 1519144
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+When creating a file, we should take the WRITE and RESIZE permissions.
+We do not need either for the creation itself, but we do need them for
+clearing and resizing it.  So we can take the proper permissions by
+replacing O_TRUNC with an explicit truncation to 0, and by taking the
+appropriate file locks between those two steps.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180509215336.31304-3-mreitz@redhat.com
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit b8cf1913a989b9ea6f248aaa233330047a62962e)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 37 +++++++++++++++++++++++++++++++++++--
+ 1 file changed, 35 insertions(+), 2 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index c98a4a1..370a483 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -1992,6 +1992,7 @@ static int raw_co_create(BlockdevCreateOptions *options, Error **errp)
+ {
+     BlockdevCreateOptionsFile *file_opts;
+     int fd;
++    int perm, shared;
+     int result = 0;
+ 
+     /* Validate options and set default values */
+@@ -2006,14 +2007,44 @@ static int raw_co_create(BlockdevCreateOptions *options, Error **errp)
+     }
+ 
+     /* Create file */
+-    fd = qemu_open(file_opts->filename, O_RDWR | O_CREAT | O_TRUNC | O_BINARY,
+-                   0644);
++    fd = qemu_open(file_opts->filename, O_RDWR | O_CREAT | O_BINARY, 0644);
+     if (fd < 0) {
+         result = -errno;
+         error_setg_errno(errp, -result, "Could not create file");
+         goto out;
+     }
+ 
++    /* Take permissions: We want to discard everything, so we need
++     * BLK_PERM_WRITE; and truncation to the desired size requires
++     * BLK_PERM_RESIZE.
++     * On the other hand, we cannot share the RESIZE permission
++     * because we promise that after this function, the file has the
++     * size given in the options.  If someone else were to resize it
++     * concurrently, we could not guarantee that.
++     * Note that after this function, we can no longer guarantee that
++     * the file is not touched by a third party, so it may be resized
++     * then. */
++    perm = BLK_PERM_WRITE | BLK_PERM_RESIZE;
++    shared = BLK_PERM_ALL & ~BLK_PERM_RESIZE;
++
++    /* Step one: Take locks */
++    result = raw_apply_lock_bytes(fd, perm, shared, false, errp);
++    if (result < 0) {
++        goto out_close;
++    }
++
++    /* Step two: Check that nobody else has taken conflicting locks */
++    result = raw_check_lock_bytes(fd, perm, shared, errp);
++    if (result < 0) {
++        goto out_close;
++    }
++
++    /* Clear the file by truncating it to 0 */
++    result = raw_regular_truncate(fd, 0, PREALLOC_MODE_OFF, errp);
++    if (result < 0) {
++        goto out_close;
++    }
++
+     if (file_opts->nocow) {
+ #ifdef __linux__
+         /* Set NOCOW flag to solve performance issue on fs like btrfs.
+@@ -2029,6 +2060,8 @@ static int raw_co_create(BlockdevCreateOptions *options, Error **errp)
+ #endif
+     }
+ 
++    /* Resize and potentially preallocate the file to the desired
++     * final size */
+     result = raw_regular_truncate(fd, file_opts->size, file_opts->preallocation,
+                                   errp);
+     if (result < 0) {
+-- 
+1.8.3.1
+

@@ -1,0 +1,335 @@
+From 54d30086f066f1094871c4886f3a6dee51263d76 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 21 Sep 2018 12:46:29 +0200
+Subject: [PATCH 2/3] block: Use a single global AioWait
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180921124630.29036-3-kwolf@redhat.com>
+Patchwork-id: 82231
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 2/3] block: Use a single global AioWait
+Bugzilla: 1618584
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+
+When draining a block node, we recurse to its parent and for subtree
+drains also to its children. A single AIO_WAIT_WHILE() is then used to
+wait for bdrv_drain_poll() to become true, which depends on all of the
+nodes we recursed to. However, if the respective child or parent becomes
+quiescent and calls bdrv_wakeup(), only the AioWait of the child/parent
+is checked, while AIO_WAIT_WHILE() depends on the AioWait of the
+original node.
+
+Fix this by using a single AioWait for all callers of AIO_WAIT_WHILE().
+
+This may mean that the draining thread gets a few more unnecessary
+wakeups because an unrelated operation got completed, but we already
+wake it up when something _could_ have changed rather than only if it
+has certainly changed.
+
+Apart from that, drain is a slow path anyway. In theory it would be
+possible to use wakeups more selectively and still correctly, but the
+gains are likely not worth the additional complexity. In fact, this
+patch is a nice simplification for some places in the code.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c                   |  5 -----
+ block/block-backend.c     | 11 ++++-------
+ block/io.c                |  7 ++-----
+ blockjob.c                | 13 +------------
+ include/block/aio-wait.h  | 11 +++++------
+ include/block/block.h     |  6 +-----
+ include/block/block_int.h |  3 ---
+ include/block/blockjob.h  | 10 ----------
+ job.c                     |  3 +--
+ util/aio-wait.c           | 11 ++++++-----
+ 10 files changed, 20 insertions(+), 60 deletions(-)
+
+diff --git a/block.c b/block.c
+index e89b5e3..fbd569c 100644
+--- a/block.c
++++ b/block.c
+@@ -4847,11 +4847,6 @@ AioContext *bdrv_get_aio_context(BlockDriverState *bs)
+     return bs ? bs->aio_context : qemu_get_aio_context();
+ }
+ 
+-AioWait *bdrv_get_aio_wait(BlockDriverState *bs)
+-{
+-    return bs ? &bs->wait : NULL;
+-}
+-
+ void bdrv_coroutine_enter(BlockDriverState *bs, Coroutine *co)
+ {
+     aio_co_enter(bdrv_get_aio_context(bs), co);
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 466bc27..36922d1 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -88,7 +88,6 @@ struct BlockBackend {
+      * Accessed with atomic ops.
+      */
+     unsigned int in_flight;
+-    AioWait wait;
+ };
+ 
+ typedef struct BlockBackendAIOCB {
+@@ -1300,7 +1299,7 @@ static void blk_inc_in_flight(BlockBackend *blk)
+ static void blk_dec_in_flight(BlockBackend *blk)
+ {
+     atomic_dec(&blk->in_flight);
+-    aio_wait_kick(&blk->wait);
++    aio_wait_kick();
+ }
+ 
+ static void error_callback_bh(void *opaque)
+@@ -1609,9 +1608,8 @@ void blk_drain(BlockBackend *blk)
+     }
+ 
+     /* We may have -ENOMEDIUM completions in flight */
+-    AIO_WAIT_WHILE(&blk->wait,
+-            blk_get_aio_context(blk),
+-            atomic_mb_read(&blk->in_flight) > 0);
++    AIO_WAIT_WHILE(blk_get_aio_context(blk),
++                   atomic_mb_read(&blk->in_flight) > 0);
+ 
+     if (bs) {
+         bdrv_drained_end(bs);
+@@ -1630,8 +1628,7 @@ void blk_drain_all(void)
+         aio_context_acquire(ctx);
+ 
+         /* We may have -ENOMEDIUM completions in flight */
+-        AIO_WAIT_WHILE(&blk->wait, ctx,
+-                atomic_mb_read(&blk->in_flight) > 0);
++        AIO_WAIT_WHILE(ctx, atomic_mb_read(&blk->in_flight) > 0);
+ 
+         aio_context_release(ctx);
+     }
+diff --git a/block/io.c b/block/io.c
+index 3313958..7a99f7b 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -38,8 +38,6 @@
+ /* Maximum bounce buffer for copy-on-read and write zeroes, in bytes */
+ #define MAX_BOUNCE_BUFFER (32768 << BDRV_SECTOR_BITS)
+ 
+-static AioWait drain_all_aio_wait;
+-
+ static int coroutine_fn bdrv_co_do_pwrite_zeroes(BlockDriverState *bs,
+     int64_t offset, int bytes, BdrvRequestFlags flags);
+ 
+@@ -555,7 +553,7 @@ void bdrv_drain_all_begin(void)
+     }
+ 
+     /* Now poll the in-flight requests */
+-    AIO_WAIT_WHILE(&drain_all_aio_wait, NULL, bdrv_drain_all_poll());
++    AIO_WAIT_WHILE(NULL, bdrv_drain_all_poll());
+ 
+     while ((bs = bdrv_next_all_states(bs))) {
+         bdrv_drain_assert_idle(bs);
+@@ -709,8 +707,7 @@ void bdrv_inc_in_flight(BlockDriverState *bs)
+ 
+ void bdrv_wakeup(BlockDriverState *bs)
+ {
+-    aio_wait_kick(bdrv_get_aio_wait(bs));
+-    aio_wait_kick(&drain_all_aio_wait);
++    aio_wait_kick();
+ }
+ 
+ void bdrv_dec_in_flight(BlockDriverState *bs)
+diff --git a/blockjob.c b/blockjob.c
+index 617d86f..06f2429 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -221,20 +221,9 @@ int block_job_add_bdrv(BlockJob *job, const char *name, BlockDriverState *bs,
+     return 0;
+ }
+ 
+-void block_job_wakeup_all_bdrv(BlockJob *job)
+-{
+-    GSList *l;
+-
+-    for (l = job->nodes; l; l = l->next) {
+-        BdrvChild *c = l->data;
+-        bdrv_wakeup(c->bs);
+-    }
+-}
+-
+ static void block_job_on_idle(Notifier *n, void *opaque)
+ {
+-    BlockJob *job = opaque;
+-    block_job_wakeup_all_bdrv(job);
++    aio_wait_kick();
+ }
+ 
+ bool block_job_is_internal(BlockJob *job)
+diff --git a/include/block/aio-wait.h b/include/block/aio-wait.h
+index 600fad1..46f86f9 100644
+--- a/include/block/aio-wait.h
++++ b/include/block/aio-wait.h
+@@ -54,9 +54,10 @@ typedef struct {
+     unsigned num_waiters;
+ } AioWait;
+ 
++extern AioWait global_aio_wait;
++
+ /**
+  * AIO_WAIT_WHILE:
+- * @wait: the aio wait object
+  * @ctx: the aio context, or NULL if multiple aio contexts (for which the
+  *       caller does not hold a lock) are involved in the polling condition.
+  * @cond: wait while this conditional expression is true
+@@ -72,9 +73,9 @@ typedef struct {
+  * wait on conditions between two IOThreads since that could lead to deadlock,
+  * go via the main loop instead.
+  */
+-#define AIO_WAIT_WHILE(wait, ctx, cond) ({                         \
++#define AIO_WAIT_WHILE(ctx, cond) ({                               \
+     bool waited_ = false;                                          \
+-    AioWait *wait_ = (wait);                                       \
++    AioWait *wait_ = &global_aio_wait;                             \
+     AioContext *ctx_ = (ctx);                                      \
+     /* Increment wait_->num_waiters before evaluating cond. */     \
+     atomic_inc(&wait_->num_waiters);                               \
+@@ -102,14 +103,12 @@ typedef struct {
+ 
+ /**
+  * aio_wait_kick:
+- * @wait: the aio wait object that should re-evaluate its condition
+- *
+  * Wake up the main thread if it is waiting on AIO_WAIT_WHILE().  During
+  * synchronous operations performed in an IOThread, the main thread lets the
+  * IOThread's event loop run, waiting for the operation to complete.  A
+  * aio_wait_kick() call will wake up the main thread.
+  */
+-void aio_wait_kick(AioWait *wait);
++void aio_wait_kick(void);
+ 
+ /**
+  * aio_wait_bh_oneshot:
+diff --git a/include/block/block.h b/include/block/block.h
+index 356712c..8e78daf 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -406,13 +406,9 @@ void bdrv_drain_all_begin(void);
+ void bdrv_drain_all_end(void);
+ void bdrv_drain_all(void);
+ 
+-/* Returns NULL when bs == NULL */
+-AioWait *bdrv_get_aio_wait(BlockDriverState *bs);
+-
+ #define BDRV_POLL_WHILE(bs, cond) ({                       \
+     BlockDriverState *bs_ = (bs);                          \
+-    AIO_WAIT_WHILE(bdrv_get_aio_wait(bs_),                 \
+-                   bdrv_get_aio_context(bs_),              \
++    AIO_WAIT_WHILE(bdrv_get_aio_context(bs_),              \
+                    cond); })
+ 
+ int bdrv_pdiscard(BlockDriverState *bs, int64_t offset, int bytes);
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index b7806e3..ff923b7 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -782,9 +782,6 @@ struct BlockDriverState {
+     unsigned int in_flight;
+     unsigned int serialising_in_flight;
+ 
+-    /* Kicked to signal main loop when a request completes. */
+-    AioWait wait;
+-
+     /* counter for nested bdrv_io_plug.
+      * Accessed with atomic ops.
+     */
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index 2290bbb..ede0bd8 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -122,16 +122,6 @@ int block_job_add_bdrv(BlockJob *job, const char *name, BlockDriverState *bs,
+ void block_job_remove_all_bdrv(BlockJob *job);
+ 
+ /**
+- * block_job_wakeup_all_bdrv:
+- * @job: The block job
+- *
+- * Calls bdrv_wakeup() for all BlockDriverStates that have been added to the
+- * job. This function is to be called whenever child_job_drained_poll() would
+- * go from true to false to notify waiting drain requests.
+- */
+-void block_job_wakeup_all_bdrv(BlockJob *job);
+-
+-/**
+  * block_job_set_speed:
+  * @job: The job to set the speed for.
+  * @speed: The new value
+diff --git a/job.c b/job.c
+index 5b53e43..3a7db59 100644
+--- a/job.c
++++ b/job.c
+@@ -973,7 +973,6 @@ void job_complete(Job *job, Error **errp)
+ int job_finish_sync(Job *job, void (*finish)(Job *, Error **errp), Error **errp)
+ {
+     Error *local_err = NULL;
+-    AioWait dummy_wait = {};
+     int ret;
+ 
+     job_ref(job);
+@@ -987,7 +986,7 @@ int job_finish_sync(Job *job, void (*finish)(Job *, Error **errp), Error **errp)
+         return -EBUSY;
+     }
+ 
+-    AIO_WAIT_WHILE(&dummy_wait, job->aio_context,
++    AIO_WAIT_WHILE(job->aio_context,
+                    (job_drain(job), !job_is_completed(job)));
+ 
+     ret = (job_is_cancelled(job) && job->ret == 0) ? -ECANCELED : job->ret;
+diff --git a/util/aio-wait.c b/util/aio-wait.c
+index b8a8f86..b487749 100644
+--- a/util/aio-wait.c
++++ b/util/aio-wait.c
+@@ -26,21 +26,22 @@
+ #include "qemu/main-loop.h"
+ #include "block/aio-wait.h"
+ 
++AioWait global_aio_wait;
++
+ static void dummy_bh_cb(void *opaque)
+ {
+     /* The point is to make AIO_WAIT_WHILE()'s aio_poll() return */
+ }
+ 
+-void aio_wait_kick(AioWait *wait)
++void aio_wait_kick(void)
+ {
+     /* The barrier (or an atomic op) is in the caller.  */
+-    if (atomic_read(&wait->num_waiters)) {
++    if (atomic_read(&global_aio_wait.num_waiters)) {
+         aio_bh_schedule_oneshot(qemu_get_aio_context(), dummy_bh_cb, NULL);
+     }
+ }
+ 
+ typedef struct {
+-    AioWait wait;
+     bool done;
+     QEMUBHFunc *cb;
+     void *opaque;
+@@ -54,7 +55,7 @@ static void aio_wait_bh(void *opaque)
+     data->cb(data->opaque);
+ 
+     data->done = true;
+-    aio_wait_kick(&data->wait);
++    aio_wait_kick();
+ }
+ 
+ void aio_wait_bh_oneshot(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
+@@ -67,5 +68,5 @@ void aio_wait_bh_oneshot(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
+     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
+ 
+     aio_bh_schedule_oneshot(ctx, aio_wait_bh, &data);
+-    AIO_WAIT_WHILE(&data.wait, ctx, !data.done);
++    AIO_WAIT_WHILE(ctx, !data.done);
+ }
+-- 
+1.8.3.1
+

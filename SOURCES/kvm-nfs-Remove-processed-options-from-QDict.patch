@@ -1,0 +1,64 @@
+From 27956f992c0e7622feed76bce5c5ff5cc9139e4d Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:47:48 +0200
+Subject: [PATCH 19/89] nfs: Remove processed options from QDict
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-6-kwolf@redhat.com>
+Patchwork-id: 81058
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 05/73] nfs: Remove processed options from QDict
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Commit c22a03454 QAPIfied option parsing in the NFS block driver, but
+forgot to remove all the options we processed. Therefore, we get an
+error in bdrv_open_inherit(), which thinks the remaining options are
+invalid. Trying to open an NFS image will result in an error like this:
+
+    Block protocol 'nfs' doesn't support the option 'server.host'
+
+Remove all options from the QDict to make the NFS driver work again.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Message-id: 20180516160816.26259-1-kwolf@redhat.com
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit c82be42cc803b36fd7aed5dceec68312c7056fd5)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nfs.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/block/nfs.c b/block/nfs.c
+index 3059ef2..743ca04 100644
+--- a/block/nfs.c
++++ b/block/nfs.c
+@@ -557,6 +557,7 @@ static BlockdevOptionsNfs *nfs_options_qdict_to_qapi(QDict *options,
+ {
+     BlockdevOptionsNfs *opts = NULL;
+     Visitor *v;
++    const QDictEntry *e;
+     Error *local_err = NULL;
+ 
+     v = qobject_input_visitor_new_flat_confused(options, errp);
+@@ -572,6 +573,12 @@ static BlockdevOptionsNfs *nfs_options_qdict_to_qapi(QDict *options,
+         return NULL;
+     }
+ 
++    /* Remove the processed options from the QDict (the visitor processes
++     * _all_ options in the QDict) */
++    while ((e = qdict_first(options))) {
++        qdict_del(options, e->key);
++    }
++
+     return opts;
+ }
+ 
+-- 
+1.8.3.1
+

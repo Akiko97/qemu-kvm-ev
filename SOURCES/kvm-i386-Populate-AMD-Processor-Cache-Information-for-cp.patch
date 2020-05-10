@@ -1,0 +1,212 @@
+From a24dd4151d27389947c011293d6775327268b1c2 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 3 Jul 2018 17:23:52 +0200
+Subject: [PATCH 07/89] i386: Populate AMD Processor Cache Information for
+ cpuid 0x8000001D
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180703172356.21038-7-ehabkost@redhat.com>
+Patchwork-id: 81216
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v3 06/10] i386: Populate AMD Processor Cache Information for cpuid 0x8000001D
+Bugzilla: 1481253
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Babu Moger <babu.moger@amd.com>
+
+Add information for cpuid 0x8000001D leaf. Populate cache topology information
+for different cache types (Data Cache, Instruction Cache, L2 and L3) supported
+by 0x8000001D leaf. Please refer to the Processor Programming Reference (PPR)
+for AMD Family 17h Model for more details.
+
+Signed-off-by: Babu Moger <babu.moger@amd.com>
+Message-Id: <1527176614-26271-3-git-send-email-babu.moger@amd.com>
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 8f4202fb1080f86958782b1fca0bf0279f67d136)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 117 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ target/i386/kvm.c |  29 ++++++++++++--
+ 2 files changed, 143 insertions(+), 3 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 41d0b72..57f74c6 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -337,6 +337,99 @@ static void encode_cache_cpuid80000006(CPUCacheInfo *l2,
+ }
+ 
+ /*
++ * Definitions used for building CPUID Leaf 0x8000001D and 0x8000001E
++ * Please refer to the AMD64 Architecture Programmer’s Manual Volume 3.
++ * Define the constants to build the cpu topology. Right now, TOPOEXT
++ * feature is enabled only on EPYC. So, these constants are based on
++ * EPYC supported configurations. We may need to handle the cases if
++ * these values change in future.
++ */
++/* Maximum core complexes in a node */
++#define MAX_CCX 2
++/* Maximum cores in a core complex */
++#define MAX_CORES_IN_CCX 4
++/* Maximum cores in a node */
++#define MAX_CORES_IN_NODE 8
++/* Maximum nodes in a socket */
++#define MAX_NODES_PER_SOCKET 4
++
++/*
++ * Figure out the number of nodes required to build this config.
++ * Max cores in a node is 8
++ */
++static int nodes_in_socket(int nr_cores)
++{
++    int nodes;
++
++    nodes = DIV_ROUND_UP(nr_cores, MAX_CORES_IN_NODE);
++
++   /* Hardware does not support config with 3 nodes, return 4 in that case */
++    return (nodes == 3) ? 4 : nodes;
++}
++
++/*
++ * Decide the number of cores in a core complex with the given nr_cores using
++ * following set constants MAX_CCX, MAX_CORES_IN_CCX, MAX_CORES_IN_NODE and
++ * MAX_NODES_PER_SOCKET. Maintain symmetry as much as possible
++ * L3 cache is shared across all cores in a core complex. So, this will also
++ * tell us how many cores are sharing the L3 cache.
++ */
++static int cores_in_core_complex(int nr_cores)
++{
++    int nodes;
++
++    /* Check if we can fit all the cores in one core complex */
++    if (nr_cores <= MAX_CORES_IN_CCX) {
++        return nr_cores;
++    }
++    /* Get the number of nodes required to build this config */
++    nodes = nodes_in_socket(nr_cores);
++
++    /*
++     * Divide the cores accros all the core complexes
++     * Return rounded up value
++     */
++    return DIV_ROUND_UP(nr_cores, nodes * MAX_CCX);
++}
++
++/* Encode cache info for CPUID[8000001D] */
++static void encode_cache_cpuid8000001d(CPUCacheInfo *cache, CPUState *cs,
++                                uint32_t *eax, uint32_t *ebx,
++                                uint32_t *ecx, uint32_t *edx)
++{
++    uint32_t l3_cores;
++    assert(cache->size == cache->line_size * cache->associativity *
++                          cache->partitions * cache->sets);
++
++    *eax = CACHE_TYPE(cache->type) | CACHE_LEVEL(cache->level) |
++               (cache->self_init ? CACHE_SELF_INIT_LEVEL : 0);
++
++    /* L3 is shared among multiple cores */
++    if (cache->level == 3) {
++        l3_cores = cores_in_core_complex(cs->nr_cores);
++        *eax |= ((l3_cores * cs->nr_threads) - 1) << 14;
++    } else {
++        *eax |= ((cs->nr_threads - 1) << 14);
++    }
++
++    assert(cache->line_size > 0);
++    assert(cache->partitions > 0);
++    assert(cache->associativity > 0);
++    /* We don't implement fully-associative caches */
++    assert(cache->associativity < cache->sets);
++    *ebx = (cache->line_size - 1) |
++           ((cache->partitions - 1) << 12) |
++           ((cache->associativity - 1) << 22);
++
++    assert(cache->sets > 0);
++    *ecx = cache->sets - 1;
++
++    *edx = (cache->no_invd_sharing ? CACHE_NO_INVD_SHARING : 0) |
++           (cache->inclusive ? CACHE_INCLUSIVE : 0) |
++           (cache->complex_indexing ? CACHE_COMPLEX_IDX : 0);
++}
++
++/*
+  * Definitions of the hardcoded cache entries we expose:
+  * These are legacy cache values. If there is a need to change any
+  * of these values please use builtin_x86_defs
+@@ -3988,6 +4081,30 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
+             *edx = 0;
+         }
+         break;
++    case 0x8000001D:
++        *eax = 0;
++        switch (count) {
++        case 0: /* L1 dcache info */
++            encode_cache_cpuid8000001d(env->cache_info_amd.l1d_cache, cs,
++                                       eax, ebx, ecx, edx);
++            break;
++        case 1: /* L1 icache info */
++            encode_cache_cpuid8000001d(env->cache_info_amd.l1i_cache, cs,
++                                       eax, ebx, ecx, edx);
++            break;
++        case 2: /* L2 cache info */
++            encode_cache_cpuid8000001d(env->cache_info_amd.l2_cache, cs,
++                                       eax, ebx, ecx, edx);
++            break;
++        case 3: /* L3 cache info */
++            encode_cache_cpuid8000001d(env->cache_info_amd.l3_cache, cs,
++                                       eax, ebx, ecx, edx);
++            break;
++        default: /* end of info */
++            *eax = *ebx = *ecx = *edx = 0;
++            break;
++        }
++        break;
+     case 0xC0000000:
+         *eax = env->cpuid_xlevel2;
+         *ebx = 0;
+diff --git a/target/i386/kvm.c b/target/i386/kvm.c
+index 19e6aa3..447215b 100644
+--- a/target/i386/kvm.c
++++ b/target/i386/kvm.c
+@@ -968,9 +968,32 @@ int kvm_arch_init_vcpu(CPUState *cs)
+         }
+         c = &cpuid_data.entries[cpuid_i++];
+ 
+-        c->function = i;
+-        c->flags = 0;
+-        cpu_x86_cpuid(env, i, 0, &c->eax, &c->ebx, &c->ecx, &c->edx);
++        switch (i) {
++        case 0x8000001d:
++            /* Query for all AMD cache information leaves */
++            for (j = 0; ; j++) {
++                c->function = i;
++                c->flags = KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
++                c->index = j;
++                cpu_x86_cpuid(env, i, j, &c->eax, &c->ebx, &c->ecx, &c->edx);
++
++                if (c->eax == 0) {
++                    break;
++                }
++                if (cpuid_i == KVM_MAX_CPUID_ENTRIES) {
++                    fprintf(stderr, "cpuid_data is full, no space for "
++                            "cpuid(eax:0x%x,ecx:0x%x)\n", i, j);
++                    abort();
++                }
++                c = &cpuid_data.entries[cpuid_i++];
++            }
++            break;
++        default:
++            c->function = i;
++            c->flags = 0;
++            cpu_x86_cpuid(env, i, 0, &c->eax, &c->ebx, &c->ecx, &c->edx);
++            break;
++        }
+     }
+ 
+     /* Call Centaur's CPUID instructions they are supported. */
+-- 
+1.8.3.1
+

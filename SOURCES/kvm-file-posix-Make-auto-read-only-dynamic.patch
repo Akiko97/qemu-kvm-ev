@@ -1,0 +1,174 @@
+From ee549d8b1c8cd482bb84d49e7535e174fd89b9ea Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:10:10 +0100
+Subject: [PATCH 014/163] file-posix: Make auto-read-only dynamic
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-15-kwolf@redhat.com>
+Patchwork-id: 84891
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 14/14] file-posix: Make auto-read-only dynamic
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Until now, with auto-read-only=on we tried to open the file read-write
+first and if that failed, read-only was tried. This is actually not good
+enough for libvirt, which gives QEMU SELinux permissions for read-write
+only as soon as it actually intends to write to the image. So we need to
+be able to switch between read-only and read-write at runtime.
+
+This patch makes auto-read-only dynamic, i.e. the file is opened
+read-only as long as no user of the node has requested write
+permissions, but it is automatically reopened read-write as soon as the
+first writer is attached. Conversely, if the last writer goes away, the
+file is reopened read-only again.
+
+bs->read_only is no longer set for auto-read-only=on files even if the
+file descriptor is opened read-only because it will be transparently
+upgraded as soon as a writer is attached. This changes the output of
+qemu-iotests 232.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 23dece19da41724349809873923e20a48b619cb7)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c         | 36 +++++++++++++++++-------------------
+ tests/qemu-iotests/232.out | 12 ++++++------
+ 2 files changed, 23 insertions(+), 25 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index f0f8eaf..0cf7261 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -382,13 +382,21 @@ static void raw_probe_alignment(BlockDriverState *bs, int fd, Error **errp)
+     }
+ }
+ 
+-static void raw_parse_flags(int bdrv_flags, int *open_flags)
++static void raw_parse_flags(int bdrv_flags, int *open_flags, bool has_writers)
+ {
++    bool read_write = false;
+     assert(open_flags != NULL);
+ 
+     *open_flags |= O_BINARY;
+     *open_flags &= ~O_ACCMODE;
+-    if (bdrv_flags & BDRV_O_RDWR) {
++
++    if (bdrv_flags & BDRV_O_AUTO_RDONLY) {
++        read_write = has_writers;
++    } else if (bdrv_flags & BDRV_O_RDWR) {
++        read_write = true;
++    }
++
++    if (read_write) {
+         *open_flags |= O_RDWR;
+     } else {
+         *open_flags |= O_RDONLY;
+@@ -516,24 +524,12 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
+     }
+ 
+     s->open_flags = open_flags;
+-    raw_parse_flags(bdrv_flags, &s->open_flags);
++    raw_parse_flags(bdrv_flags, &s->open_flags, false);
+ 
+     s->fd = -1;
+     fd = qemu_open(filename, s->open_flags, 0644);
+     ret = fd < 0 ? -errno : 0;
+ 
+-    if (ret == -EACCES || ret == -EROFS) {
+-        /* Try to degrade to read-only, but if it doesn't work, still use the
+-         * normal error message. */
+-        if (bdrv_apply_auto_read_only(bs, NULL, NULL) == 0) {
+-            bdrv_flags &= ~BDRV_O_RDWR;
+-            raw_parse_flags(bdrv_flags, &s->open_flags);
+-            assert(!(s->open_flags & O_CREAT));
+-            fd = qemu_open(filename, s->open_flags);
+-            ret = fd < 0 ? -errno : 0;
+-        }
+-    }
+-
+     if (ret < 0) {
+         error_setg_errno(errp, -ret, "Could not open '%s'", filename);
+         if (ret == -EROFS) {
+@@ -838,12 +834,14 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+ }
+ 
+ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
+-                                 int *open_flags, bool force_dup,
++                                 int *open_flags, uint64_t perm, bool force_dup,
+                                  Error **errp)
+ {
+     BDRVRawState *s = bs->opaque;
+     int fd = -1;
+     int ret;
++    bool has_writers = perm &
++        (BLK_PERM_WRITE | BLK_PERM_WRITE_UNCHANGED | BLK_PERM_RESIZE);
+     int fcntl_flags = O_APPEND | O_NONBLOCK;
+ #ifdef O_NOATIME
+     fcntl_flags |= O_NOATIME;
+@@ -854,7 +852,7 @@ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
+         *open_flags |= O_NONBLOCK;
+     }
+ 
+-    raw_parse_flags(flags, open_flags);
++    raw_parse_flags(flags, open_flags, has_writers);
+ 
+ #ifdef O_ASYNC
+     /* Not all operating systems have O_ASYNC, and those that don't
+@@ -916,7 +914,7 @@ static int raw_reopen_prepare(BDRVReopenState *state,
+     rs = state->opaque;
+ 
+     rs->fd = raw_reconfigure_getfd(state->bs, state->flags, &rs->open_flags,
+-                                   true, &local_err);
++                                   state->perm, true, &local_err);
+     if (local_err) {
+         error_propagate(errp, local_err);
+         ret = -1;
+@@ -2548,7 +2546,7 @@ static int raw_check_perm(BlockDriverState *bs, uint64_t perm, uint64_t shared,
+         s->perm_change_fd = rs->fd;
+     } else {
+         /* We may need a new fd if auto-read-only switches the mode */
+-        ret = raw_reconfigure_getfd(bs, bs->open_flags, &open_flags,
++        ret = raw_reconfigure_getfd(bs, bs->open_flags, &open_flags, perm,
+                                     false, errp);
+         if (ret < 0) {
+             return ret;
+diff --git a/tests/qemu-iotests/232.out b/tests/qemu-iotests/232.out
+index dcb683a..3bd1a92 100644
+--- a/tests/qemu-iotests/232.out
++++ b/tests/qemu-iotests/232.out
+@@ -22,12 +22,12 @@ NODE_NAME: TEST_DIR/t.IMGFMT (file, read-only)
+ NODE_NAME: TEST_DIR/t.IMGFMT (file, read-only)
+ 
+ QEMU_PROG: -drive driver=file,file=TEST_DIR/t.IMGFMT,if=none,read-only=off,auto-read-only=off: Could not open 'TEST_DIR/t.IMGFMT': Permission denied
+-NODE_NAME: TEST_DIR/t.IMGFMT (file, read-only)
+-NODE_NAME: TEST_DIR/t.IMGFMT (file, read-only)
++NODE_NAME: TEST_DIR/t.IMGFMT (file)
++NODE_NAME: TEST_DIR/t.IMGFMT (file)
+ 
+ QEMU_PROG: -drive driver=file,file=TEST_DIR/t.IMGFMT,if=none,auto-read-only=off: Could not open 'TEST_DIR/t.IMGFMT': Permission denied
+-NODE_NAME: TEST_DIR/t.IMGFMT (file, read-only)
+-NODE_NAME: TEST_DIR/t.IMGFMT (file, read-only)
++NODE_NAME: TEST_DIR/t.IMGFMT (file)
++NODE_NAME: TEST_DIR/t.IMGFMT (file)
+ 
+ === -blockdev with read-write image: read-only/auto-read-only combinations ===
+ 
+@@ -50,10 +50,10 @@ node0: TEST_DIR/t.IMGFMT (file, read-only)
+ node0: TEST_DIR/t.IMGFMT (file, read-only)
+ 
+ QEMU_PROG: -blockdev driver=file,filename=TEST_DIR/t.IMGFMT,node-name=node0,read-only=off,auto-read-only=off: Could not open 'TEST_DIR/t.IMGFMT': Permission denied
+-node0: TEST_DIR/t.IMGFMT (file, read-only)
++node0: TEST_DIR/t.IMGFMT (file)
+ QEMU_PROG: -blockdev driver=file,filename=TEST_DIR/t.IMGFMT,node-name=node0,read-only=off: Could not open 'TEST_DIR/t.IMGFMT': Permission denied
+ 
+ QEMU_PROG: -blockdev driver=file,filename=TEST_DIR/t.IMGFMT,node-name=node0,auto-read-only=off: Could not open 'TEST_DIR/t.IMGFMT': Permission denied
+-node0: TEST_DIR/t.IMGFMT (file, read-only)
++node0: TEST_DIR/t.IMGFMT (file)
+ QEMU_PROG: -blockdev driver=file,filename=TEST_DIR/t.IMGFMT,node-name=node0: Could not open 'TEST_DIR/t.IMGFMT': Permission denied
+ *** done
+-- 
+1.8.3.1
+

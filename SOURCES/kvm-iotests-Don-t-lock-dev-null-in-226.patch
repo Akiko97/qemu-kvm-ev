@@ -1,0 +1,51 @@
+From 0290b82d90f8010677d46d3625fe5db50f25f763 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 17:12:06 +0100
+Subject: [PATCH 035/163] iotests: Don't lock /dev/null in 226
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320171206.19236-3-jsnow@redhat.com>
+Patchwork-id: 84962
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 2/2] iotests: Don't lock /dev/null in 226
+Bugzilla: 1691018
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+On my system (Fedora 28), this script reports a 'failed to get
+"consistent read" lock' error. Following docs/devel/testing.rst, it's
+better to add locking=off here.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit ac49c189b4fd48251314a2b5d5a251bcc1687d66)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/226 | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tests/qemu-iotests/226 b/tests/qemu-iotests/226
+index a5a1f67..0bc227f 100755
+--- a/tests/qemu-iotests/226
++++ b/tests/qemu-iotests/226
+@@ -53,10 +53,10 @@ for PROTO in "file" "host_device" "host_cdrom"; do
+     echo
+     echo "== Testing RO =="
+     $QEMU_IO -c "open -r -o driver=$PROTO,filename=$TEST_IMG" 2>&1 | _filter_testdir | _filter_imgfmt
+-    $QEMU_IO -c "open -r -o driver=$PROTO,filename=/dev/null" 2>&1 | _filter_imgfmt
++    $QEMU_IO -c "open -r -o driver=$PROTO,filename=/dev/null,locking=off" 2>&1 | _filter_imgfmt
+     echo "== Testing RW =="
+     $QEMU_IO -c "open -o driver=$PROTO,filename=$TEST_IMG" 2>&1 | _filter_testdir | _filter_imgfmt
+-    $QEMU_IO -c "open -o driver=$PROTO,filename=/dev/null" 2>&1 | _filter_imgfmt
++    $QEMU_IO -c "open -o driver=$PROTO,filename=/dev/null,locking=off" 2>&1 | _filter_imgfmt
+ done
+ 
+ # success, all done
+-- 
+1.8.3.1
+

@@ -1,0 +1,113 @@
+From 66e67847293522848a74624c0477299cb87dafa4 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 18:04:50 +0200
+Subject: [PATCH 12/89] qemu-img: Special post-backing convert handling
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618180451.23808-2-mreitz@redhat.com>
+Patchwork-id: 80795
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/2] qemu-img: Special post-backing convert handling
+Bugzilla: 1527898
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+
+Currently, qemu-img convert writes zeroes when it reads zeroes.
+Sometimes it does not because the target is initialized to zeroes
+anyway, so we do not need to overwrite (and thus potentially allocate)
+it.  This is never the case for targets with backing files, though.  But
+even they may have an area that is initialized to zeroes, and that is
+the area past the end of the backing file (if that is shorter than the
+overlay).
+
+So if the target format's unallocated blocks are zero and there is a gap
+between the target's backing file's end and the target's end, we do not
+have to explicitly write zeroes there.
+
+Buglink: https://bugzilla.redhat.com/show_bug.cgi?id=1527898
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180501165750.19242-2-mreitz@redhat.com
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 351c8efff9ad809c822d55620df54d575d536f68)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 26 +++++++++++++++++++++++++-
+ 1 file changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index 76d6e47..e2395b9 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -1553,7 +1553,9 @@ typedef struct ImgConvertState {
+     BlockBackend *target;
+     bool has_zero_init;
+     bool compressed;
++    bool unallocated_blocks_are_zero;
+     bool target_has_backing;
++    int64_t target_backing_sectors; /* negative if unknown */
+     bool wr_in_order;
+     int min_sparse;
+     size_t cluster_sectors;
+@@ -1582,12 +1584,23 @@ static int convert_iteration_sectors(ImgConvertState *s, int64_t sector_num)
+ {
+     int64_t src_cur_offset;
+     int ret, n, src_cur;
++    bool post_backing_zero = false;
+ 
+     convert_select_part(s, sector_num, &src_cur, &src_cur_offset);
+ 
+     assert(s->total_sectors > sector_num);
+     n = MIN(s->total_sectors - sector_num, BDRV_REQUEST_MAX_SECTORS);
+ 
++    if (s->target_backing_sectors >= 0) {
++        if (sector_num >= s->target_backing_sectors) {
++            post_backing_zero = s->unallocated_blocks_are_zero;
++        } else if (sector_num + n > s->target_backing_sectors) {
++            /* Split requests around target_backing_sectors (because
++             * starting from there, zeros are handled differently) */
++            n = s->target_backing_sectors - sector_num;
++        }
++    }
++
+     if (s->sector_next_status <= sector_num) {
+         int64_t count = n * BDRV_SECTOR_SIZE;
+ 
+@@ -1609,7 +1622,7 @@ static int convert_iteration_sectors(ImgConvertState *s, int64_t sector_num)
+         n = DIV_ROUND_UP(count, BDRV_SECTOR_SIZE);
+ 
+         if (ret & BDRV_BLOCK_ZERO) {
+-            s->status = BLK_ZERO;
++            s->status = post_backing_zero ? BLK_BACKING_FILE : BLK_ZERO;
+         } else if (ret & BDRV_BLOCK_DATA) {
+             s->status = BLK_DATA;
+         } else {
+@@ -2330,6 +2343,16 @@ static int img_convert(int argc, char **argv)
+         }
+     }
+ 
++    if (s.target_has_backing) {
++        /* Errors are treated as "backing length unknown" (which means
++         * s.target_backing_sectors has to be negative, which it will
++         * be automatically).  The backing file length is used only
++         * for optimizations, so such a case is not fatal. */
++        s.target_backing_sectors = bdrv_nb_sectors(out_bs->backing->bs);
++    } else {
++        s.target_backing_sectors = -1;
++    }
++
+     ret = bdrv_get_info(out_bs, &bdi);
+     if (ret < 0) {
+         if (s.compressed) {
+@@ -2339,6 +2362,7 @@ static int img_convert(int argc, char **argv)
+     } else {
+         s.compressed = s.compressed || bdi.needs_compressed_writes;
+         s.cluster_sectors = bdi.cluster_size / BDRV_SECTOR_SIZE;
++        s.unallocated_blocks_are_zero = bdi.unallocated_blocks_are_zero;
+     }
+ 
+     ret = convert_do_copy(&s);
+-- 
+1.8.3.1
+

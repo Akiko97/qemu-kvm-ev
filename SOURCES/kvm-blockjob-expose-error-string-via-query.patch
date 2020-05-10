@@ -1,0 +1,80 @@
+From 08fa409a1ec90e383103a12f3d06205ef5941062 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:47:50 +0200
+Subject: [PATCH 21/89] blockjob: expose error string via query
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-8-kwolf@redhat.com>
+Patchwork-id: 81059
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 07/73] blockjob: expose error string via query
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: John Snow <jsnow@redhat.com>
+
+When we've reached the concluded state, we need to expose the error
+state if applicable. Add the new field.
+
+This should be sufficient for determining if a job completed
+successfully or not after concluding; if we want to discriminate
+based on how it failed more mechanically, we can always add an
+explicit return code enumeration later.
+
+I didn't bother to make it only show up if we are in the concluded
+state; I don't think it's necessary.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit ab9ba614556ac5b0f8d96b99e0dba19f1e28d6c2)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c           | 2 ++
+ qapi/block-core.json | 6 +++++-
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index b39d0f8..6746cad 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -839,6 +839,8 @@ BlockJobInfo *block_job_query(BlockJob *job, Error **errp)
+     info->status    = job->status;
+     info->auto_finalize = job->auto_finalize;
+     info->auto_dismiss  = job->auto_dismiss;
++    info->has_error = job->ret != 0;
++    info->error     = job->ret ? g_strdup(strerror(-job->ret)) : NULL;
+     return info;
+ }
+ 
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 5aac0c7..9012d00 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1172,6 +1172,9 @@
+ # @auto-dismiss: Job will dismiss itself when CONCLUDED, moving to the NULL
+ #                state and disappearing from the query list. (since 2.12)
+ #
++# @error: Error information if the job did not complete successfully.
++#         Not set if the job completed successfully. (since 2.12.1)
++#
+ # Since: 1.1
+ ##
+ { 'struct': 'BlockJobInfo',
+@@ -1179,7 +1182,8 @@
+            'offset': 'int', 'busy': 'bool', 'paused': 'bool', 'speed': 'int',
+            'io-status': 'BlockDeviceIoStatus', 'ready': 'bool',
+            'status': 'BlockJobStatus',
+-           'auto-finalize': 'bool', 'auto-dismiss': 'bool' } }
++           'auto-finalize': 'bool', 'auto-dismiss': 'bool',
++           '*error': 'str' } }
+ 
+ ##
+ # @query-block-jobs:
+-- 
+1.8.3.1
+

@@ -1,0 +1,66 @@
+From f6aecbe90d02dd675d82194240b1be740ca2c2e7 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 19:00:00 +0200
+Subject: [PATCH 21/57] migration: update index field when delete or qsort
+ RDMALocalBlock
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-14-dgilbert@redhat.com>
+Patchwork-id: 81010
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 13/18] migration: update index field when delete or qsort RDMALocalBlock
+Bugzilla: 1584139
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Lidong Chen <jemmy858585@gmail.com>
+
+rdma_delete_block function deletes RDMALocalBlock base on index field,
+but not update the index field. So when next time invoke rdma_delete_block,
+it will not work correctly.
+
+If start and cancel migration repeatedly, some RDMALocalBlock not invoke
+ibv_dereg_mr to decrease kernel mm_struct vmpin. When vmpin is large than
+max locked memory limitation, ibv_reg_mr will failed, and migration can not
+start successfully again.
+
+Signed-off-by: Lidong Chen <lidongchen@tencent.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-Id: <1525618499-1560-1-git-send-email-lidongchen@tencent.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+
+Signed-off-by: Lidong Chen <jemmy858585@gmail.com>
+(cherry picked from commit 71cd73061c014d04bc6b54936e675347ebc8d964)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/rdma.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/migration/rdma.c b/migration/rdma.c
+index da474fc..7d233b0 100644
+--- a/migration/rdma.c
++++ b/migration/rdma.c
+@@ -708,6 +708,9 @@ static int rdma_delete_block(RDMAContext *rdma, RDMALocalBlock *block)
+             memcpy(local->block + block->index, old + (block->index + 1),
+                 sizeof(RDMALocalBlock) *
+                     (local->nb_blocks - (block->index + 1)));
++            for (x = block->index; x < local->nb_blocks - 1; x++) {
++                local->block[x].index--;
++            }
+         }
+     } else {
+         assert(block == local->block);
+@@ -3246,6 +3249,10 @@ static int qemu_rdma_registration_handle(QEMUFile *f, void *opaque)
+             qsort(rdma->local_ram_blocks.block,
+                   rdma->local_ram_blocks.nb_blocks,
+                   sizeof(RDMALocalBlock), dest_ram_sort_func);
++            for (i = 0; i < local->nb_blocks; i++) {
++                local->block[i].index = i;
++            }
++
+             if (rdma->pin_all) {
+                 ret = qemu_rdma_reg_whole_ram_blocks(rdma);
+                 if (ret) {
+-- 
+1.8.3.1
+

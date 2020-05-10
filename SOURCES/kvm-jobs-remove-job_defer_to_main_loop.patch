@@ -1,0 +1,119 @@
+From 580a6b0332f21a364e2b807dcf63434fddaceada Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 10 Sep 2018 18:17:47 +0200
+Subject: [PATCH 09/25] jobs: remove job_defer_to_main_loop
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180910181803.11781-10-jsnow@redhat.com>
+Patchwork-id: 82107
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 09/25] jobs: remove job_defer_to_main_loop
+Bugzilla: 1626061
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Now that the job infrastructure is handling the job_completed call for
+all implemented jobs, we can remove the interface that allowed jobs to
+schedule their own completion.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180830015734.19765-10-jsnow@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit e21a1c9831fc80ae3f3c1affdfa43350035d8588)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/job.h | 17 -----------------
+ job.c              | 40 ++--------------------------------------
+ 2 files changed, 2 insertions(+), 55 deletions(-)
+
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 952ac3a..04090ba 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -553,23 +553,6 @@ void job_finalize(Job *job, Error **errp);
+  */
+ void job_dismiss(Job **job, Error **errp);
+ 
+-typedef void JobDeferToMainLoopFn(Job *job, void *opaque);
+-
+-/**
+- * @job: The job
+- * @fn: The function to run in the main loop
+- * @opaque: The opaque value that is passed to @fn
+- *
+- * This function must be called by the main job coroutine just before it
+- * returns.  @fn is executed in the main loop with the job AioContext acquired.
+- *
+- * Block jobs must call bdrv_unref(), bdrv_close(), and anything that uses
+- * bdrv_drain_all() in the main loop.
+- *
+- * The @job AioContext is held while @fn executes.
+- */
+-void job_defer_to_main_loop(Job *job, JobDeferToMainLoopFn *fn, void *opaque);
+-
+ /**
+  * Synchronously finishes the given @job. If @finish is given, it is called to
+  * trigger completion or cancellation of the job.
+diff --git a/job.c b/job.c
+index 1acbcbc..f56e6a3 100644
+--- a/job.c
++++ b/job.c
+@@ -556,12 +556,8 @@ static void coroutine_fn job_co_entry(void *opaque)
+     assert(job && job->driver && job->driver->run);
+     job_pause_point(job);
+     job->ret = job->driver->run(job, &job->err);
+-    if (!job->deferred_to_main_loop) {
+-        job->deferred_to_main_loop = true;
+-        aio_bh_schedule_oneshot(qemu_get_aio_context(),
+-                                job_exit,
+-                                job);
+-    }
++    job->deferred_to_main_loop = true;
++    aio_bh_schedule_oneshot(qemu_get_aio_context(), job_exit, job);
+ }
+ 
+ 
+@@ -964,38 +960,6 @@ void job_complete(Job *job, Error **errp)
+     job->driver->complete(job, errp);
+ }
+ 
+-
+-typedef struct {
+-    Job *job;
+-    JobDeferToMainLoopFn *fn;
+-    void *opaque;
+-} JobDeferToMainLoopData;
+-
+-static void job_defer_to_main_loop_bh(void *opaque)
+-{
+-    JobDeferToMainLoopData *data = opaque;
+-    Job *job = data->job;
+-    AioContext *aio_context = job->aio_context;
+-
+-    aio_context_acquire(aio_context);
+-    data->fn(data->job, data->opaque);
+-    aio_context_release(aio_context);
+-
+-    g_free(data);
+-}
+-
+-void job_defer_to_main_loop(Job *job, JobDeferToMainLoopFn *fn, void *opaque)
+-{
+-    JobDeferToMainLoopData *data = g_malloc(sizeof(*data));
+-    data->job = job;
+-    data->fn = fn;
+-    data->opaque = opaque;
+-    job->deferred_to_main_loop = true;
+-
+-    aio_bh_schedule_oneshot(qemu_get_aio_context(),
+-                            job_defer_to_main_loop_bh, data);
+-}
+-
+ int job_finish_sync(Job *job, void (*finish)(Job *, Error **errp), Error **errp)
+ {
+     Error *local_err = NULL;
+-- 
+1.8.3.1
+

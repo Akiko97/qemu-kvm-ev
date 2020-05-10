@@ -1,0 +1,191 @@
+From a4e0439bc039710f1c7f3133ea1cfd88ae38fda5 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:55 +0100
+Subject: [PATCH 117/163] iotests: Enhance 223, 233 to cover 'qemu-nbd --list'
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-43-jsnow@redhat.com>
+Patchwork-id: 85215
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 42/55] iotests: Enhance 223, 233 to cover 'qemu-nbd --list'
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Any good new feature deserves some regression testing :)
+Coverage includes:
+- 223: what happens when there are 0 or more than 1 export,
+proof that we can see multiple contexts including qemu:dirty-bitmap
+- 233: proof that we can list over TLS, and that mix-and-match of
+plain/TLS listings will behave sanely
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Richard W.M. Jones <rjones@redhat.com>
+Tested-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20190117193658.16413-22-eblake@redhat.com>
+(cherry picked from commit ddd09448fd833d646952c769ae9ce3d39bee989f)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/223     |  2 ++
+ tests/qemu-iotests/223.out | 20 ++++++++++++++++++++
+ tests/qemu-iotests/233     | 19 +++++++++++++------
+ tests/qemu-iotests/233.out | 15 +++++++++++++++
+ 4 files changed, 50 insertions(+), 6 deletions(-)
+
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+index 773892d..f120a01 100755
+--- a/tests/qemu-iotests/223
++++ b/tests/qemu-iotests/223
+@@ -127,6 +127,7 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-start",
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-start",
+   "arguments":{"addr":{"type":"unix",
+     "data":{"path":"'"$TEST_DIR/nbd"1'"}}}}' "error" # Attempt second server
++$QEMU_NBD_PROG -L -k "$TEST_DIR/nbd"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+   "arguments":{"device":"n", "bitmap":"b"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+@@ -142,6 +143,7 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+   "arguments":{"device":"n", "name":"n2", "writable":true,
+   "bitmap":"b2"}}' "return"
++$QEMU_NBD_PROG -L -k "$TEST_DIR/nbd"
+ 
+ echo
+ echo "=== Contrast normal status to large granularity dirty-bitmap ==="
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+index 4012bb0..963ae28 100644
+--- a/tests/qemu-iotests/223.out
++++ b/tests/qemu-iotests/223.out
+@@ -30,12 +30,32 @@ wrote 2097152/2097152 bytes at offset 2097152
+ {"error": {"class": "GenericError", "desc": "NBD server not running"}}
+ {"return": {}}
+ {"error": {"class": "GenericError", "desc": "NBD server already running"}}
++exports available: 0
+ {"return": {}}
+ {"error": {"class": "GenericError", "desc": "Cannot find device=nosuch nor node_name=nosuch"}}
+ {"error": {"class": "GenericError", "desc": "NBD server already has export named 'n'"}}
+ {"error": {"class": "GenericError", "desc": "Enabled bitmap 'b2' incompatible with readonly export"}}
+ {"error": {"class": "GenericError", "desc": "Bitmap 'b3' is not found"}}
+ {"return": {}}
++exports available: 2
++ export: 'n'
++  size:  4194304
++  flags: 0x4ef ( readonly flush fua trim zeroes df cache )
++  min block: 512
++  opt block: 4096
++  max block: 33554432
++  available meta contexts: 2
++   base:allocation
++   qemu:dirty-bitmap:b
++ export: 'n2'
++  size:  4194304
++  flags: 0x4ed ( flush fua trim zeroes df cache )
++  min block: 512
++  opt block: 4096
++  max block: 33554432
++  available meta contexts: 2
++   base:allocation
++   qemu:dirty-bitmap:b2
+ 
+ === Contrast normal status to large granularity dirty-bitmap ===
+ 
+diff --git a/tests/qemu-iotests/233 b/tests/qemu-iotests/233
+index ab15c77..fc345a1 100755
+--- a/tests/qemu-iotests/233
++++ b/tests/qemu-iotests/233
+@@ -69,10 +69,12 @@ echo
+ echo "== check TLS client to plain server fails =="
+ nbd_server_start_tcp_socket -f $IMGFMT "$TEST_IMG" 2> "$TEST_DIR/server.log"
+ 
+-$QEMU_IMG info --image-opts \
+-    --object tls-creds-x509,dir=${tls_dir}/client1,endpoint=client,id=tls0 \
++obj=tls-creds-x509,dir=${tls_dir}/client1,endpoint=client,id=tls0
++$QEMU_IMG info --image-opts --object $obj \
+     driver=nbd,host=$nbd_tcp_addr,port=$nbd_tcp_port,tls-creds=tls0 \
+     2>&1 | sed "s/$nbd_tcp_port/PORT/g"
++$QEMU_NBD_PROG -L -b $nbd_tcp_addr -p $nbd_tcp_port --object $obj \
++    --tls-creds=tls0
+ 
+ nbd_server_stop
+ 
+@@ -85,20 +87,25 @@ nbd_server_start_tcp_socket \
+     -f $IMGFMT "$TEST_IMG" 2>> "$TEST_DIR/server.log"
+ 
+ $QEMU_IMG info nbd://localhost:$nbd_tcp_port 2>&1 | sed "s/$nbd_tcp_port/PORT/g"
++$QEMU_NBD_PROG -L -b $nbd_tcp_addr -p $nbd_tcp_port
+ 
+ echo
+ echo "== check TLS works =="
+-$QEMU_IMG info --image-opts \
+-    --object tls-creds-x509,dir=${tls_dir}/client1,endpoint=client,id=tls0 \
++obj=tls-creds-x509,dir=${tls_dir}/client1,endpoint=client,id=tls0
++$QEMU_IMG info --image-opts --object $obj \
+     driver=nbd,host=$nbd_tcp_addr,port=$nbd_tcp_port,tls-creds=tls0 \
+     2>&1 | sed "s/$nbd_tcp_port/PORT/g"
++$QEMU_NBD_PROG -L -b $nbd_tcp_addr -p $nbd_tcp_port --object $obj \
++    --tls-creds=tls0
+ 
+ echo
+ echo "== check TLS with different CA fails =="
+-$QEMU_IMG info --image-opts \
+-    --object tls-creds-x509,dir=${tls_dir}/client2,endpoint=client,id=tls0 \
++obj=tls-creds-x509,dir=${tls_dir}/client2,endpoint=client,id=tls0
++$QEMU_IMG info --image-opts --object $obj \
+     driver=nbd,host=$nbd_tcp_addr,port=$nbd_tcp_port,tls-creds=tls0 \
+     2>&1 | sed "s/$nbd_tcp_port/PORT/g"
++$QEMU_NBD_PROG -L -b $nbd_tcp_addr -p $nbd_tcp_port --object $obj \
++    --tls-creds=tls0
+ 
+ echo
+ echo "== perform I/O over TLS =="
+diff --git a/tests/qemu-iotests/233.out b/tests/qemu-iotests/233.out
+index 2199d8a..6d45f3b 100644
+--- a/tests/qemu-iotests/233.out
++++ b/tests/qemu-iotests/233.out
+@@ -15,19 +15,33 @@ wrote 1048576/1048576 bytes at offset 1048576
+ == check TLS client to plain server fails ==
+ qemu-img: Could not open 'driver=nbd,host=127.0.0.1,port=PORT,tls-creds=tls0': Denied by server for option 5 (starttls)
+ server reported: TLS not configured
++qemu-nbd: Denied by server for option 5 (starttls)
++server reported: TLS not configured
+ 
+ == check plain client to TLS server fails ==
+ qemu-img: Could not open 'nbd://localhost:PORT': TLS negotiation required before option 8 (structured reply)
+ server reported: Option 0x8 not permitted before TLS
++qemu-nbd: TLS negotiation required before option 8 (structured reply)
++server reported: Option 0x8 not permitted before TLS
+ 
+ == check TLS works ==
+ image: nbd://127.0.0.1:PORT
+ file format: nbd
+ virtual size: 64M (67108864 bytes)
+ disk size: unavailable
++exports available: 1
++ export: ''
++  size:  67108864
++  flags: 0x4ed ( flush fua trim zeroes df cache )
++  min block: 512
++  opt block: 4096
++  max block: 33554432
++  available meta contexts: 1
++   base:allocation
+ 
+ == check TLS with different CA fails ==
+ qemu-img: Could not open 'driver=nbd,host=127.0.0.1,port=PORT,tls-creds=tls0': The certificate hasn't got a known issuer
++qemu-nbd: The certificate hasn't got a known issuer
+ 
+ == perform I/O over TLS ==
+ read 1048576/1048576 bytes at offset 1048576
+@@ -39,4 +53,5 @@ read 1048576/1048576 bytes at offset 1048576
+ 
+ == final server log ==
+ qemu-nbd: option negotiation failed: Verify failed: No certificate was found.
++qemu-nbd: option negotiation failed: Verify failed: No certificate was found.
+ *** done
+-- 
+1.8.3.1
+

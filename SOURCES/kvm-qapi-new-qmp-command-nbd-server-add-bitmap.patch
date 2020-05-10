@@ -1,0 +1,104 @@
+From 9949f65ad44a273fabbf98591ef98b4742e6882f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:55:04 +0200
+Subject: [PATCH 79/89] qapi: new qmp command nbd-server-add-bitmap
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-29-jsnow@redhat.com>
+Patchwork-id: 81408
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 28/35] qapi: new qmp command nbd-server-add-bitmap
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+For now, the actual command ix x-nbd-server-add-bitmap, reflecting
+the fact that we are still working on libvirt code that proves the
+command works as needed, and also the fact that we may remove
+bitmap-export-name (and just require that the exported name be the
+bitmap name).
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20180609151758.17343-6-vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+[eblake: make the command experimental by adding x- prefix]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 767f0c7d6cddedbc97ad700bd1e0229cc2ce5eb5)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev-nbd.c  | 23 +++++++++++++++++++++++
+ qapi/block.json | 23 +++++++++++++++++++++++
+ 2 files changed, 46 insertions(+)
+
+diff --git a/blockdev-nbd.c b/blockdev-nbd.c
+index 65a8473..1ef1104 100644
+--- a/blockdev-nbd.c
++++ b/blockdev-nbd.c
+@@ -220,3 +220,26 @@ void qmp_nbd_server_stop(Error **errp)
+     nbd_server_free(nbd_server);
+     nbd_server = NULL;
+ }
++
++void qmp_x_nbd_server_add_bitmap(const char *name, const char *bitmap,
++                                 bool has_bitmap_export_name,
++                                 const char *bitmap_export_name,
++                                 Error **errp)
++{
++    NBDExport *exp;
++
++    if (!nbd_server) {
++        error_setg(errp, "NBD server not running");
++        return;
++    }
++
++    exp = nbd_export_find(name);
++    if (exp == NULL) {
++        error_setg(errp, "Export '%s' is not found", name);
++        return;
++    }
++
++    nbd_export_bitmap(exp, bitmap,
++                      has_bitmap_export_name ? bitmap_export_name : bitmap,
++                      errp);
++}
+diff --git a/qapi/block.json b/qapi/block.json
+index f05b91a..ba85ceb 100644
+--- a/qapi/block.json
++++ b/qapi/block.json
+@@ -364,6 +364,29 @@
+   'data': {'name': 'str', '*mode': 'NbdServerRemoveMode'} }
+ 
+ ##
++# @x-nbd-server-add-bitmap:
++#
++# Expose a dirty bitmap associated with the selected export. The bitmap search
++# starts at the device attached to the export, and includes all backing files.
++# The exported bitmap is then locked until the NBD export is removed.
++#
++# @name: Export name.
++#
++# @bitmap: Bitmap name to search for.
++#
++# @bitmap-export-name: How the bitmap will be seen by nbd clients
++#                      (default @bitmap)
++#
++# Note: the client must use NBD_OPT_SET_META_CONTEXT with a query of
++# "qemu:dirty-bitmap:NAME" (where NAME matches @bitmap-export-name) to access
++# the exposed bitmap.
++#
++# Since: 3.0
++##
++  { 'command': 'x-nbd-server-add-bitmap',
++    'data': {'name': 'str', 'bitmap': 'str', '*bitmap-export-name': 'str'} }
++
++##
+ # @nbd-server-stop:
+ #
+ # Stop QEMU's embedded NBD server, and unregister all devices previously
+-- 
+1.8.3.1
+

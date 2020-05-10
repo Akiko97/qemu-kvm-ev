@@ -1,0 +1,196 @@
+From 24fd80b15ac39339607e43f9dca80f645b436557 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Tue, 14 Mar 2017 13:21:06 +0100
+Subject: add qxl_screendump monitor command
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <1375866764-17766-2-git-send-email-kraxel@redhat.com>
+Patchwork-id: 53033
+O-Subject: [RHEL-7 qemu-kvm PATCH 1/1] add qxl_screendump monitor command
+Bugzilla: 903910
+RH-Acked-by: Hans de Goede <hdegoede@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Michal Novotny <minovotn@redhat.com>
+
+This patch ports the rhel-6 specific qxl_screendump command to rhel-7.
+qxl_screendump takes the device id as additional argument and thus can
+be used to take screenshots from non-primary displays.
+
+The plan to get that functionality upstream in time failed, so we go for
+plan b and carry forward the rhel-6 specific qxl_screendump command.
+Thanks to the major console subsystem cleanups which made it upstream
+the implementation is (a) alot less hackier than the rhel-6 one and (b)
+not qxl-specific any more.  Given that qxl is the only graphic device
+which can work as secondary vga card the later is only a theoretical
+benefit though ;)
+
+RHEL-6 commit: 1c6074d107dff93c7c7b0edfb5da871504802946
+
+bugzilla: #903910 - RHEL7 does not have equivalent functionality for
+__com.redhat_qxl_screendump
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+(cherry picked from commit 211321c693f46d283205830c6c49b54d7250e98c)
+
+Rebase notes (2.12.0):
+- added prototype before definition
+
+Rebase notes (2.9.0):
+- documentation moved to qapi schema
+
+Rebase notes (2.8.0):
+- qmp-commands.hx replaced by docs/qmp-commands.txt (commit bd6092e)
+- mhandler.cmd attribute renamed to cmd (commit 2b9e357)
+
+Rebase notes (2.4.0):
+- replace QERR_DEVICE_NOT_FOUND with ERROR_CLASS_DEVICE_NOT_FOUND
+
+Merged patches (2.9.0):
+- a3b59c0 HMP: Fix user manual typo of __com.redhat_qxl_screendump
+
+Merged patches (2.6.0):
+- f12846f __com.redhat_qxl_screendump: add docs
+
+(cherry picked from commit 9ff701a5129653d6bd27c0b3cc249691cb6ce6a7)
+(cherry picked from commit fd2ce5e462ee97f4538981f50e9bebc222fbe157)
+(cherry picked from commit da2738aa88ba79de34abf9ce7de88920d0089fb3)
+(cherry picked from commit 61fc62e6b6f217da00376b486c8927a5586c27b8)
+(cherry picked from commit 4092812ff2d7a7dc7f2f62d49fa3a568ba78781f)
+---
+ hmp-commands.hx | 14 ++++++++++++++
+ hmp.c           | 10 ++++++++++
+ hmp.h           |  1 +
+ qapi/misc.json  | 22 ++++++++++++++++++++++
+ ui/console.c    | 25 +++++++++++++++++++++++++
+ 5 files changed, 72 insertions(+)
+
+diff --git a/hmp-commands.hx b/hmp-commands.hx
+index 3918831..01dcbb2 100644
+--- a/hmp-commands.hx
++++ b/hmp-commands.hx
+@@ -272,6 +272,20 @@ Save screen into PPM image @var{filename}.
+ ETEXI
+ 
+     {
++        .name       = "__com.redhat_qxl_screendump",
++        .args_type  = "id:s,filename:F",
++        .params     = "id filename",
++        .help       = "save screen from qxl device 'id' into PPM image 'filename'",
++        .cmd = hmp___com_redhat_qxl_screen_dump,
++    },
++
++STEXI
++@item __com.redhat_qxl_screendump @var{id} @var{filename}
++@findex __com.redhat_qxl_screendump
++Save screen from qxl device @var{id} into PPM image @var{filename}.
++ETEXI
++
++    {
+         .name       = "logfile",
+         .args_type  = "filename:F",
+         .params     = "filename",
+diff --git a/hmp.c b/hmp.c
+index 6c92198..7a53e63 100644
+--- a/hmp.c
++++ b/hmp.c
+@@ -2160,6 +2160,16 @@ void hmp_screendump(Monitor *mon, const QDict *qdict)
+     hmp_handle_error(mon, &err);
+ }
+ 
++void hmp___com_redhat_qxl_screen_dump(Monitor *mon, const QDict *qdict)
++{
++    const char *id = qdict_get_str(qdict, "id");
++    const char *filename = qdict_get_str(qdict, "filename");
++    Error *err = NULL;
++
++    qmp___com_redhat_qxl_screendump(id, filename, &err);
++    hmp_handle_error(mon, &err);
++}
++
+ void hmp_nbd_server_start(Monitor *mon, const QDict *qdict)
+ {
+     const char *uri = qdict_get_str(qdict, "uri");
+diff --git a/hmp.h b/hmp.h
+index 4e2ec37..f85318c 100644
+--- a/hmp.h
++++ b/hmp.h
+@@ -97,6 +97,7 @@ void hmp_getfd(Monitor *mon, const QDict *qdict);
+ void hmp_closefd(Monitor *mon, const QDict *qdict);
+ void hmp_sendkey(Monitor *mon, const QDict *qdict);
+ void hmp_screendump(Monitor *mon, const QDict *qdict);
++void hmp___com_redhat_qxl_screen_dump(Monitor *mon, const QDict *qdict);
+ void hmp_nbd_server_start(Monitor *mon, const QDict *qdict);
+ void hmp_nbd_server_add(Monitor *mon, const QDict *qdict);
+ void hmp_nbd_server_remove(Monitor *mon, const QDict *qdict);
+diff --git a/qapi/misc.json b/qapi/misc.json
+index 5636f4a..045eb7c 100644
+--- a/qapi/misc.json
++++ b/qapi/misc.json
+@@ -2445,6 +2445,28 @@
+ { 'command': 'query-fdsets', 'returns': ['FdsetInfo'] }
+ 
+ ##
++# @__com.redhat_qxl_screendump:
++#
++# Write a PPM of secondary qxl devices to a file.
++#
++# @id: qxl device id
++# @filename: the path of a new PPM file to store the image
++#
++# Returns: Nothing on success
++#
++# Since: never (rhel-only, not upstream)
++#
++# Example:
++#
++# -> { "execute": "__com.redhat_qxl_screendump",
++#      "arguments": { "id": video1", "filename": "v1.ppm" } }
++# <- { "return": {} }
++#
++##
++{ 'command': '__com.redhat_qxl_screendump', 'data': { 'id' : 'str',
++                                                      'filename': 'str' } }
++
++##
+ # @TargetInfo:
+ #
+ # Information describing the QEMU target.
+diff --git a/ui/console.c b/ui/console.c
+index 3fb2f4e..73b2d3c 100644
+--- a/ui/console.c
++++ b/ui/console.c
+@@ -373,6 +373,31 @@ void qmp_screendump(const char *filename, bool has_device, const char *device,
+     ppm_save(filename, surface, errp);
+ }
+ 
++void qmp___com_redhat_qxl_screendump(const char *id, const char *filename, Error **errp);
++void qmp___com_redhat_qxl_screendump(const char *id, const char *filename, Error **errp)
++{
++    DeviceState *dev;
++    QemuConsole *con;
++    DisplaySurface *surface;
++
++    dev = qdev_find_recursive(sysbus_get_default(), id);
++    if (NULL == dev) {
++        error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
++                  "Device '%s' not found", id);
++        return;
++    }
++
++    con = qemu_console_lookup_by_device(dev, 0);
++    if (con == NULL) {
++        error_setg(errp, "Device %s has no QemuConsole attached to it.", id);
++        return;
++    }
++
++    graphic_hw_update(con);
++    surface = qemu_console_surface(con);
++    ppm_save(filename, surface, errp);
++}
++
+ void graphic_hw_text_update(QemuConsole *con, console_ch_t *chardata)
+ {
+     if (!con) {
+-- 
+1.8.3.1
+

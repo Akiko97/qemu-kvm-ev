@@ -1,0 +1,48 @@
+From 5967994372c21a8504d7f1b7a61275a647a52c52 Mon Sep 17 00:00:00 2001
+From: Vitaly Kuznetsov <vkuznets@redhat.com>
+Date: Fri, 12 Oct 2018 07:44:45 +0200
+Subject: [PATCH] Re-enable disabled Hyper-V enlightenments
+
+RH-Author: Vitaly Kuznetsov <vkuznets@redhat.com>
+Message-id: <20181012074445.29864-1-vkuznets@redhat.com>
+Patchwork-id: 82672
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH] Re-enable disabled Hyper-V enlightenments
+Bugzilla: 1638835
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: vrozenfe <vrozenfe@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+RHEL-only.
+
+With the latest Win10 update stimer/synic enlightenments are a must, the
+rest is re-enabled for consistency.
+
+Partially revert 9746c405955 ("Enable/disable devices for RHEL 7").
+
+Signed-off-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 91f5a97..8454532 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -5366,13 +5366,11 @@ static Property x86_cpu_properties[] = {
+     DEFINE_PROP_BOOL("hv-vapic", X86CPU, hyperv_vapic, false),
+     DEFINE_PROP_BOOL("hv-time", X86CPU, hyperv_time, false),
+     DEFINE_PROP_BOOL("hv-crash", X86CPU, hyperv_crash, false),
+-#if 0 /* Disabled for Red Hat Enterprise Linux */
+     DEFINE_PROP_BOOL("hv-reset", X86CPU, hyperv_reset, false),
+     DEFINE_PROP_BOOL("hv-vpindex", X86CPU, hyperv_vpindex, false),
+     DEFINE_PROP_BOOL("hv-runtime", X86CPU, hyperv_runtime, false),
+     DEFINE_PROP_BOOL("hv-synic", X86CPU, hyperv_synic, false),
+     DEFINE_PROP_BOOL("hv-stimer", X86CPU, hyperv_stimer, false),
+-#endif
+     DEFINE_PROP_BOOL("hv-frequencies", X86CPU, hyperv_frequencies, false),
+     DEFINE_PROP_BOOL("check", X86CPU, check_cpuid, true),
+     DEFINE_PROP_BOOL("enforce", X86CPU, enforce_cpuid, false),
+-- 
+1.8.3.1
+

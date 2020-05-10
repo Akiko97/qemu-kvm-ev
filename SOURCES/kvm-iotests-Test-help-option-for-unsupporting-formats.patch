@@ -1,0 +1,99 @@
+From 71c378083914a8ee1c4169bc47d1a21df38a16f7 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 14:59:42 +0200
+Subject: [PATCH 08/89] iotests: Test help option for unsupporting formats
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618145943.4489-7-mreitz@redhat.com>
+Patchwork-id: 80760
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 6/7] iotests: Test help option for unsupporting formats
+Bugzilla: 1537956
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+This adds test cases to 082 for qemu-img create/convert/amend "-o help"
+on formats that do not support creation or amendment, respectively.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-id: 20180509210023.20283-7-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit e53995eb19b546b18d1a34cd6eaa07faedbade79)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/082     | 9 +++++++++
+ tests/qemu-iotests/082.out | 9 +++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/tests/qemu-iotests/082 b/tests/qemu-iotests/082
+index d5c83d4..a872f77 100755
+--- a/tests/qemu-iotests/082
++++ b/tests/qemu-iotests/082
+@@ -97,6 +97,9 @@ run_qemu_img create -f $IMGFMT -o backing_file="$TEST_IMG" -o ,, -o help "$TEST_
+ run_qemu_img create -f $IMGFMT -o help
+ run_qemu_img create -o help
+ 
++# Try help option for a format that does not support creation
++run_qemu_img create -f bochs -o help
++
+ echo
+ echo === convert: Options specified more than once ===
+ 
+@@ -151,6 +154,9 @@ run_qemu_img convert -O $IMGFMT -o backing_file="$TEST_IMG" -o ,, -o help "$TEST
+ run_qemu_img convert -O $IMGFMT -o help
+ run_qemu_img convert -o help
+ 
++# Try help option for a format that does not support creation
++run_qemu_img convert -O bochs -o help
++
+ echo
+ echo === amend: Options specified more than once ===
+ 
+@@ -201,6 +207,9 @@ run_qemu_img amend -f $IMGFMT -o backing_file="$TEST_IMG" -o ,, -o help "$TEST_I
+ run_qemu_img amend -f $IMGFMT -o help
+ run_qemu_img convert -o help
+ 
++# Try help option for a format that does not support amendment
++run_qemu_img amend -f bochs -o help
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/082.out b/tests/qemu-iotests/082.out
+index 4e52dce..60ef87c 100644
+--- a/tests/qemu-iotests/082.out
++++ b/tests/qemu-iotests/082.out
+@@ -249,6 +249,9 @@ Testing: create -o help
+ Supported options:
+ size             Virtual disk size
+ 
++Testing: create -f bochs -o help
++qemu-img: Format driver 'bochs' does not support image creation
++
+ === convert: Options specified more than once ===
+ 
+ Testing: create -f qcow2 TEST_DIR/t.qcow2 128M
+@@ -502,6 +505,9 @@ Testing: convert -o help
+ Supported options:
+ size             Virtual disk size
+ 
++Testing: convert -O bochs -o help
++qemu-img: Format driver 'bochs' does not support image creation
++
+ === amend: Options specified more than once ===
+ 
+ Testing: amend -f foo -f qcow2 -o lazy_refcounts=on TEST_DIR/t.qcow2
+@@ -763,4 +769,7 @@ Note that not all of these options may be amendable.
+ Testing: convert -o help
+ Supported options:
+ size             Virtual disk size
++
++Testing: amend -f bochs -o help
++qemu-img: Format driver 'bochs' does not support option amendment
+ *** done
+-- 
+1.8.3.1
+

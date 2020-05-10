@@ -1,0 +1,69 @@
+From 1ed06a7c22bbae0f9e17147c86ad2ecc69efb9bf Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Wed, 1 Aug 2018 06:35:38 +0200
+Subject: [PATCH 02/13] iotests: Add test for 'qemu-img convert -C'
+ compatibility
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180801063538.32582-3-famz@redhat.com>
+Patchwork-id: 81562
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/2] iotests: Add test for 'qemu-img convert -C' compatibility
+Bugzilla: 1607774
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 8ba4f10fa689251facd483c3ee0ef4dd4e9bec53)
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/082     |  8 ++++++++
+ tests/qemu-iotests/082.out | 11 +++++++++++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/tests/qemu-iotests/082 b/tests/qemu-iotests/082
+index a872f77..3e605d5 100755
+--- a/tests/qemu-iotests/082
++++ b/tests/qemu-iotests/082
+@@ -158,6 +158,14 @@ run_qemu_img convert -o help
+ run_qemu_img convert -O bochs -o help
+ 
+ echo
++echo === convert: -C and other options ===
++
++# Adding the help option to a command without other -o options
++run_qemu_img convert -C -S 4k -O $IMGFMT "$TEST_IMG" "$TEST_IMG".target
++run_qemu_img convert -C -S 8k -O $IMGFMT "$TEST_IMG" "$TEST_IMG".target
++run_qemu_img convert -C -c -O $IMGFMT "$TEST_IMG" "$TEST_IMG".target
++
++echo
+ echo === amend: Options specified more than once ===
+ 
+ # Last -f should win
+diff --git a/tests/qemu-iotests/082.out b/tests/qemu-iotests/082.out
+index 60ef87c..19e9fb1 100644
+--- a/tests/qemu-iotests/082.out
++++ b/tests/qemu-iotests/082.out
+@@ -508,6 +508,17 @@ size             Virtual disk size
+ Testing: convert -O bochs -o help
+ qemu-img: Format driver 'bochs' does not support image creation
+ 
++=== convert: -C and other options ===
++
++Testing: convert -C -S 4k -O qcow2 TEST_DIR/t.qcow2 TEST_DIR/t.qcow2.target
++qemu-img: Cannot enable copy offloading when -S is used
++
++Testing: convert -C -S 8k -O qcow2 TEST_DIR/t.qcow2 TEST_DIR/t.qcow2.target
++qemu-img: Cannot enable copy offloading when -S is used
++
++Testing: convert -C -c -O qcow2 TEST_DIR/t.qcow2 TEST_DIR/t.qcow2.target
++qemu-img: Cannot enable copy offloading when -c is used
++
+ === amend: Options specified more than once ===
+ 
+ Testing: amend -f foo -f qcow2 -o lazy_refcounts=on TEST_DIR/t.qcow2
+-- 
+1.8.3.1
+

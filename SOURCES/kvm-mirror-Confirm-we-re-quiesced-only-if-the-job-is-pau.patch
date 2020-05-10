@@ -1,0 +1,114 @@
+From ba6d773a79eef6f59687771bc5664814d96b6b03 Mon Sep 17 00:00:00 2001
+From: Sergio Lopez Pascual <slp@redhat.com>
+Date: Mon, 9 Sep 2019 12:46:40 +0200
+Subject: [PATCH 4/4] mirror: Confirm we're quiesced only if the job is paused
+ or cancelled
+
+RH-Author: Sergio Lopez Pascual <slp@redhat.com>
+Message-id: <20190909124640.53625-2-slp@redhat.com>
+Patchwork-id: 90339
+O-Subject: [RHEL-7.7.z qemu-kvm-rhev PATCH 1/1] mirror: Confirm we're quiesced only if the job is paused or cancelled
+Bugzilla: 1665256
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+While child_job_drained_begin() calls to job_pause(), the job doesn't
+actually transition between states until it runs again and reaches a
+pause point. This means bdrv_drained_begin() may return with some jobs
+using the node still having 'busy == true'.
+
+As a consequence, block_job_detach_aio_context() may get into a
+deadlock, waiting for the job to be actually paused, while the coroutine
+servicing the job is yielding and doesn't get the opportunity to get
+scheduled again. This situation can be reproduced by issuing a
+'block-commit' immediately followed by a 'device_del'.
+
+To ensure bdrv_drained_begin() only returns when the jobs have been
+paused, we change mirror_drained_poll() to only confirm it's quiesced
+when job->paused == true and there aren't any in-flight requests, except
+if we reached that point by a drained section initiated by the
+mirror/commit job itself.
+
+The other block jobs shouldn't need any changes, as the default
+drained_poll() behavior is to only confirm it's quiesced if the job is
+not busy or completed.
+
+Signed-off-by: Sergio Lopez <slp@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 5e771752a1ffba3a99d7d75b6d492b4a86b59e1b)
+Signed-off-by: Sergio Lopez <slp@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/mirror.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index 55dc94f..48c907f 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -72,6 +72,7 @@ typedef struct MirrorBlockJob {
+     int max_iov;
+     bool initial_zeroing_ongoing;
+     bool prepared;
++    bool in_drain;
+ } MirrorBlockJob;
+ 
+ typedef struct MirrorOp {
+@@ -551,6 +552,7 @@ static int mirror_exit_common(Job *job)
+ 
+         /* The mirror job has no requests in flight any more, but we need to
+          * drain potential other users of the BDS before changing the graph. */
++        assert(s->in_drain);
+         bdrv_drained_begin(target_bs);
+         bdrv_replace_node(to_replace, target_bs, &local_err);
+         bdrv_drained_end(target_bs);
+@@ -587,6 +589,7 @@ static int mirror_exit_common(Job *job)
+     blk_insert_bs(bjob->blk, mirror_top_bs, &error_abort);
+ 
+     bdrv_drained_end(src);
++    s->in_drain = false;
+     bdrv_unref(mirror_top_bs);
+     bdrv_unref(src);
+ 
+@@ -860,10 +863,12 @@ static int coroutine_fn mirror_run(Job *job, Error **errp)
+              */
+             trace_mirror_before_drain(s, cnt);
+ 
++            s->in_drain = true;
+             bdrv_drained_begin(bs);
+             cnt = bdrv_get_dirty_count(s->dirty_bitmap);
+             if (cnt > 0 || mirror_flush(s) < 0) {
+                 bdrv_drained_end(bs);
++                s->in_drain = false;
+                 continue;
+             }
+ 
+@@ -911,6 +916,7 @@ immediate_exit:
+     bdrv_dirty_iter_free(s->dbi);
+ 
+     if (need_drain) {
++        s->in_drain = true;
+         bdrv_drained_begin(bs);
+     }
+ 
+@@ -979,6 +985,16 @@ static void mirror_pause(Job *job)
+ static bool mirror_drained_poll(BlockJob *job)
+ {
+     MirrorBlockJob *s = container_of(job, MirrorBlockJob, common);
++
++    /* If the job isn't paused nor cancelled, we can't be sure that it won't
++     * issue more requests. We make an exception if we've reached this point
++     * from one of our own drain sections, to avoid a deadlock waiting for
++     * ourselves.
++     */
++    if (!s->common.job.paused && !s->common.job.cancelled && !s->in_drain) {
++        return true;
++    }
++
+     return !!s->in_flight;
+ }
+ 
+-- 
+1.8.3.1
+

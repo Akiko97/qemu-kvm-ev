@@ -1,0 +1,142 @@
+From 65fa69814f994a95b1574dd16ea81aef4774fec5 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:38 +0200
+Subject: [PATCH 53/89] qapi: add x-block-dirty-bitmap-enable/disable
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-3-jsnow@redhat.com>
+Patchwork-id: 81406
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 02/35] qapi: add x-block-dirty-bitmap-enable/disable
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Expose the ability to turn bitmaps "on" or "off". This is experimental
+and principally for the sake of the Libvirt Checkpoints API, and it may
+or may not be committed for 3.0.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Message-id: 20180606182449.1607-3-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 5c5d2e50e5ac85234d793f0127a20ea3424a1229)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c           | 42 ++++++++++++++++++++++++++++++++++++++++++
+ qapi/block-core.json | 42 ++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 84 insertions(+)
+
+diff --git a/blockdev.c b/blockdev.c
+index d8b6520..ca2ffff 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -2965,6 +2965,48 @@ void qmp_block_dirty_bitmap_clear(const char *node, const char *name,
+     bdrv_clear_dirty_bitmap(bitmap, NULL);
+ }
+ 
++void qmp_x_block_dirty_bitmap_enable(const char *node, const char *name,
++                                   Error **errp)
++{
++    BlockDriverState *bs;
++    BdrvDirtyBitmap *bitmap;
++
++    bitmap = block_dirty_bitmap_lookup(node, name, &bs, errp);
++    if (!bitmap) {
++        return;
++    }
++
++    if (bdrv_dirty_bitmap_frozen(bitmap)) {
++        error_setg(errp,
++                   "Bitmap '%s' is currently frozen and cannot be enabled",
++                   name);
++        return;
++    }
++
++    bdrv_enable_dirty_bitmap(bitmap);
++}
++
++void qmp_x_block_dirty_bitmap_disable(const char *node, const char *name,
++                                    Error **errp)
++{
++    BlockDriverState *bs;
++    BdrvDirtyBitmap *bitmap;
++
++    bitmap = block_dirty_bitmap_lookup(node, name, &bs, errp);
++    if (!bitmap) {
++        return;
++    }
++
++    if (bdrv_dirty_bitmap_frozen(bitmap)) {
++        error_setg(errp,
++                   "Bitmap '%s' is currently frozen and cannot be disabled",
++                   name);
++        return;
++    }
++
++    bdrv_disable_dirty_bitmap(bitmap);
++}
++
+ BlockDirtyBitmapSha256 *qmp_x_debug_block_dirty_bitmap_sha256(const char *node,
+                                                               const char *name,
+                                                               Error **errp)
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 0b07e41..5c8cfa3 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1809,6 +1809,48 @@
+   'data': 'BlockDirtyBitmap' }
+ 
+ ##
++# @x-block-dirty-bitmap-enable:
++#
++# Enables a dirty bitmap so that it will begin tracking disk changes.
++#
++# Returns: nothing on success
++#          If @node is not a valid block device, DeviceNotFound
++#          If @name is not found, GenericError with an explanation
++#
++# Since: 3.0
++#
++# Example:
++#
++# -> { "execute": "x-block-dirty-bitmap-enable",
++#      "arguments": { "node": "drive0", "name": "bitmap0" } }
++# <- { "return": {} }
++#
++##
++  { 'command': 'x-block-dirty-bitmap-enable',
++    'data': 'BlockDirtyBitmap' }
++
++##
++# @x-block-dirty-bitmap-disable:
++#
++# Disables a dirty bitmap so that it will stop tracking disk changes.
++#
++# Returns: nothing on success
++#          If @node is not a valid block device, DeviceNotFound
++#          If @name is not found, GenericError with an explanation
++#
++# Since: 3.0
++#
++# Example:
++#
++# -> { "execute": "x-block-dirty-bitmap-disable",
++#      "arguments": { "node": "drive0", "name": "bitmap0" } }
++# <- { "return": {} }
++#
++##
++    { 'command': 'x-block-dirty-bitmap-disable',
++      'data': 'BlockDirtyBitmap' }
++
++##
+ # @BlockDirtyBitmapSha256:
+ #
+ # SHA256 hash of dirty bitmap data
+-- 
+1.8.3.1
+

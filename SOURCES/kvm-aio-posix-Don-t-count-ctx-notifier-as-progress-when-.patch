@@ -1,0 +1,47 @@
+From 8c5d6c7bdc1cd5557503764ff8187d39bed3cbe1 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Fri, 17 Aug 2018 03:08:35 +0200
+Subject: [PATCH 4/5] aio-posix: Don't count ctx->notifier as progress when
+ polling
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180817030836.20581-2-famz@redhat.com>
+Patchwork-id: 81861
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] aio-posix: Don't count ctx->notifier as progress when polling
+Bugzilla: 1562750
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+The same logic exists in fd polling. This change is especially important
+to avoid busy loop once we limit aio_notify_accept() to blocking
+aio_poll().
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Message-Id: <20180809132259.18402-2-famz@redhat.com>
+Signed-off-by: Fam Zheng <famz@redhat.com>
+(cherry picked from commit 70232b5253a3c4e03ed1ac47ef9246a8ac66c6fa)
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ util/aio-posix.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/util/aio-posix.c b/util/aio-posix.c
+index d8f0cb4..f650c7c 100644
+--- a/util/aio-posix.c
++++ b/util/aio-posix.c
+@@ -494,7 +494,8 @@ static bool run_poll_handlers_once(AioContext *ctx)
+     QLIST_FOREACH_RCU(node, &ctx->aio_handlers, node) {
+         if (!node->deleted && node->io_poll &&
+             aio_node_check(ctx, node->is_external) &&
+-            node->io_poll(node->opaque)) {
++            node->io_poll(node->opaque) &&
++            node->opaque != &ctx->notifier) {
+             progress = true;
+         }
+ 
+-- 
+1.8.3.1
+

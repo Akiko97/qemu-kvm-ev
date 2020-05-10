@@ -1,0 +1,71 @@
+From 64aa185d19f4e4afacd2501831049d6e615b5a84 Mon Sep 17 00:00:00 2001
+From: Stefan Hajnoczi <stefanha@redhat.com>
+Date: Tue, 16 Jul 2019 13:22:15 +0200
+Subject: [PATCH 22/23] virtio-scsi: restart DMA after iothread
+
+RH-Author: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: <20190716132215.18503-4-stefanha@redhat.com>
+Patchwork-id: 89535
+O-Subject: [RHEL-7.8 RHEL-7.7.z qemu-kvm-rhev PATCH 3/3] virtio-scsi: restart DMA after iothread
+Bugzilla: 1673546
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+When the 'cont' command resumes guest execution the vm change state
+handlers are invoked.  Unfortunately there is no explicit ordering
+between classic qemu_add_vm_change_state_handler() callbacks.  When two
+layers of code both use vm change state handlers, we don't control which
+handler runs first.
+
+virtio-scsi with iothreads hits a deadlock when a failed SCSI command is
+restarted and completes before the iothread is re-initialized.
+
+This patch uses the new qdev_add_vm_change_state_handler() API to
+guarantee that virtio-scsi's virtio change state handler executes before
+the SCSI bus children.  This way DMA is restarted after the iothread has
+re-initialized.
+
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 1a8c091c4ea5db3126514e3f7df678c9ee328802)
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/scsi-bus.c | 4 ++--
+ hw/virtio/virtio.c | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/hw/scsi/scsi-bus.c b/hw/scsi/scsi-bus.c
+index 5905f6b..ee4c449 100644
+--- a/hw/scsi/scsi-bus.c
++++ b/hw/scsi/scsi-bus.c
+@@ -206,8 +206,8 @@ static void scsi_qdev_realize(DeviceState *qdev, Error **errp)
+         error_propagate(errp, local_err);
+         return;
+     }
+-    dev->vmsentry = qemu_add_vm_change_state_handler(scsi_dma_restart_cb,
+-                                                     dev);
++    dev->vmsentry = qdev_add_vm_change_state_handler(DEVICE(dev),
++            scsi_dma_restart_cb, dev);
+ }
+ 
+ static void scsi_qdev_unrealize(DeviceState *qdev, Error **errp)
+diff --git a/hw/virtio/virtio.c b/hw/virtio/virtio.c
+index 3492b20..08a4332 100644
+--- a/hw/virtio/virtio.c
++++ b/hw/virtio/virtio.c
+@@ -2306,8 +2306,8 @@ void virtio_init(VirtIODevice *vdev, const char *name,
+     } else {
+         vdev->config = NULL;
+     }
+-    vdev->vmstate = qemu_add_vm_change_state_handler(virtio_vmstate_change,
+-                                                     vdev);
++    vdev->vmstate = qdev_add_vm_change_state_handler(DEVICE(vdev),
++            virtio_vmstate_change, vdev);
+     vdev->device_endian = virtio_default_endian();
+     vdev->use_guest_notifier_mask = true;
+ }
+-- 
+1.8.3.1
+

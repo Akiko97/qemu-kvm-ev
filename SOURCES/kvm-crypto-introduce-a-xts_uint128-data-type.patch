@@ -1,0 +1,158 @@
+From 880c18a0bffadfda3197a18daab03881025eb37c Mon Sep 17 00:00:00 2001
+From: "Daniel P. Berrange" <berrange@redhat.com>
+Date: Wed, 24 Apr 2019 10:30:25 +0200
+Subject: [PATCH 06/12] crypto: introduce a xts_uint128 data type
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Daniel P. Berrange <berrange@redhat.com>
+Message-id: <20190424103030.2925-5-berrange@redhat.com>
+Patchwork-id: 85894
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 4/9] crypto: introduce a xts_uint128 data type
+Bugzilla: 1666336
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+
+The new type is designed to allow use of 64-bit arithmetic instead
+of operating 1-byte at a time. The following patches will use this to
+improve performance.
+
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+(cherry picked from commit cc36930e4077eb3dbee6cd30d2d826ec62b3490a)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ crypto/xts.c | 46 ++++++++++++++++++++++++++--------------------
+ 1 file changed, 26 insertions(+), 20 deletions(-)
+
+diff --git a/crypto/xts.c b/crypto/xts.c
+index 3c1a92f..bee23f8 100644
+--- a/crypto/xts.c
++++ b/crypto/xts.c
+@@ -26,6 +26,12 @@
+ #include "qemu/osdep.h"
+ #include "crypto/xts.h"
+ 
++typedef union {
++    uint8_t b[XTS_BLOCK_SIZE];
++    uint64_t u[2];
++} xts_uint128;
++
++
+ static void xts_mult_x(uint8_t *I)
+ {
+     int x;
+@@ -85,7 +91,7 @@ void xts_decrypt(const void *datactx,
+                  uint8_t *dst,
+                  const uint8_t *src)
+ {
+-    uint8_t PP[XTS_BLOCK_SIZE], CC[XTS_BLOCK_SIZE], T[XTS_BLOCK_SIZE];
++    xts_uint128 PP, CC, T;
+     unsigned long i, m, mo, lim;
+ 
+     /* get number of blocks */
+@@ -102,10 +108,10 @@ void xts_decrypt(const void *datactx,
+     }
+ 
+     /* encrypt the iv */
+-    encfunc(tweakctx, XTS_BLOCK_SIZE, T, iv);
++    encfunc(tweakctx, XTS_BLOCK_SIZE, T.b, iv);
+ 
+     for (i = 0; i < lim; i++) {
+-        xts_tweak_encdec(datactx, decfunc, src, dst, T);
++        xts_tweak_encdec(datactx, decfunc, src, dst, T.b);
+ 
+         src += XTS_BLOCK_SIZE;
+         dst += XTS_BLOCK_SIZE;
+@@ -113,27 +119,27 @@ void xts_decrypt(const void *datactx,
+ 
+     /* if length is not a multiple of XTS_BLOCK_SIZE then */
+     if (mo > 0) {
+-        memcpy(CC, T, XTS_BLOCK_SIZE);
+-        xts_mult_x(CC);
++        memcpy(&CC, &T, XTS_BLOCK_SIZE);
++        xts_mult_x(CC.b);
+ 
+         /* PP = tweak decrypt block m-1 */
+-        xts_tweak_encdec(datactx, decfunc, src, PP, CC);
++        xts_tweak_encdec(datactx, decfunc, src, PP.b, CC.b);
+ 
+         /* Pm = first length % XTS_BLOCK_SIZE bytes of PP */
+         for (i = 0; i < mo; i++) {
+-            CC[i] = src[XTS_BLOCK_SIZE + i];
+-            dst[XTS_BLOCK_SIZE + i] = PP[i];
++            CC.b[i] = src[XTS_BLOCK_SIZE + i];
++            dst[XTS_BLOCK_SIZE + i] = PP.b[i];
+         }
+         for (; i < XTS_BLOCK_SIZE; i++) {
+-            CC[i] = PP[i];
++            CC.b[i] = PP.b[i];
+         }
+ 
+         /* Pm-1 = Tweak uncrypt CC */
+-        xts_tweak_encdec(datactx, decfunc, CC, dst, T);
++        xts_tweak_encdec(datactx, decfunc, CC.b, dst, T.b);
+     }
+ 
+     /* Decrypt the iv back */
+-    decfunc(tweakctx, XTS_BLOCK_SIZE, iv, T);
++    decfunc(tweakctx, XTS_BLOCK_SIZE, iv, T.b);
+ }
+ 
+ 
+@@ -146,7 +152,7 @@ void xts_encrypt(const void *datactx,
+                  uint8_t *dst,
+                  const uint8_t *src)
+ {
+-    uint8_t PP[XTS_BLOCK_SIZE], CC[XTS_BLOCK_SIZE], T[XTS_BLOCK_SIZE];
++    xts_uint128 PP, CC, T;
+     unsigned long i, m, mo, lim;
+ 
+     /* get number of blocks */
+@@ -163,10 +169,10 @@ void xts_encrypt(const void *datactx,
+     }
+ 
+     /* encrypt the iv */
+-    encfunc(tweakctx, XTS_BLOCK_SIZE, T, iv);
++    encfunc(tweakctx, XTS_BLOCK_SIZE, T.b, iv);
+ 
+     for (i = 0; i < lim; i++) {
+-        xts_tweak_encdec(datactx, encfunc, src, dst, T);
++        xts_tweak_encdec(datactx, encfunc, src, dst, T.b);
+ 
+         dst += XTS_BLOCK_SIZE;
+         src += XTS_BLOCK_SIZE;
+@@ -175,22 +181,22 @@ void xts_encrypt(const void *datactx,
+     /* if length is not a multiple of XTS_BLOCK_SIZE then */
+     if (mo > 0) {
+         /* CC = tweak encrypt block m-1 */
+-        xts_tweak_encdec(datactx, encfunc, src, CC, T);
++        xts_tweak_encdec(datactx, encfunc, src, CC.b, T.b);
+ 
+         /* Cm = first length % XTS_BLOCK_SIZE bytes of CC */
+         for (i = 0; i < mo; i++) {
+-            PP[i] = src[XTS_BLOCK_SIZE + i];
+-            dst[XTS_BLOCK_SIZE + i] = CC[i];
++            PP.b[i] = src[XTS_BLOCK_SIZE + i];
++            dst[XTS_BLOCK_SIZE + i] = CC.b[i];
+         }
+ 
+         for (; i < XTS_BLOCK_SIZE; i++) {
+-            PP[i] = CC[i];
++            PP.b[i] = CC.b[i];
+         }
+ 
+         /* Cm-1 = Tweak encrypt PP */
+-        xts_tweak_encdec(datactx, encfunc, PP, dst, T);
++        xts_tweak_encdec(datactx, encfunc, PP.b, dst, T.b);
+     }
+ 
+     /* Decrypt the iv back */
+-    decfunc(tweakctx, XTS_BLOCK_SIZE, iv, T);
++    decfunc(tweakctx, XTS_BLOCK_SIZE, iv, T.b);
+ }
+-- 
+1.8.3.1
+

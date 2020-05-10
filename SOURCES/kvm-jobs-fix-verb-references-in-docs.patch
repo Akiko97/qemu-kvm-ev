@@ -1,0 +1,66 @@
+From b4b170fbc6181b49bae5d5bfa7a45e00356d1230 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:54 +0200
+Subject: [PATCH 85/89] jobs: fix verb references in docs
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-72-kwolf@redhat.com>
+Patchwork-id: 81108
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 71/73] jobs: fix verb references in docs
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: John Snow <jsnow@redhat.com>
+
+These point to the job versions now, not the blockjob versions which
+don't really exist anymore.
+
+Except set-speed, which does. It sticks out like a sore thumb. This
+patch doesn't fix that, but it doesn't make it any worse, either.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit b8a366feb2aa2200c42fa983a9c607fb78a501db)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qapi/job.json | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/qapi/job.json b/qapi/job.json
+index 2264435..9d074eb 100644
+--- a/qapi/job.json
++++ b/qapi/job.json
+@@ -76,19 +76,19 @@
+ #
+ # Represents command verbs that can be applied to a job.
+ #
+-# @cancel: see @block-job-cancel
++# @cancel: see @job-cancel
+ #
+-# @pause: see @block-job-pause
++# @pause: see @job-pause
+ #
+-# @resume: see @block-job-resume
++# @resume: see @job-resume
+ #
+ # @set-speed: see @block-job-set-speed
+ #
+-# @complete: see @block-job-complete
++# @complete: see @job-complete
+ #
+-# @dismiss: see @block-job-dismiss
++# @dismiss: see @job-dismiss
+ #
+-# @finalize: see @block-job-finalize
++# @finalize: see @job-finalize
+ #
+ # Since: 2.12
+ ##
+-- 
+1.8.3.1
+

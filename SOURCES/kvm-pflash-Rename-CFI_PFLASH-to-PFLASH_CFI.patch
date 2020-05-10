@@ -1,0 +1,169 @@
+From 23f2d8fa204a3aa29a69e2e9d1efa5b7d22f3288 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:50:55 +0200
+Subject: [PATCH 28/53] pflash: Rename *CFI_PFLASH* to *PFLASH_CFI*
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-7-armbru@redhat.com>
+Patchwork-id: 87993
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 06/31] pflash: Rename *CFI_PFLASH* to *PFLASH_CFI*
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+pflash_cfi01.c and pflash_cfi02.c start their identifiers with
+pflash_cfi01_ and pflash_cfi02_ respectively, except for
+CFI_PFLASH01(), TYPE_CFI_PFLASH01, CFI_PFLASH02(), TYPE_CFI_PFLASH02.
+Rename for consistency.
+
+Suggested-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Message-Id: <20190308094610.21210-5-armbru@redhat.com>
+(cherry picked from commit e7b6274197c5f096860014ca750544d6aca0b9b9)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/block/pflash_cfi01.c  | 12 ++++++------
+ hw/block/pflash_cfi02.c  | 14 +++++++-------
+ include/hw/block/flash.h |  4 ++--
+ 3 files changed, 15 insertions(+), 15 deletions(-)
+
+diff --git a/hw/block/pflash_cfi01.c b/hw/block/pflash_cfi01.c
+index 3a6bd10..1ff4d25 100644
+--- a/hw/block/pflash_cfi01.c
++++ b/hw/block/pflash_cfi01.c
+@@ -59,8 +59,8 @@ do {                                                        \
+ #define DPRINTF(fmt, ...) do { } while (0)
+ #endif
+ 
+-#define CFI_PFLASH01(obj) \
+-    OBJECT_CHECK(PFlashCFI01, (obj), TYPE_CFI_PFLASH01)
++#define PFLASH_CFI01(obj) \
++    OBJECT_CHECK(PFlashCFI01, (obj), TYPE_PFLASH_CFI01)
+ 
+ #define PFLASH_BE          0
+ #define PFLASH_SECURE      1
+@@ -711,7 +711,7 @@ static const MemoryRegionOps pflash_cfi01_ops = {
+ 
+ static void pflash_cfi01_realize(DeviceState *dev, Error **errp)
+ {
+-    PFlashCFI01 *pfl = CFI_PFLASH01(dev);
++    PFlashCFI01 *pfl = PFLASH_CFI01(dev);
+     uint64_t total_len;
+     int ret;
+     uint64_t blocks_per_device, sector_len_per_device, device_len;
+@@ -939,7 +939,7 @@ static void pflash_cfi01_class_init(ObjectClass *klass, void *data)
+ 
+ 
+ static const TypeInfo pflash_cfi01_info = {
+-    .name           = TYPE_CFI_PFLASH01,
++    .name           = TYPE_PFLASH_CFI01,
+     .parent         = TYPE_SYS_BUS_DEVICE,
+     .instance_size  = sizeof(PFlashCFI01),
+     .class_init     = pflash_cfi01_class_init,
+@@ -962,7 +962,7 @@ PFlashCFI01 *pflash_cfi01_register(hwaddr base,
+                                    uint16_t id2, uint16_t id3,
+                                    int be)
+ {
+-    DeviceState *dev = qdev_create(NULL, TYPE_CFI_PFLASH01);
++    DeviceState *dev = qdev_create(NULL, TYPE_PFLASH_CFI01);
+ 
+     if (blk) {
+         qdev_prop_set_drive(dev, "drive", blk, &error_abort);
+@@ -979,7 +979,7 @@ PFlashCFI01 *pflash_cfi01_register(hwaddr base,
+     qdev_init_nofail(dev);
+ 
+     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
+-    return CFI_PFLASH01(dev);
++    return PFLASH_CFI01(dev);
+ }
+ 
+ MemoryRegion *pflash_cfi01_get_memory(PFlashCFI01 *fl)
+diff --git a/hw/block/pflash_cfi02.c b/hw/block/pflash_cfi02.c
+index 7fa02d2..2c0cbde 100644
+--- a/hw/block/pflash_cfi02.c
++++ b/hw/block/pflash_cfi02.c
+@@ -57,8 +57,8 @@ do {                                                       \
+ 
+ #define PFLASH_LAZY_ROMD_THRESHOLD 42
+ 
+-#define CFI_PFLASH02(obj) \
+-    OBJECT_CHECK(PFlashCFI02, (obj), TYPE_CFI_PFLASH02)
++#define PFLASH_CFI02(obj) \
++    OBJECT_CHECK(PFlashCFI02, (obj), TYPE_PFLASH_CFI02)
+ 
+ struct PFlashCFI02 {
+     /*< private >*/
+@@ -596,7 +596,7 @@ static const MemoryRegionOps pflash_cfi02_ops_le = {
+ 
+ static void pflash_cfi02_realize(DeviceState *dev, Error **errp)
+ {
+-    PFlashCFI02 *pfl = CFI_PFLASH02(dev);
++    PFlashCFI02 *pfl = PFLASH_CFI02(dev);
+     uint32_t chip_len;
+     int ret;
+     Error *local_err = NULL;
+@@ -760,7 +760,7 @@ static Property pflash_cfi02_properties[] = {
+ 
+ static void pflash_cfi02_unrealize(DeviceState *dev, Error **errp)
+ {
+-    PFlashCFI02 *pfl = CFI_PFLASH02(dev);
++    PFlashCFI02 *pfl = PFLASH_CFI02(dev);
+     timer_del(&pfl->timer);
+ }
+ 
+@@ -775,7 +775,7 @@ static void pflash_cfi02_class_init(ObjectClass *klass, void *data)
+ }
+ 
+ static const TypeInfo pflash_cfi02_info = {
+-    .name           = TYPE_CFI_PFLASH02,
++    .name           = TYPE_PFLASH_CFI02,
+     .parent         = TYPE_SYS_BUS_DEVICE,
+     .instance_size  = sizeof(PFlashCFI02),
+     .class_init     = pflash_cfi02_class_init,
+@@ -800,7 +800,7 @@ PFlashCFI02 *pflash_cfi02_register(hwaddr base,
+                                    uint16_t unlock_addr1,
+                                    int be)
+ {
+-    DeviceState *dev = qdev_create(NULL, TYPE_CFI_PFLASH02);
++    DeviceState *dev = qdev_create(NULL, TYPE_PFLASH_CFI02);
+ 
+     if (blk) {
+         qdev_prop_set_drive(dev, "drive", blk, &error_abort);
+@@ -820,5 +820,5 @@ PFlashCFI02 *pflash_cfi02_register(hwaddr base,
+     qdev_init_nofail(dev);
+ 
+     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
+-    return CFI_PFLASH02(dev);
++    return PFLASH_CFI02(dev);
+ }
+diff --git a/include/hw/block/flash.h b/include/hw/block/flash.h
+index 51d8f60..333005d 100644
+--- a/include/hw/block/flash.h
++++ b/include/hw/block/flash.h
+@@ -7,7 +7,7 @@
+ 
+ /* pflash_cfi01.c */
+ 
+-#define TYPE_CFI_PFLASH01 "cfi.pflash01"
++#define TYPE_PFLASH_CFI01 "cfi.pflash01"
+ 
+ typedef struct PFlashCFI01 PFlashCFI01;
+ 
+@@ -24,7 +24,7 @@ MemoryRegion *pflash_cfi01_get_memory(PFlashCFI01 *fl);
+ 
+ /* pflash_cfi02.c */
+ 
+-#define TYPE_CFI_PFLASH02 "cfi.pflash02"
++#define TYPE_PFLASH_CFI02 "cfi.pflash02"
+ 
+ typedef struct PFlashCFI02 PFlashCFI02;
+ 
+-- 
+1.8.3.1
+

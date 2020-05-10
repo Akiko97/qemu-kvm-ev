@@ -1,0 +1,108 @@
+From cb638b3d14fb19db26f6108a08f1a3b62a96b6c3 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 18:59:53 +0200
+Subject: [PATCH 14/57] migration: move some code to ram_save_host_page
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-7-dgilbert@redhat.com>
+Patchwork-id: 81007
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 06/18] migration: move some code to ram_save_host_page
+Bugzilla: 1584139
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Xiao Guangrong <xiaoguangrong@tencent.com>
+
+Move some code from ram_save_target_page() to ram_save_host_page()
+to make it be more readable for latter patches that dramatically
+clean ram_save_target_page() up
+
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Xiao Guangrong <xiaoguangrong@tencent.com>
+Message-Id: <20180330075128.26919-7-xiaoguangrong@tencent.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit 1faa5665c0f1df2eff291454a3a85625a3bc93dd)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/ram.c | 43 +++++++++++++++++++------------------------
+ 1 file changed, 19 insertions(+), 24 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 8dc98a5..106fcf1 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1484,38 +1484,23 @@ err:
+  * Returns the number of pages written
+  *
+  * @rs: current RAM state
+- * @ms: current migration state
+  * @pss: data about the page we want to send
+  * @last_stage: if we are at the completion stage
+  */
+ static int ram_save_target_page(RAMState *rs, PageSearchStatus *pss,
+                                 bool last_stage)
+ {
+-    int res = 0;
+-
+-    /* Check the pages is dirty and if it is send it */
+-    if (migration_bitmap_clear_dirty(rs, pss->block, pss->page)) {
+-        /*
+-         * If xbzrle is on, stop using the data compression after first
+-         * round of migration even if compression is enabled. In theory,
+-         * xbzrle can do better than compression.
+-         */
+-        if (migrate_use_compression() &&
+-            (rs->ram_bulk_stage || !migrate_use_xbzrle())) {
+-            res = ram_save_compressed_page(rs, pss, last_stage);
+-        } else {
+-            res = ram_save_page(rs, pss, last_stage);
+-        }
+-
+-        if (res < 0) {
+-            return res;
+-        }
+-        if (pss->block->unsentmap) {
+-            clear_bit(pss->page, pss->block->unsentmap);
+-        }
++    /*
++     * If xbzrle is on, stop using the data compression after first
++     * round of migration even if compression is enabled. In theory,
++     * xbzrle can do better than compression.
++     */
++    if (migrate_use_compression() &&
++        (rs->ram_bulk_stage || !migrate_use_xbzrle())) {
++        return ram_save_compressed_page(rs, pss, last_stage);
+     }
+ 
+-    return res;
++    return ram_save_page(rs, pss, last_stage);
+ }
+ 
+ /**
+@@ -1544,12 +1529,22 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss,
+         qemu_ram_pagesize(pss->block) >> TARGET_PAGE_BITS;
+ 
+     do {
++        /* Check the pages is dirty and if it is send it */
++        if (!migration_bitmap_clear_dirty(rs, pss->block, pss->page)) {
++            pss->page++;
++            continue;
++        }
++
+         tmppages = ram_save_target_page(rs, pss, last_stage);
+         if (tmppages < 0) {
+             return tmppages;
+         }
+ 
+         pages += tmppages;
++        if (pss->block->unsentmap) {
++            clear_bit(pss->page, pss->block->unsentmap);
++        }
++
+         pss->page++;
+     } while ((pss->page & (pagesize_bits - 1)) &&
+              offset_in_ramblock(pss->block, pss->page << TARGET_PAGE_BITS));
+-- 
+1.8.3.1
+

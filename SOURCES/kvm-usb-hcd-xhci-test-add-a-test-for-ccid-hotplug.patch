@@ -1,0 +1,66 @@
+From 175943dc22bc1ff3622fd5132656375f22306f27 Mon Sep 17 00:00:00 2001
+From: Serhii Popovych <spopovyc@redhat.com>
+Date: Mon, 9 Jul 2018 11:31:17 +0200
+Subject: [PATCH 27/89] usb-hcd-xhci-test: add a test for ccid hotplug
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Serhii Popovych <spopovyc@redhat.com>
+Message-id: <1531135878-18813-3-git-send-email-spopovyc@redhat.com>
+Patchwork-id: 81267
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 2/3] usb-hcd-xhci-test: add a test for ccid hotplug
+Bugzilla: 1556678
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+
+From: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: 20180531195119.22021-5-marcandre.lureau@redhat.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+(cherry picked from commit 1a3ff20e67330a15d62b00c2916e3541872103c0)
+Signed-off-by: Serhii Popovych <spopovyc@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Conflicts:
+	tests/usb-hcd-xhci-test.c
+
+Due to disabled UAS that adds if/endif and comment line.
+---
+ tests/usb-hcd-xhci-test.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/tests/usb-hcd-xhci-test.c b/tests/usb-hcd-xhci-test.c
+index 192b7f7..8c3fb36 100644
+--- a/tests/usb-hcd-xhci-test.c
++++ b/tests/usb-hcd-xhci-test.c
+@@ -37,6 +37,15 @@ static void test_usb_uas_hotplug(void)
+ }
+ #endif
+ 
++static void test_usb_ccid_hotplug(void)
++{
++    qtest_qmp_device_add("usb-ccid", "ccid", NULL);
++    qtest_qmp_device_del("ccid");
++    /* check the device can be added again */
++    qtest_qmp_device_add("usb-ccid", "ccid", NULL);
++    qtest_qmp_device_del("ccid");
++}
++
+ int main(int argc, char **argv)
+ {
+     int ret;
+@@ -48,6 +57,8 @@ int main(int argc, char **argv)
+ #if 0 /* Disabled for Red Hat Enterprise Linux 7 */
+     qtest_add_func("/xhci/pci/hotplug/usb-uas", test_usb_uas_hotplug);
+ #endif
++    qtest_add_func("/xhci/pci/hotplug/usb-ccid", test_usb_ccid_hotplug);
++
+     qtest_start("-device nec-usb-xhci,id=xhci"
+                 " -drive id=drive0,if=none,file=null-co://,format=raw");
+     ret = g_test_run();
+-- 
+1.8.3.1
+

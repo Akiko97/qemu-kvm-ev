@@ -1,0 +1,123 @@
+From ae11a1ea30f43abebd96a22988619eb9f52e6a4e Mon Sep 17 00:00:00 2001
+From: Marcelo Tosatti <mtosatti@redhat.com>
+Date: Wed, 4 Dec 2019 15:21:07 +0100
+Subject: [PATCH 1/3] mc146818rtc: fix timer interrupt reinjection
+
+RH-Author: Marcelo Tosatti <mtosatti@redhat.com>
+Message-id: <20191204152436.680299856@amt.cnet>
+Patchwork-id: 92889
+O-Subject: [RHEL-7.8 qemu-kvm-rhev PATCH 1/3] mc146818rtc: fix timer interrupt reinjection
+Bugzilla: 1639098
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+
+BZ: 1639098
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=24854309
+BRANCH: rhv7/master-2.12.0
+Upstream: b429de730174b388ea5760e3debb0d542ea3c261
+of pbonzini's for-upstream tree.
+
+commit 369b41359af46bded5799c9ef8be2b641d92e043 broke timer interrupt
+reinjection when there is no period change by the guest.
+
+In that case, old_period is 0, which ends up zeroing irq_coalesced
+(counter of reinjected interrupts).
+
+The consequence is Windows 7 is unable to synchronize time via NTP.
+Easily reproducible by playing a fullscreen video with cirrus and VNC.
+
+Fix by not updating s->irq_coalesced when old_period is 0.
+
+V2: reorganize code (Paolo Bonzini)
+
+Signed-off-by: Marcelo Tosatti <mtosatti@redhat.com>
+Message-Id: <20191010123008.GA19158@amt.cnet>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/timer/mc146818rtc.c | 53 +++++++++++++++++++++++++-------------------------
+ 1 file changed, 27 insertions(+), 26 deletions(-)
+
+diff --git a/hw/timer/mc146818rtc.c b/hw/timer/mc146818rtc.c
+index 68c353f..296d974 100644
+--- a/hw/timer/mc146818rtc.c
++++ b/hw/timer/mc146818rtc.c
+@@ -197,24 +197,28 @@ periodic_timer_update(RTCState *s, int64_t current_time, uint32_t old_period)
+ 
+     period = rtc_periodic_clock_ticks(s);
+ 
+-    if (period) {
+-        /* compute 32 khz clock */
+-        cur_clock =
+-            muldiv64(current_time, RTC_CLOCK_RATE, NANOSECONDS_PER_SECOND);
++    if (!period) {
++        s->irq_coalesced = 0;
++        timer_del(s->periodic_timer);
++        return;
++    }
+ 
+-        /*
+-        * if the periodic timer's update is due to period re-configuration,
+-        * we should count the clock since last interrupt.
+-        */
+-        if (old_period) {
+-            int64_t last_periodic_clock, next_periodic_clock;
+-
+-            next_periodic_clock = muldiv64(s->next_periodic_time,
+-                                    RTC_CLOCK_RATE, NANOSECONDS_PER_SECOND);
+-            last_periodic_clock = next_periodic_clock - old_period;
+-            lost_clock = cur_clock - last_periodic_clock;
+-            assert(lost_clock >= 0);
+-        }
++    /* compute 32 khz clock */
++    cur_clock =
++        muldiv64(current_time, RTC_CLOCK_RATE, NANOSECONDS_PER_SECOND);
++
++    /*
++     * if the periodic timer's update is due to period re-configuration,
++     * we should count the clock since last interrupt.
++     */
++    if (old_period) {
++        int64_t last_periodic_clock, next_periodic_clock;
++
++        next_periodic_clock = muldiv64(s->next_periodic_time,
++                                RTC_CLOCK_RATE, NANOSECONDS_PER_SECOND);
++        last_periodic_clock = next_periodic_clock - old_period;
++        lost_clock = cur_clock - last_periodic_clock;
++        assert(lost_clock >= 0);
+ 
+         /*
+          * s->irq_coalesced can change for two reasons:
+@@ -245,22 +249,19 @@ periodic_timer_update(RTCState *s, int64_t current_time, uint32_t old_period)
+                 rtc_coalesced_timer_update(s);
+             }
+         } else {
+-           /*
++            /*
+              * no way to compensate the interrupt if LOST_TICK_POLICY_SLEW
+              * is not used, we should make the time progress anyway.
+              */
+             lost_clock = MIN(lost_clock, period);
+         }
++    }
+ 
+-        assert(lost_clock >= 0 && lost_clock <= period);
++    assert(lost_clock >= 0 && lost_clock <= period);
+ 
+-        next_irq_clock = cur_clock + period - lost_clock;
+-        s->next_periodic_time = periodic_clock_to_ns(next_irq_clock) + 1;
+-        timer_mod(s->periodic_timer, s->next_periodic_time);
+-    } else {
+-        s->irq_coalesced = 0;
+-        timer_del(s->periodic_timer);
+-    }
++    next_irq_clock = cur_clock + period - lost_clock;
++    s->next_periodic_time = periodic_clock_to_ns(next_irq_clock) + 1;
++    timer_mod(s->periodic_timer, s->next_periodic_time);
+ }
+ 
+ static void rtc_periodic_timer(void *opaque)
+-- 
+1.8.3.1
+

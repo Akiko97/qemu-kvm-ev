@@ -1,0 +1,46 @@
+From 49725596691ccd778e0d9328b2ee2064ec35595f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:23:01 +0100
+Subject: [PATCH 123/163] block/nbd-client: fix nbd_reply_chunk_iter_receive
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-49-jsnow@redhat.com>
+Patchwork-id: 85209
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 48/55] block/nbd-client: fix nbd_reply_chunk_iter_receive
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Use exported report, not the variable to be reused (should not really
+matter).
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190201130138.94525-5-vsementsov@virtuozzo.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 65e01d47653eb127fa917bd9d2f1824a00ab2de6)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index 22e5042..5d22f8b 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -601,7 +601,7 @@ static bool nbd_reply_chunk_iter_receive(NBDClientSession *s,
+     }
+ 
+     /* Do not execute the body of NBD_FOREACH_REPLY_CHUNK for simple reply. */
+-    if (nbd_reply_is_simple(&s->reply) || s->quit) {
++    if (nbd_reply_is_simple(reply) || s->quit) {
+         goto break_loop;
+     }
+ 
+-- 
+1.8.3.1
+

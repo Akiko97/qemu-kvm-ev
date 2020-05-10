@@ -1,0 +1,91 @@
+From 096bb1ca93a22a0ca874b76c3ad03385a5667f41 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:24 +0200
+Subject: [PATCH 17/54] block-qdict: Clean up qdict_crumple() a bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-18-armbru@redhat.com>
+Patchwork-id: 80729
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 17/23] block-qdict: Clean up qdict_crumple() a bit
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+When you mix scalar and non-scalar keys, whether you get an "already
+set as scalar" or an "already set as dict" error depends on qdict
+iteration order.  Neither message makes much sense.  Replace by
+""Cannot mix scalar and non-scalar keys".  This is similar to the
+message we get for mixing list and non-list keys.
+
+I find qdict_crumple()'s first loop hard to understand.  Rearrange it
+and add a comment.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 3692b5d76819e573dedc9004c4b2b0e3dad83530)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qobject/block-qdict.c | 32 ++++++++++++++++----------------
+ 1 file changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/qobject/block-qdict.c b/qobject/block-qdict.c
+index a4e1c8d..36cf58a 100644
+--- a/qobject/block-qdict.c
++++ b/qobject/block-qdict.c
+@@ -403,7 +403,7 @@ static int qdict_is_list(QDict *maybe_list, Error **errp)
+ QObject *qdict_crumple(const QDict *src, Error **errp)
+ {
+     const QDictEntry *ent;
+-    QDict *two_level, *multi_level = NULL;
++    QDict *two_level, *multi_level = NULL, *child_dict;
+     QObject *dst = NULL, *child;
+     size_t i;
+     char *prefix = NULL;
+@@ -422,28 +422,28 @@ QObject *qdict_crumple(const QDict *src, Error **errp)
+         }
+ 
+         qdict_split_flat_key(ent->key, &prefix, &suffix);
+-
+         child = qdict_get(two_level, prefix);
++        child_dict = qobject_to(QDict, child);
++
++        if (child) {
++            /*
++             * If @child_dict, then all previous keys with this prefix
++             * had a suffix.  If @suffix, this one has one as well,
++             * and we're good, else there's a clash.
++             */
++            if (!child_dict || !suffix) {
++                error_setg(errp, "Cannot mix scalar and non-scalar keys");
++                goto error;
++            }
++        }
++
+         if (suffix) {
+-            QDict *child_dict = qobject_to(QDict, child);
+             if (!child_dict) {
+-                if (child) {
+-                    error_setg(errp, "Key %s prefix is already set as a scalar",
+-                               prefix);
+-                    goto error;
+-                }
+-
+                 child_dict = qdict_new();
+-                qdict_put_obj(two_level, prefix, QOBJECT(child_dict));
++                qdict_put(two_level, prefix, child_dict);
+             }
+-
+             qdict_put_obj(child_dict, suffix, qobject_ref(ent->value));
+         } else {
+-            if (child) {
+-                error_setg(errp, "Key %s prefix is already set as a dict",
+-                           prefix);
+-                goto error;
+-            }
+             qdict_put_obj(two_level, prefix, qobject_ref(ent->value));
+         }
+ 
+-- 
+1.8.3.1
+

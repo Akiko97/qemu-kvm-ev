@@ -1,0 +1,50 @@
+From 546f992fdc25fd65f050efff3b4c8bf8f22d5a05 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:51 +0100
+Subject: [PATCH 10/34] iscsi: Support auto-read-only option
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-10-kwolf@redhat.com>
+Patchwork-id: 83120
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 09/12] iscsi: Support auto-read-only option
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If read-only=off, but auto-read-only=on is given, open the volume
+read-write if we have the permissions, but instead of erroring out for
+read-only volumes, just degrade to read-only.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 8f3bf50d340372662a35564c669e567c6c846943)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/iscsi.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/block/iscsi.c b/block/iscsi.c
+index 2b45458..c412b12 100644
+--- a/block/iscsi.c
++++ b/block/iscsi.c
+@@ -1877,9 +1877,11 @@ static int iscsi_open(BlockDriverState *bs, QDict *options, int flags,
+     /* Check the write protect flag of the LUN if we want to write */
+     if (iscsilun->type == TYPE_DISK && (flags & BDRV_O_RDWR) &&
+         iscsilun->write_protected) {
+-        error_setg(errp, "Cannot open a write protected LUN as read-write");
+-        ret = -EACCES;
+-        goto out;
++        ret = bdrv_apply_auto_read_only(bs, "LUN is write protected", errp);
++        if (ret < 0) {
++            goto out;
++        }
++        flags &= ~BDRV_O_RDWR;
+     }
+ 
+     iscsi_readcapacity_sync(iscsilun, &local_err);
+-- 
+1.8.3.1
+

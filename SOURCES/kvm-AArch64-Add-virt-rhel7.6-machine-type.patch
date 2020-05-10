@@ -1,0 +1,51 @@
+From a35c8f28c25c62d5b371a77156a5b810fa6455da Mon Sep 17 00:00:00 2001
+From: Wei Huang <wei@redhat.com>
+Date: Wed, 28 Mar 2018 18:58:55 +0200
+Subject: [PATCH 01/13] AArch64: Add virt-rhel7.6 machine type
+
+RH-Author: Wei Huang <wei@redhat.com>
+Message-id: <20180328185856.20056-2-wei@redhat.com>
+Patchwork-id: 79427
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] AArch64: Add virt-rhel7.6 machine type
+Bugzilla: 1558723
+RH-Acked-by: Andrew Jones <drjones@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+This patch adds "virt-rhel7.6" machine type. Because RHEL 7.5 virt-arm
+was a preview product, we remove the "virt-rhel7.5" type to avoid the
+legacy support burden.
+
+Signed-off-by: Wei Huang <wei@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/arm/virt.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index 806eb1e..a4d0f52 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -1820,7 +1820,7 @@ static void rhel_machine_init(void)
+ }
+ type_init(rhel_machine_init);
+ 
+-static void rhel750_virt_instance_init(Object *obj)
++static void rhel760_virt_instance_init(Object *obj)
+ {
+     VirtMachineState *vms = VIRT_MACHINE(obj);
+     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
+@@ -1862,8 +1862,8 @@ static void rhel750_virt_instance_init(Object *obj)
+     vms->irqmap=a15irqmap;
+ }
+ 
+-static void rhel750_virt_options(MachineClass *mc)
++static void rhel760_virt_options(MachineClass *mc)
+ {
+     SET_MACHINE_COMPAT(mc, ARM_RHEL_COMPAT);
+ }
+-DEFINE_RHEL_MACHINE_AS_LATEST(7, 5, 0)
++DEFINE_RHEL_MACHINE_AS_LATEST(7, 6, 0)
+-- 
+1.8.3.1
+

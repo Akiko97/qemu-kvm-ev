@@ -1,0 +1,81 @@
+From e1e6a404ee2c4833a05356378da2ffc7bdb5e6fe Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Fri, 25 May 2018 23:38:16 +0200
+Subject: [PATCH 5/8] pc: pc-*-rhel75.5.0 compat code
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180525233816.19506-2-ehabkost@redhat.com>
+Patchwork-id: 80481
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] pc: pc-*-rhel75.5.0 compat code
+Bugzilla: 1578068
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+Based on the pc-*-2.11 and pc-*-2.10 compat code from upstream.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/pc_piix.c    |  2 ++
+ hw/i386/pc_q35.c     |  4 ++++
+ include/hw/i386/pc.h | 13 +++++++++++++
+ 3 files changed, 19 insertions(+)
+
+diff --git a/hw/i386/pc_piix.c b/hw/i386/pc_piix.c
+index 6794bb7..7b87ef6 100644
+--- a/hw/i386/pc_piix.c
++++ b/hw/i386/pc_piix.c
+@@ -1166,6 +1166,8 @@ static void pc_machine_rhel750_options(MachineClass *m)
+ {
+     pc_machine_rhel7_options(m);
+     m->desc = "RHEL 7.5.0 PC (i440FX + PIIX, 1996)";
++    m->auto_enable_numa_with_memhp = false;
++    SET_MACHINE_COMPAT(m, PC_RHEL7_5_COMPAT);
+ }
+ 
+ DEFINE_PC_MACHINE(rhel750, "pc-i440fx-rhel7.5.0", pc_init_rhel750,
+diff --git a/hw/i386/pc_q35.c b/hw/i386/pc_q35.c
+index ecd6255..1805f55 100644
+--- a/hw/i386/pc_q35.c
++++ b/hw/i386/pc_q35.c
+@@ -430,8 +430,12 @@ static void pc_q35_init_rhel750(MachineState *machine)
+ 
+ static void pc_q35_machine_rhel750_options(MachineClass *m)
+ {
++    PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
+     pc_q35_machine_rhel7_options(m);
+     m->desc = "RHEL-7.5.0 PC (Q35 + ICH9, 2009)";
++    m->auto_enable_numa_with_memhp = false;
++    pcmc->default_nic_model = "e1000";
++    SET_MACHINE_COMPAT(m, PC_RHEL7_5_COMPAT);
+ }
+ 
+ DEFINE_PC_MACHINE(q35_rhel750, "pc-q35-rhel7.5.0", pc_q35_init_rhel750,
+diff --git a/include/hw/i386/pc.h b/include/hw/i386/pc.h
+index faddeba..e94424f 100644
+--- a/include/hw/i386/pc.h
++++ b/include/hw/i386/pc.h
+@@ -969,6 +969,19 @@ extern void igd_passthrough_isa_bridge_create(PCIBus *bus, uint16_t gpu_dev_id);
+             .value = "on",\
+         },
+ 
++/* Similar to PC_COMPAT_2_11 + PC_COMPAT_2_10, but:
++ * - x-hv-max-vps was backported to 7.5
++ * - x-pci-hole64-fix was backported to 7.5
++ */
++#define PC_RHEL7_5_COMPAT \
++        HW_COMPAT_RHEL7_5 \
++        { /* PC_RHEL7_5_COMPAT from PC_COMPAT_2_11 */ \
++            .driver   = "Skylake-Server" "-" TYPE_X86_CPU,\
++            .property = "clflushopt",\
++            .value    = "off",\
++        },
++
++
+ #define PC_RHEL7_4_COMPAT \
+         HW_COMPAT_RHEL7_4 \
+         { /* PC_RHEL7_4_COMPAT from PC_COMPAT_2_9 */ \
+-- 
+1.8.3.1
+

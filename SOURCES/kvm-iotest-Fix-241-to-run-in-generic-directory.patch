@@ -1,0 +1,82 @@
+From 295b60369a025fd61f3abe3e6edbd2b298ba8314 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:29 +0200
+Subject: [PATCH 19/53] iotest: Fix 241 to run in generic directory
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-20-jsnow@redhat.com>
+Patchwork-id: 87200
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 19/19] iotest: Fix 241 to run in generic directory
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Filter the qemu-nbd server output to get rid of a direct reference
+to my build directory.
+
+Fixes: e9dce9cb
+Reported-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 9749636b005d118259810afb92482df2fe0ae2ad)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/241     | 4 +++-
+ tests/qemu-iotests/241.out | 6 +++---
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/tests/qemu-iotests/241 b/tests/qemu-iotests/241
+index 4b19685..017a736 100755
+--- a/tests/qemu-iotests/241
++++ b/tests/qemu-iotests/241
+@@ -28,6 +28,7 @@ nbd_unix_socket=$TEST_DIR/test_qemu_nbd_socket
+ _cleanup()
+ {
+     _cleanup_test_img
++    rm -f "$TEST_DIR/server.log"
+     nbd_server_stop
+ }
+ trap "_cleanup; exit \$status" 0 1 2 3 15
+@@ -69,12 +70,13 @@ echo
+ 
+ # Intentionally omit '-f' to force image probing, which in turn forces
+ # sector alignment, here at the server.
+-nbd_server_start_unix_socket "$TEST_IMG_FILE"
++nbd_server_start_unix_socket "$TEST_IMG_FILE" 2> "$TEST_DIR/server.log"
+ 
+ $QEMU_NBD_PROG --list -k $nbd_unix_socket | grep '\(size\|min\)'
+ $QEMU_IMG map -f raw --output=json "$TEST_IMG" | _filter_qemu_img_map
+ $QEMU_IO -f raw -c map "$TEST_IMG"
+ nbd_server_stop
++cat "$TEST_DIR/server.log" | _filter_testdir
+ 
+ echo
+ echo "=== Exporting unaligned raw image, forced client sector alignment ==="
+diff --git a/tests/qemu-iotests/241.out b/tests/qemu-iotests/241.out
+index f481074..75f9f46 100644
+--- a/tests/qemu-iotests/241.out
++++ b/tests/qemu-iotests/241.out
+@@ -10,13 +10,13 @@ QA output created by 241
+ 
+ === Exporting unaligned raw image, forced server sector alignment ===
+ 
+-WARNING: Image format was not specified for '/home/eblake/qemu/tests/qemu-iotests/scratch/t.raw' and probing guessed raw.
+-         Automatically detecting the format is dangerous for raw images, write operations on block 0 will be restricted.
+-         Specify the 'raw' format explicitly to remove the restrictions.
+   size:  1024
+   min block: 512
+ [{ "start": 0, "length": 1024, "depth": 0, "zero": false, "data": true, "offset": OFFSET}]
+ 1 KiB (0x400) bytes     allocated at offset 0 bytes (0x0)
++WARNING: Image format was not specified for 'TEST_DIR/t.raw' and probing guessed raw.
++         Automatically detecting the format is dangerous for raw images, write operations on block 0 will be restricted.
++         Specify the 'raw' format explicitly to remove the restrictions.
+ 
+ === Exporting unaligned raw image, forced client sector alignment ===
+ 
+-- 
+1.8.3.1
+

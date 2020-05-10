@@ -1,0 +1,88 @@
+From a5b79479ab6a364899c6a5c7444c86c00bf0e42d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:23:00 +0100
+Subject: [PATCH 122/163] block/nbd-client: split connection from
+ initialization
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-48-jsnow@redhat.com>
+Patchwork-id: 85206
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 47/55] block/nbd-client: split connection from initialization
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Split connection code to reuse it for reconnect.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190201130138.94525-4-vsementsov@virtuozzo.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit b0e4b5a58fde6c0ed9edb9b683cfbbd8ab45c35d)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c | 33 ++++++++++++++++++++++++---------
+ 1 file changed, 24 insertions(+), 9 deletions(-)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index d86c412..22e5042 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -1011,13 +1011,13 @@ static QIOChannelSocket *nbd_establish_connection(SocketAddress *saddr,
+     return sioc;
+ }
+ 
+-int nbd_client_init(BlockDriverState *bs,
+-                    SocketAddress *saddr,
+-                    const char *export,
+-                    QCryptoTLSCreds *tlscreds,
+-                    const char *hostname,
+-                    const char *x_dirty_bitmap,
+-                    Error **errp)
++static int nbd_client_connect(BlockDriverState *bs,
++                              SocketAddress *saddr,
++                              const char *export,
++                              QCryptoTLSCreds *tlscreds,
++                              const char *hostname,
++                              const char *x_dirty_bitmap,
++                              Error **errp)
+ {
+     NBDClientSession *client = nbd_get_client_session(bs);
+     int ret;
+@@ -1070,8 +1070,6 @@ int nbd_client_init(BlockDriverState *bs,
+         bs->supported_zero_flags |= BDRV_REQ_MAY_UNMAP;
+     }
+ 
+-    qemu_co_mutex_init(&client->send_mutex);
+-    qemu_co_queue_init(&client->free_sema);
+     client->sioc = sioc;
+ 
+     if (!client->ioc) {
+@@ -1104,3 +1102,20 @@ int nbd_client_init(BlockDriverState *bs,
+         return ret;
+     }
+ }
++
++int nbd_client_init(BlockDriverState *bs,
++                    SocketAddress *saddr,
++                    const char *export,
++                    QCryptoTLSCreds *tlscreds,
++                    const char *hostname,
++                    const char *x_dirty_bitmap,
++                    Error **errp)
++{
++    NBDClientSession *client = nbd_get_client_session(bs);
++
++    qemu_co_mutex_init(&client->send_mutex);
++    qemu_co_queue_init(&client->free_sema);
++
++    return nbd_client_connect(bs, saddr, export, tlscreds, hostname,
++                              x_dirty_bitmap, errp);
++}
+-- 
+1.8.3.1
+

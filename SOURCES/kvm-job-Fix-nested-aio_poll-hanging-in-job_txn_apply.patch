@@ -1,0 +1,103 @@
+From 2a9333d5c086c587c527afe9dc9936e3a1658e84 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:23 +0200
+Subject: [PATCH 32/49] job: Fix nested aio_poll() hanging in job_txn_apply
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-26-kwolf@redhat.com>
+Patchwork-id: 82177
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 25/42] job: Fix nested aio_poll() hanging in job_txn_apply
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+All callers have acquired ctx already. Doing that again results in
+aio_poll() hang. This fixes the problem that a BDRV_POLL_WHILE() in the
+callback cannot make progress because ctx is recursively locked, for
+example, when drive-backup finishes.
+
+There are two callers of job_finalize():
+
+    fam@lemon:~/work/qemu [master]$ git grep -w -A1 '^\s*job_finalize'
+    blockdev.c:    job_finalize(&job->job, errp);
+    blockdev.c-    aio_context_release(aio_context);
+    --
+    job-qmp.c:    job_finalize(job, errp);
+    job-qmp.c-    aio_context_release(aio_context);
+    --
+    tests/test-blockjob.c:    job_finalize(&job->job, &error_abort);
+    tests/test-blockjob.c-    assert(job->job.status == JOB_STATUS_CONCLUDED);
+
+Ignoring the test, it's easy to see both callers to job_finalize (and
+job_do_finalize) have acquired the context.
+
+Cc: qemu-stable@nongnu.org
+Reported-by: Gu Nini <ngu@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ job.c | 18 +++++-------------
+ 1 file changed, 5 insertions(+), 13 deletions(-)
+
+diff --git a/job.c b/job.c
+index dfba4bc..5d117fb 100644
+--- a/job.c
++++ b/job.c
+@@ -136,21 +136,13 @@ static void job_txn_del_job(Job *job)
+     }
+ }
+ 
+-static int job_txn_apply(JobTxn *txn, int fn(Job *), bool lock)
++static int job_txn_apply(JobTxn *txn, int fn(Job *))
+ {
+-    AioContext *ctx;
+     Job *job, *next;
+     int rc = 0;
+ 
+     QLIST_FOREACH_SAFE(job, &txn->jobs, txn_list, next) {
+-        if (lock) {
+-            ctx = job->aio_context;
+-            aio_context_acquire(ctx);
+-        }
+         rc = fn(job);
+-        if (lock) {
+-            aio_context_release(ctx);
+-        }
+         if (rc) {
+             break;
+         }
+@@ -775,11 +767,11 @@ static void job_do_finalize(Job *job)
+     assert(job && job->txn);
+ 
+     /* prepare the transaction to complete */
+-    rc = job_txn_apply(job->txn, job_prepare, true);
++    rc = job_txn_apply(job->txn, job_prepare);
+     if (rc) {
+         job_completed_txn_abort(job);
+     } else {
+-        job_txn_apply(job->txn, job_finalize_single, true);
++        job_txn_apply(job->txn, job_finalize_single);
+     }
+ }
+ 
+@@ -825,10 +817,10 @@ static void job_completed_txn_success(Job *job)
+         assert(other_job->ret == 0);
+     }
+ 
+-    job_txn_apply(txn, job_transition_to_pending, false);
++    job_txn_apply(txn, job_transition_to_pending);
+ 
+     /* If no jobs need manual finalization, automatically do so */
+-    if (job_txn_apply(txn, job_needs_finalize, false) == 0) {
++    if (job_txn_apply(txn, job_needs_finalize) == 0) {
+         job_do_finalize(job);
+     }
+ }
+-- 
+1.8.3.1
+

@@ -1,0 +1,134 @@
+From 04ee985760e2f82bf1a74ea0772116a2e2603a1e Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:26 +0100
+Subject: [PATCH 028/163] iotests: Re-add filename filters
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-15-jsnow@redhat.com>
+Patchwork-id: 84951
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 14/19] iotests: Re-add filename filters
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Max Reitz <mreitz@redhat.com>
+
+A previous commit removed the default filters for qmp_log with the
+intention to make them explicit; but this happened only for test 206.
+There are more tests (for more exotic image formats than qcow2) which
+require the filename filter, though.
+
+Note that 237 is still broken for Python 2.x, which is fixed in the next
+commit.
+
+Fixes: f8ca8609d8549def45b28e82ecac64adaeee9f12
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Message-id: 20190210145736.1486-2-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 250c04f554a4a148eb3772af255e6a60450293b0)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/210 | 5 +++--
+ tests/qemu-iotests/211 | 5 +++--
+ tests/qemu-iotests/212 | 5 +++--
+ tests/qemu-iotests/213 | 5 +++--
+ 4 files changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/tests/qemu-iotests/210 b/tests/qemu-iotests/210
+index d142841..565e3b7 100755
+--- a/tests/qemu-iotests/210
++++ b/tests/qemu-iotests/210
+@@ -27,7 +27,8 @@ iotests.verify_image_format(supported_fmts=['luks'])
+ iotests.verify_protocol(supported=['file'])
+ 
+ def blockdev_create(vm, options):
+-    result = vm.qmp_log('blockdev-create', job_id='job0', options=options)
++    result = vm.qmp_log('blockdev-create', job_id='job0', options=options,
++                        filters=[iotests.filter_qmp_testfiles])
+ 
+     if 'return' in result:
+         assert result['return'] == {}
+@@ -53,7 +54,7 @@ with iotests.FilePath('t.luks') as disk_path, \
+                           'size': 0 })
+ 
+     vm.qmp_log('blockdev-add', driver='file', filename=disk_path,
+-               node_name='imgfile')
++               node_name='imgfile', filters=[iotests.filter_qmp_testfiles])
+ 
+     blockdev_create(vm, { 'driver': imgfmt,
+                           'file': 'imgfile',
+diff --git a/tests/qemu-iotests/211 b/tests/qemu-iotests/211
+index 7b7985d..5d28545 100755
+--- a/tests/qemu-iotests/211
++++ b/tests/qemu-iotests/211
+@@ -27,7 +27,8 @@ iotests.verify_image_format(supported_fmts=['vdi'])
+ iotests.verify_protocol(supported=['file'])
+ 
+ def blockdev_create(vm, options):
+-    result = vm.qmp_log('blockdev-create', job_id='job0', options=options)
++    result = vm.qmp_log('blockdev-create', job_id='job0', options=options,
++                        filters=[iotests.filter_qmp_testfiles])
+ 
+     if 'return' in result:
+         assert result['return'] == {}
+@@ -51,7 +52,7 @@ with iotests.FilePath('t.vdi') as disk_path, \
+                           'size': 0 })
+ 
+     vm.qmp_log('blockdev-add', driver='file', filename=disk_path,
+-               node_name='imgfile')
++               node_name='imgfile', filters=[iotests.filter_qmp_testfiles])
+ 
+     blockdev_create(vm, { 'driver': imgfmt,
+                           'file': 'imgfile',
+diff --git a/tests/qemu-iotests/212 b/tests/qemu-iotests/212
+index 95c8810..42b74f2 100755
+--- a/tests/qemu-iotests/212
++++ b/tests/qemu-iotests/212
+@@ -27,7 +27,8 @@ iotests.verify_image_format(supported_fmts=['parallels'])
+ iotests.verify_protocol(supported=['file'])
+ 
+ def blockdev_create(vm, options):
+-    result = vm.qmp_log('blockdev-create', job_id='job0', options=options)
++    result = vm.qmp_log('blockdev-create', job_id='job0', options=options,
++                        filters=[iotests.filter_qmp_testfiles])
+ 
+     if 'return' in result:
+         assert result['return'] == {}
+@@ -51,7 +52,7 @@ with iotests.FilePath('t.parallels') as disk_path, \
+                           'size': 0 })
+ 
+     vm.qmp_log('blockdev-add', driver='file', filename=disk_path,
+-               node_name='imgfile')
++               node_name='imgfile', filters=[iotests.filter_qmp_testfiles])
+ 
+     blockdev_create(vm, { 'driver': imgfmt,
+                           'file': 'imgfile',
+diff --git a/tests/qemu-iotests/213 b/tests/qemu-iotests/213
+index 4054439..5604f3c 100755
+--- a/tests/qemu-iotests/213
++++ b/tests/qemu-iotests/213
+@@ -27,7 +27,8 @@ iotests.verify_image_format(supported_fmts=['vhdx'])
+ iotests.verify_protocol(supported=['file'])
+ 
+ def blockdev_create(vm, options):
+-    result = vm.qmp_log('blockdev-create', job_id='job0', options=options)
++    result = vm.qmp_log('blockdev-create', job_id='job0', options=options,
++                        filters=[iotests.filter_qmp_testfiles])
+ 
+     if 'return' in result:
+         assert result['return'] == {}
+@@ -51,7 +52,7 @@ with iotests.FilePath('t.vhdx') as disk_path, \
+                           'size': 0 })
+ 
+     vm.qmp_log('blockdev-add', driver='file', filename=disk_path,
+-               node_name='imgfile')
++               node_name='imgfile', filters=[iotests.filter_qmp_testfiles])
+ 
+     blockdev_create(vm, { 'driver': imgfmt,
+                           'file': 'imgfile',
+-- 
+1.8.3.1
+

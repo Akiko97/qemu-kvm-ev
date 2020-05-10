@@ -1,0 +1,61 @@
+From 189e720e9fa5536fb22960f158b3b7f91dcccf2c Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Tue, 18 Sep 2018 09:07:14 +0200
+Subject: [PATCH 3/3] aio-posix: do skip system call if ctx->notifier polling
+ succeeds
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180918090714.18069-4-famz@redhat.com>
+Patchwork-id: 82214
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 3/3] aio-posix: do skip system call if ctx->notifier polling succeeds
+Bugzilla: 1628191
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+From: Paolo Bonzini <pbonzini@redhat.com>
+
+Commit 70232b5253 ("aio-posix: Don't count ctx->notifier as progress when
+2018-08-15), by not reporting progress, causes aio_poll to execute the
+system call when polling succeeds because of ctx->notifier.  This introduces
+latency before the call to aio_bh_poll() and negates the advantages of
+polling, unfortunately.
+
+The fix builds on the previous patch, separating the effect of polling on
+the timeout from the progress reported to aio_poll().  ctx->notifier
+does zero the timeout, causing the caller to skip the system call,
+but it does not report progress, so that the bug fix of commit 70232b5253
+still stands.
+
+Fixes: 70232b5253a3c4e03ed1ac47ef9246a8ac66c6fa
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-Id: <20180912171040.1732-4-pbonzini@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ util/aio-posix.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/util/aio-posix.c b/util/aio-posix.c
+index 1b17597..357de8a 100644
+--- a/util/aio-posix.c
++++ b/util/aio-posix.c
+@@ -498,10 +498,11 @@ static bool run_poll_handlers_once(AioContext *ctx, int64_t *timeout)
+     QLIST_FOREACH_RCU(node, &ctx->aio_handlers, node) {
+         if (!node->deleted && node->io_poll &&
+             aio_node_check(ctx, node->is_external) &&
+-            node->io_poll(node->opaque) &&
+-            node->opaque != &ctx->notifier) {
++            node->io_poll(node->opaque)) {
+             *timeout = 0;
+-            progress = true;
++            if (node->opaque != &ctx->notifier) {
++                progress = true;
++            }
+         }
+ 
+         /* Caller handles freeing deleted nodes.  Don't do it here. */
+-- 
+1.8.3.1
+

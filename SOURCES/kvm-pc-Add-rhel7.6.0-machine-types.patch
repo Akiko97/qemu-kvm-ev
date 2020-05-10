@@ -1,0 +1,116 @@
+From 9476ec6ee439ffc60ddd1478c2ed1fb87253f319 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Fri, 29 Jun 2018 18:59:37 +0200
+Subject: [PATCH 50/57] pc: Add rhel7.6.0 machine-types
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180629185937.24186-2-ehabkost@redhat.com>
+Patchwork-id: 81175
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] pc: Add rhel7.6.0 machine-types
+Bugzilla: 1557051
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+
+Add rhel7.6.0 machine-types.  They will be similar to the
+existing 7.5.0 machines, but without the PC_RHEL7_5_COMPAT bits.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/pc_piix.c | 21 ++++++++++++++++++---
+ hw/i386/pc_q35.c  | 18 ++++++++++++++++--
+ 2 files changed, 34 insertions(+), 5 deletions(-)
+
+diff --git a/hw/i386/pc_piix.c b/hw/i386/pc_piix.c
+index 9991650..8a355df 100644
+--- a/hw/i386/pc_piix.c
++++ b/hw/i386/pc_piix.c
+@@ -1157,6 +1157,21 @@ static void pc_machine_rhel7_options(MachineClass *m)
+     m->is_default = 1;
+ }
+ 
++static void pc_init_rhel760(MachineState *machine)
++{
++    pc_init1(machine, TYPE_I440FX_PCI_HOST_BRIDGE, \
++             TYPE_I440FX_PCI_DEVICE);
++}
++
++static void pc_machine_rhel760_options(MachineClass *m)
++{
++    pc_machine_rhel7_options(m);
++    m->desc = "RHEL 7.6.0 PC (i440FX + PIIX, 1996)";
++}
++
++DEFINE_PC_MACHINE(rhel760, "pc-i440fx-rhel7.6.0", pc_init_rhel760,
++                  pc_machine_rhel760_options);
++
+ static void pc_init_rhel750(MachineState *machine)
+ {
+     pc_init1(machine, TYPE_I440FX_PCI_HOST_BRIDGE, \
+@@ -1165,7 +1180,9 @@ static void pc_init_rhel750(MachineState *machine)
+ 
+ static void pc_machine_rhel750_options(MachineClass *m)
+ {
+-    pc_machine_rhel7_options(m);
++    pc_machine_rhel760_options(m);
++    m->alias = NULL;
++    m->is_default = 0;
+     m->desc = "RHEL 7.5.0 PC (i440FX + PIIX, 1996)";
+     m->auto_enable_numa_with_memhp = false;
+     SET_MACHINE_COMPAT(m, PC_RHEL7_5_COMPAT);
+@@ -1184,8 +1201,6 @@ static void pc_machine_rhel740_options(MachineClass *m)
+ {
+     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
+     pc_machine_rhel750_options(m);
+-    m->alias = NULL;
+-    m->is_default = 0;
+     m->desc = "RHEL 7.4.0 PC (i440FX + PIIX, 1996)";
+     m->numa_auto_assign_ram = numa_legacy_auto_assign_ram;
+     pcmc->pc_rom_ro = false;
+diff --git a/hw/i386/pc_q35.c b/hw/i386/pc_q35.c
+index a4387e0..e17807e 100644
+--- a/hw/i386/pc_q35.c
++++ b/hw/i386/pc_q35.c
+@@ -424,6 +424,20 @@ static void pc_q35_machine_rhel7_options(MachineClass *m)
+     SET_MACHINE_COMPAT(m, PC_RHEL_COMPAT);
+ }
+ 
++static void pc_q35_init_rhel760(MachineState *machine)
++{
++    pc_q35_init(machine);
++}
++
++static void pc_q35_machine_rhel760_options(MachineClass *m)
++{
++    pc_q35_machine_rhel7_options(m);
++    m->desc = "RHEL-7.6.0 PC (Q35 + ICH9, 2009)";
++}
++
++DEFINE_PC_MACHINE(q35_rhel760, "pc-q35-rhel7.6.0", pc_q35_init_rhel760,
++                  pc_q35_machine_rhel760_options);
++
+ static void pc_q35_init_rhel750(MachineState *machine)
+ {
+     pc_q35_init(machine);
+@@ -432,7 +446,8 @@ static void pc_q35_init_rhel750(MachineState *machine)
+ static void pc_q35_machine_rhel750_options(MachineClass *m)
+ {
+     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
+-    pc_q35_machine_rhel7_options(m);
++    pc_q35_machine_rhel760_options(m);
++    m->alias = NULL;
+     m->desc = "RHEL-7.5.0 PC (Q35 + ICH9, 2009)";
+     m->auto_enable_numa_with_memhp = false;
+     pcmc->default_nic_model = "e1000";
+@@ -451,7 +466,6 @@ static void pc_q35_machine_rhel740_options(MachineClass *m)
+ {
+     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
+     pc_q35_machine_rhel750_options(m);
+-    m->alias = NULL;
+     m->desc = "RHEL-7.4.0 PC (Q35 + ICH9, 2009)";
+     m->numa_auto_assign_ram = numa_legacy_auto_assign_ram;
+     pcmc->pc_rom_ro = false;
+-- 
+1.8.3.1
+

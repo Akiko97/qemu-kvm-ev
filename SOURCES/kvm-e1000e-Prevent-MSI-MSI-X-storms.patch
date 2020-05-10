@@ -1,0 +1,85 @@
+From 77782045cff9546feaf8863c0e7552343a488c6e Mon Sep 17 00:00:00 2001
+From: Xiao Wang <jasowang@redhat.com>
+Date: Thu, 16 Aug 2018 06:09:03 +0200
+Subject: [PATCH 2/5] e1000e: Prevent MSI/MSI-X storms
+
+RH-Author: Xiao Wang <jasowang@redhat.com>
+Message-id: <1534399743-23973-3-git-send-email-jasowang@redhat.com>
+Patchwork-id: 81849
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/2] e1000e: Prevent MSI/MSI-X storms
+Bugzilla: 1596010
+RH-Acked-by: wexu@redhat.com
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+
+From: Jan Kiszka <jan.kiszka@siemens.com>
+
+Only signal MSI/MSI-X events on rising edges. So far we re-triggered the
+interrupt sources even if the guest did no consumed the pending one,
+easily causing interrupt storms.
+
+Issue was observable with Linux 4.16 e1000e driver when MSI-X was used.
+Vector 2 was causing interrupt storms after the driver activated the
+device.
+
+Signed-off-by: Jan Kiszka <jan.kiszka@siemens.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+(cherry picked from commit 4712c158c5276fd3c401152f4bb5c3fccf185946)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/net/e1000e_core.c | 11 +++++++++++
+ hw/net/e1000e_core.h |  2 ++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/hw/net/e1000e_core.c b/hw/net/e1000e_core.c
+index 9504891..2a221c2 100644
+--- a/hw/net/e1000e_core.c
++++ b/hw/net/e1000e_core.c
+@@ -2023,6 +2023,7 @@ e1000e_msix_notify_one(E1000ECore *core, uint32_t cause, uint32_t int_cfg)
+     effective_eiac = core->mac[EIAC] & cause;
+ 
+     core->mac[ICR] &= ~effective_eiac;
++    core->msi_causes_pending &= ~effective_eiac;
+ 
+     if (!(core->mac[CTRL_EXT] & E1000_CTRL_EXT_IAME)) {
+         core->mac[IMS] &= ~effective_eiac;
+@@ -2119,6 +2120,13 @@ e1000e_send_msi(E1000ECore *core, bool msix)
+ {
+     uint32_t causes = core->mac[ICR] & core->mac[IMS] & ~E1000_ICR_ASSERTED;
+ 
++    core->msi_causes_pending &= causes;
++    causes ^= core->msi_causes_pending;
++    if (causes == 0) {
++        return;
++    }
++    core->msi_causes_pending |= causes;
++
+     if (msix) {
+         e1000e_msix_notify(core, causes);
+     } else {
+@@ -2156,6 +2164,9 @@ e1000e_update_interrupt_state(E1000ECore *core)
+     core->mac[ICS] = core->mac[ICR];
+ 
+     interrupts_pending = (core->mac[IMS] & core->mac[ICR]) ? true : false;
++    if (!interrupts_pending) {
++        core->msi_causes_pending = 0;
++    }
+ 
+     trace_e1000e_irq_pending_interrupts(core->mac[ICR] & core->mac[IMS],
+                                         core->mac[ICR], core->mac[IMS]);
+diff --git a/hw/net/e1000e_core.h b/hw/net/e1000e_core.h
+index 7d8ff41..63a1551 100644
+--- a/hw/net/e1000e_core.h
++++ b/hw/net/e1000e_core.h
+@@ -109,6 +109,8 @@ struct E1000Core {
+     NICState *owner_nic;
+     PCIDevice *owner;
+     void (*owner_start_recv)(PCIDevice *d);
++
++    uint32_t msi_causes_pending;
+ };
+ 
+ void
+-- 
+1.8.3.1
+

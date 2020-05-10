@@ -1,0 +1,104 @@
+From fac45a82432d342bf8cf86fab57af88ba54fb0f4 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 17:00:19 +0100
+Subject: [PATCH 18/23] qcow2: Increase the default upper limit on the L2 cache
+ size
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219170023.27826-10-kwolf@redhat.com>
+Patchwork-id: 84549
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 09/13] qcow2: Increase the default upper limit on the L2 cache size
+Bugzilla: 1656913
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Leonid Bloch <lbloch@janustech.com>
+
+The upper limit on the L2 cache size is increased from 1 MB to 32 MB
+on Linux platforms, and to 8 MB on other platforms (this difference is
+caused by the ability to set intervals for cache cleaning on Linux
+platforms only).
+
+This is done in order to allow default full coverage with the L2 cache
+for images of up to 256 GB in size (was 8 GB). Note, that only the
+needed amount to cover the full image is allocated. The value which is
+changed here is just the upper limit on the L2 cache size, beyond which
+it will not grow, even if the size of the image will require it to.
+
+Signed-off-by: Leonid Bloch <lbloch@janustech.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 80668d0fb735f0839a46278a7d42116089b82816)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.h        |  6 +++++-
+ docs/qcow2-cache.txt | 15 +++++++++------
+ qemu-options.hx      |  6 +++---
+ 3 files changed, 17 insertions(+), 10 deletions(-)
+
+diff --git a/block/qcow2.h b/block/qcow2.h
+index d0dd4a2..6c6c742 100644
+--- a/block/qcow2.h
++++ b/block/qcow2.h
+@@ -74,7 +74,11 @@
+ /* Must be at least 4 to cover all cases of refcount table growth */
+ #define MIN_REFCOUNT_CACHE_SIZE 4 /* clusters */
+ 
+-#define DEFAULT_L2_CACHE_MAX_SIZE S_1MiB
++#ifdef CONFIG_LINUX
++#define DEFAULT_L2_CACHE_MAX_SIZE S_32MiB
++#else
++#define DEFAULT_L2_CACHE_MAX_SIZE S_8MiB
++#endif
+ 
+ #define DEFAULT_CLUSTER_SIZE S_64KiB
+ 
+diff --git a/docs/qcow2-cache.txt b/docs/qcow2-cache.txt
+index 750447e..1fcc065 100644
+--- a/docs/qcow2-cache.txt
++++ b/docs/qcow2-cache.txt
+@@ -125,12 +125,15 @@ There are a few things that need to be taken into account:
+  - Both caches must have a size that is a multiple of the cluster size
+    (or the cache entry size: see "Using smaller cache sizes" below).
+ 
+- - The maximum L2 cache size is 1 MB by default (enough for full coverage
+-   of 8 GB images, with the default cluster size). This value can be
+-   modified using the "l2-cache-size" option. QEMU will not use more memory
+-   than needed to hold all of the image's L2 tables, regardless of this max.
+-   value. The minimal L2 cache size is 2 clusters (or 2 cache entries, see
+-   below).
++ - The maximum L2 cache size is 32 MB by default on Linux platforms (enough
++   for full coverage of 256 GB images, with the default cluster size). This
++   value can be modified using the "l2-cache-size" option. QEMU will not use
++   more memory than needed to hold all of the image's L2 tables, regardless
++   of this max. value.
++   On non-Linux platforms the maximal value is smaller by default (8 MB) and
++   this difference stems from the fact that on Linux the cache can be cleared
++   periodically if needed, using the "cache-clean-interval" option (see below).
++   The minimal L2 cache size is 2 clusters (or 2 cache entries, see below).
+ 
+  - The default (and minimum) refcount cache size is 4 clusters.
+ 
+diff --git a/qemu-options.hx b/qemu-options.hx
+index e1fbc5b..3580d16 100644
+--- a/qemu-options.hx
++++ b/qemu-options.hx
+@@ -756,9 +756,9 @@ The maximum total size of the L2 table and refcount block caches in bytes
+ 
+ @item l2-cache-size
+ The maximum size of the L2 table cache in bytes
+-(default: if cache-size is not specified - 1M; otherwise, as large as possible
+-within the cache-size, while permitting the requested or the minimal refcount
+-cache size)
++(default: if cache-size is not specified - 32M on Linux platforms, and 8M on
++non-Linux platforms; otherwise, as large as possible within the cache-size,
++while permitting the requested or the minimal refcount cache size)
+ 
+ @item refcount-cache-size
+ The maximum size of the refcount block cache in bytes
+-- 
+1.8.3.1
+

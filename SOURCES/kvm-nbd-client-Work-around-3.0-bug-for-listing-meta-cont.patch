@@ -1,0 +1,99 @@
+From 1d8de67d4435beff1839b868672a05c4195c9d92 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:54 +0100
+Subject: [PATCH 116/163] nbd/client: Work around 3.0 bug for listing meta
+ contexts
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-42-jsnow@redhat.com>
+Patchwork-id: 85211
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 41/55] nbd/client: Work around 3.0 bug for listing meta contexts
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Commit 3d068aff forgot to advertise available qemu: contexts
+when the client requests a list with 0 queries. Furthermore,
+3.0 shipped with a qemu-img hack of x-dirty-bitmap (commit
+216ee365) that _silently_ acts as though the entire image is
+clean if a requested bitmap is not present.  Both bugs have
+been recently fixed, so that a modern qemu server gives full
+context output right away, and the client refuses a
+connection if a requested x-dirty-bitmap was not found.
+
+Still, it is likely that there will be users that have to
+work with a mix of old and new qemu versions, depending on
+which features get backported where, at which point being
+able to rely on 'qemu-img --list' output to know for sure
+whether a given NBD export has the desired dirty bitmap is
+much nicer than blindly connecting and risking that the
+entire image may appear clean.  We can make our --list code
+smart enough to work around buggy servers by tracking
+whether we've seen any qemu: replies in the original 0-query
+list; if not, repeat with a single query on "qemu:" (which
+may still have no replies, but then we know for sure we
+didn't trip up on the server bug).
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20190117193658.16413-21-eblake@redhat.com>
+(cherry picked from commit 7c6f5ddca62905e67025aa0657e8a011cbdffa11)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/client.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/nbd/client.c b/nbd/client.c
+index 798b82f..8a083c2 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -21,6 +21,7 @@
+ #include "qapi/error.h"
+ #include "trace.h"
+ #include "nbd-internal.h"
++#include "qemu/cutils.h"
+ 
+ /* Definitions for opaque data types */
+ 
+@@ -828,6 +829,8 @@ static int nbd_list_meta_contexts(QIOChannel *ioc,
+                                   Error **errp)
+ {
+     int ret;
++    int seen_any = false;
++    int seen_qemu = false;
+ 
+     if (nbd_send_meta_query(ioc, NBD_OPT_LIST_META_CONTEXT,
+                             info->name, NULL, errp) < 0) {
+@@ -839,9 +842,25 @@ static int nbd_list_meta_contexts(QIOChannel *ioc,
+ 
+         ret = nbd_receive_one_meta_context(ioc, NBD_OPT_LIST_META_CONTEXT,
+                                            &context, NULL, errp);
++        if (ret == 0 && seen_any && !seen_qemu) {
++            /*
++             * Work around qemu 3.0 bug: the server forgot to send
++             * "qemu:" replies to 0 queries. If we saw at least one
++             * reply (probably base:allocation), but none of them were
++             * qemu:, then run a more specific query to make sure.
++             */
++            seen_qemu = true;
++            if (nbd_send_meta_query(ioc, NBD_OPT_LIST_META_CONTEXT,
++                                    info->name, "qemu:", errp) < 0) {
++                return -1;
++            }
++            continue;
++        }
+         if (ret <= 0) {
+             return ret;
+         }
++        seen_any = true;
++        seen_qemu |= strstart(context, "qemu:", NULL);
+         info->contexts = g_renew(char *, info->contexts, ++info->n_contexts);
+         info->contexts[info->n_contexts - 1] = context;
+     }
+-- 
+1.8.3.1
+

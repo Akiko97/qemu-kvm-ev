@@ -1,0 +1,138 @@
+From 2070eac10c75c262e8f803b3654f512c55c261c1 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:34 +0100
+Subject: [PATCH 095/163] qom: Clean up error reporting in
+ user_creatable_add_opts_foreach()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-22-jsnow@redhat.com>
+Patchwork-id: 85216
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 21/55] qom: Clean up error reporting in user_creatable_add_opts_foreach()
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Markus Armbruster <armbru@redhat.com>
+
+Calling error_report() in a function that takes an Error ** argument
+is suspicious.  user_creatable_add_opts_foreach() does that, and then
+fails without setting an error.  Its caller main(), via
+qemu_opts_foreach(), is fine with it, but clean it up anyway.
+
+Cc: Daniel P. Berrangé <berrange@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-Id: <20181017082702.5581-20-armbru@redhat.com>
+(cherry picked from commit 7e1e0c11127bde81cff260fc6859690435c509d6)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-io.c               |  8 +++-----
+ qemu-nbd.c              |  8 +++-----
+ qom/object_interfaces.c |  4 +---
+ vl.c                    | 16 ++++++----------
+ 4 files changed, 13 insertions(+), 23 deletions(-)
+
+diff --git a/qemu-io.c b/qemu-io.c
+index 13829f5..6df7731 100644
+--- a/qemu-io.c
++++ b/qemu-io.c
+@@ -620,11 +620,9 @@ int main(int argc, char **argv)
+         exit(1);
+     }
+ 
+-    if (qemu_opts_foreach(&qemu_object_opts,
+-                          user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
+-        exit(1);
+-    }
++    qemu_opts_foreach(&qemu_object_opts,
++                      user_creatable_add_opts_foreach,
++                      NULL, &error_fatal);
+ 
+     if (!trace_init_backends()) {
+         exit(1);
+diff --git a/qemu-nbd.c b/qemu-nbd.c
+index 0c92f62..51b55f2 100644
+--- a/qemu-nbd.c
++++ b/qemu-nbd.c
+@@ -781,11 +781,9 @@ int main(int argc, char **argv)
+         exit(EXIT_FAILURE);
+     }
+ 
+-    if (qemu_opts_foreach(&qemu_object_opts,
+-                          user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
+-        exit(EXIT_FAILURE);
+-    }
++    qemu_opts_foreach(&qemu_object_opts,
++                      user_creatable_add_opts_foreach,
++                      NULL, &error_fatal);
+ 
+     if (!trace_init_backends()) {
+         exit(1);
+diff --git a/qom/object_interfaces.c b/qom/object_interfaces.c
+index 980ffc2..7491c69 100644
+--- a/qom/object_interfaces.c
++++ b/qom/object_interfaces.c
+@@ -149,7 +149,6 @@ int user_creatable_add_opts_foreach(void *opaque, QemuOpts *opts, Error **errp)
+ {
+     bool (*type_predicate)(const char *) = opaque;
+     Object *obj = NULL;
+-    Error *err = NULL;
+     const char *type;
+ 
+     type = qemu_opt_get(opts, "qom-type");
+@@ -158,9 +157,8 @@ int user_creatable_add_opts_foreach(void *opaque, QemuOpts *opts, Error **errp)
+         return 0;
+     }
+ 
+-    obj = user_creatable_add_opts(opts, &err);
++    obj = user_creatable_add_opts(opts, errp);
+     if (!obj) {
+-        error_report_err(err);
+         return -1;
+     }
+     object_unref(obj);
+diff --git a/vl.c b/vl.c
+index dfe261d..92a98ab 100644
+--- a/vl.c
++++ b/vl.c
+@@ -4407,11 +4407,9 @@ int main(int argc, char **argv, char **envp)
+     page_size_init();
+     socket_init();
+ 
+-    if (qemu_opts_foreach(qemu_find_opts("object"),
+-                          user_creatable_add_opts_foreach,
+-                          object_create_initial, NULL)) {
+-        exit(1);
+-    }
++    qemu_opts_foreach(qemu_find_opts("object"),
++                      user_creatable_add_opts_foreach,
++                      object_create_initial, &error_fatal);
+ 
+     if (qemu_opts_foreach(qemu_find_opts("chardev"),
+                           chardev_init_func, NULL, NULL)) {
+@@ -4537,11 +4535,9 @@ int main(int argc, char **argv, char **envp)
+         exit(1);
+     }
+ 
+-    if (qemu_opts_foreach(qemu_find_opts("object"),
+-                          user_creatable_add_opts_foreach,
+-                          object_create_delayed, NULL)) {
+-        exit(1);
+-    }
++    qemu_opts_foreach(qemu_find_opts("object"),
++                      user_creatable_add_opts_foreach,
++                      object_create_delayed, &error_fatal);
+ 
+     if (tpm_init() < 0) {
+         exit(1);
+-- 
+1.8.3.1
+

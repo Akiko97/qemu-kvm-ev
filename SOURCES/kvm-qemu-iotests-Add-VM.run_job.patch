@@ -1,0 +1,61 @@
+From f841d0a47ba5ba9a731d41e949f4261bd335a2c2 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:44 +0200
+Subject: [PATCH 75/89] qemu-iotests: Add VM.run_job()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-62-kwolf@redhat.com>
+Patchwork-id: 81080
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 61/73] qemu-iotests: Add VM.run_job()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Add an iotests.py function that runs a job and only returns when it is
+destroyed. An error is logged when the job failed and job-finalize and
+job-dismiss commands are issued if necessary.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit fc47d8513b45b1968b0ae32d4bb2f96d3aca066a)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index 4b0760f..390da6b 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -427,6 +427,25 @@ class VM(qtest.QEMUQtestMachine):
+         log(str(result), filters)
+         return result
+ 
++    def run_job(self, job, auto_finalize=True, auto_dismiss=False):
++        while True:
++            for ev in self.get_qmp_events_filtered(wait=True):
++                if ev['event'] == 'JOB_STATUS_CHANGE':
++                    status = ev['data']['status']
++                    if status == 'aborting':
++                        result = self.qmp('query-jobs')
++                        for j in result['return']:
++                            if j['id'] == job:
++                                log('Job failed: %s' % (j['error']))
++                    elif status == 'pending' and not auto_finalize:
++                        self.qmp_log('job-finalize', id=job)
++                    elif status == 'concluded' and not auto_dismiss:
++                        self.qmp_log('job-dismiss', id=job)
++                    elif status == 'null':
++                        return
++                else:
++                    iotests.log(ev)
++
+ 
+ index_re = re.compile(r'([^\[]+)\[([^\]]+)\]')
+ 
+-- 
+1.8.3.1
+

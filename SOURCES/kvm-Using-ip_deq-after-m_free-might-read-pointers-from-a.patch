@@ -1,0 +1,61 @@
+From 3f9fbb23959f82de389fa43848bb28cd2b80a4bb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <philmd@redhat.com>
+Date: Fri, 6 Sep 2019 14:00:34 +0200
+Subject: [PATCH 1/4] Using ip_deq after m_free might read pointers from an
+ allocation reuse.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-id: <20190906140034.19722-2-philmd@redhat.com>
+Patchwork-id: 90306
+O-Subject: [RHEL-7.7 qemu-kvm-ma + RHEL-7.7 qemu-kvm-rhev + RHEL-8.1.0 qemu-kvm PATCH 1/1] Using ip_deq after m_free might read pointers from an allocation reuse.
+Bugzilla: 1749723
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Samuel Thibault <samuel.thibault@ens-lyon.org>
+
+This would be difficult to exploit, but that is still related with
+CVE-2019-14378 which generates fragmented IP packets that would trigger this
+issue and at least produce a DoS.
+
+Signed-off-by: Samuel Thibault <samuel.thibault@ens-lyon.org>
+(cherry picked from libslirp commit c59279437eda91841b9d26079c70b8a540d41204)
+Signed-off-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ slirp/ip_input.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/slirp/ip_input.c b/slirp/ip_input.c
+index 07d8808..7cf0133 100644
+--- a/slirp/ip_input.c
++++ b/slirp/ip_input.c
+@@ -300,6 +300,7 @@ ip_reass(Slirp *slirp, struct ip *ip, struct ipq *fp)
+ 	 */
+ 	while (q != (struct ipasfrag*)&fp->frag_link &&
+             ip->ip_off + ip->ip_len > q->ipf_off) {
++		struct ipasfrag *prev;
+ 		i = (ip->ip_off + ip->ip_len) - q->ipf_off;
+ 		if (i < q->ipf_len) {
+ 			q->ipf_len -= i;
+@@ -307,9 +308,10 @@ ip_reass(Slirp *slirp, struct ip *ip, struct ipq *fp)
+ 			m_adj(dtom(slirp, q), i);
+ 			break;
+ 		}
++		prev = q;
+ 		q = q->ipf_next;
+-		m_free(dtom(slirp, q->ipf_prev));
+-		ip_deq(q->ipf_prev);
++		ip_deq(prev);
++		m_free(dtom(slirp, prev));
+ 	}
+ 
+ insert:
+-- 
+1.8.3.1
+

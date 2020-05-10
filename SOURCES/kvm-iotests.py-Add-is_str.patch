@@ -1,0 +1,51 @@
+From f32cd24bac5efaf4331b864ad55eed80b0b0d89c Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:30 +0100
+Subject: [PATCH 032/163] iotests.py: Add is_str()
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-19-jsnow@redhat.com>
+Patchwork-id: 84956
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 18/19] iotests.py: Add is_str()
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Max Reitz <mreitz@redhat.com>
+
+On Python 2.x, strings are not always unicode strings.  This function
+checks whether a given value is a plain string, or a unicode string (if
+there is a difference).
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Message-id: 20190210145736.1486-7-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 011a576113000f9c90a8450ef9116cca8d6f2523)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index 4e9b2c4..64bb718 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -216,6 +216,12 @@ def image_size(img):
+     r = qemu_img_pipe('info', '--output=json', '-f', imgfmt, img)
+     return json.loads(r)['virtual-size']
+ 
++def is_str(val):
++    if sys.version_info.major >= 3:
++        return isinstance(val, str)
++    else:
++        return isinstance(val, str) or isinstance(val, unicode)
++
+ test_dir_re = re.compile(r"%s" % test_dir)
+ def filter_test_dir(msg):
+     return test_dir_re.sub("TEST_DIR", msg)
+-- 
+1.8.3.1
+

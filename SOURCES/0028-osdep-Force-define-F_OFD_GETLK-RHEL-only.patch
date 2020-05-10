@@ -1,0 +1,56 @@
+From 0901cd0ef66131ea6fe93654b0ceb1feaad9a0e5 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Thu, 12 Oct 2017 13:54:45 +0200
+Subject: osdep: Force define F_OFD_GETLK (RHEL only)
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20171012135445.4214-1-famz@redhat.com>
+Patchwork-id: 77220
+O-Subject: [RHV7.5 qemu-kvm-ma PATCH] osdep: Force define F_OFD_GETLK (RHEL only)
+Bugzilla: 1378241
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+BZ: 1378241
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=14254218
+
+glibc is not ready yet (BZ 1461231, which is deferred to 7.6 due to
+capacity), so the OFD constants are not defined in the system headers we
+pull in. (They do exist in the headers of latest kernel-headers package,
+but we don't want to include that anyway.)
+
+Actually the constants are all that are missing before we can call image
+locking done in 7.5, so there is no reason to wait for glibc.
+
+This patch can be reverted once the new glibc headers are in place.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+(cherry picked from commit ac74b9067d079b03f3fe4236270f9eb34121009b)
+(cherry picked from commit ae5b5b95b3a6ba4d1d9fb424cf95205e43f2ad67)
+(cherry picked from commit f380fac7d927459c3675dabd125be8a379f43a2c)
+(cherry picked from commit fb92cc1c98ff118afbc18ca1c22379ab3cf76f7a)
+---
+ util/osdep.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/util/osdep.c b/util/osdep.c
+index a73de0e..0dbe6ec 100644
+--- a/util/osdep.c
++++ b/util/osdep.c
+@@ -23,6 +23,11 @@
+  */
+ #include "qemu/osdep.h"
+ 
++#ifndef F_OFD_SETLK
++#define F_OFD_GETLK    36
++#define F_OFD_SETLK    37
++#endif
++
+ /* Needed early for CONFIG_BSD etc. */
+ 
+ #ifdef CONFIG_SOLARIS
+-- 
+1.8.3.1
+

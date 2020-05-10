@@ -1,0 +1,337 @@
+From 1da3dfa844e67f9948eddd18188307acb7f9fe95 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:29 +0200
+Subject: [PATCH 60/89] job: Move progress fields to Job
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-47-kwolf@redhat.com>
+Patchwork-id: 81115
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 46/73] job: Move progress fields to Job
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+BlockJob has fields .offset and .len, which are actually misnomers today
+because they are no longer tied to block device sizes, but just progress
+counters. As such they make a lot of sense in generic Jobs.
+
+This patch moves the fields to Job and renames them to .progress_current
+and .progress_total to describe their function better.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 30a5c887bf4a7e00d0e0ecbb08509e8ba2902620)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/backup.c           |  8 ++++----
+ block/commit.c           |  4 ++--
+ block/mirror.c           |  4 ++--
+ block/stream.c           |  4 ++--
+ blockjob.c               | 26 ++++++++------------------
+ include/block/blockjob.h | 25 -------------------------
+ include/qemu/job.h       | 28 ++++++++++++++++++++++++++++
+ job.c                    | 10 ++++++++++
+ qemu-img.c               |  8 ++++++--
+ 9 files changed, 62 insertions(+), 55 deletions(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index 6f4f3df..4e228e9 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -160,7 +160,7 @@ static int coroutine_fn backup_do_cow(BackupBlockJob *job,
+          * offset field is an opaque progress value, it is not a disk offset.
+          */
+         job->bytes_read += n;
+-        block_job_progress_update(&job->common, n);
++        job_progress_update(&job->common.job, n);
+     }
+ 
+ out:
+@@ -406,8 +406,8 @@ static void backup_incremental_init_copy_bitmap(BackupBlockJob *job)
+         bdrv_set_dirty_iter(dbi, next_cluster * job->cluster_size);
+     }
+ 
+-    /* TODO block_job_progress_set_remaining() would make more sense */
+-    block_job_progress_update(&job->common,
++    /* TODO job_progress_set_remaining() would make more sense */
++    job_progress_update(&job->common.job,
+         job->len - hbitmap_count(job->copy_bitmap) * job->cluster_size);
+ 
+     bdrv_dirty_iter_free(dbi);
+@@ -425,7 +425,7 @@ static void coroutine_fn backup_run(void *opaque)
+     qemu_co_rwlock_init(&job->flush_rwlock);
+ 
+     nb_clusters = DIV_ROUND_UP(job->len, job->cluster_size);
+-    block_job_progress_set_remaining(&job->common, job->len);
++    job_progress_set_remaining(&job->common.job, job->len);
+ 
+     job->copy_bitmap = hbitmap_alloc(nb_clusters, 0);
+     if (job->sync_mode == MIRROR_SYNC_MODE_INCREMENTAL) {
+diff --git a/block/commit.c b/block/commit.c
+index b0a847e..6206661 100644
+--- a/block/commit.c
++++ b/block/commit.c
+@@ -150,7 +150,7 @@ static void coroutine_fn commit_run(void *opaque)
+     if (len < 0) {
+         goto out;
+     }
+-    block_job_progress_set_remaining(&s->common, len);
++    job_progress_set_remaining(&s->common.job, len);
+ 
+     ret = base_len = blk_getlength(s->base);
+     if (base_len < 0) {
+@@ -196,7 +196,7 @@ static void coroutine_fn commit_run(void *opaque)
+             }
+         }
+         /* Publish progress */
+-        block_job_progress_update(&s->common, n);
++        job_progress_update(&s->common.job, n);
+ 
+         if (copy) {
+             delay_ns = block_job_ratelimit_get_delay(&s->common, n);
+diff --git a/block/mirror.c b/block/mirror.c
+index bdc1b5b..dcb66ec 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -119,7 +119,7 @@ static void mirror_iteration_done(MirrorOp *op, int ret)
+             bitmap_set(s->cow_bitmap, chunk_num, nb_chunks);
+         }
+         if (!s->initial_zeroing_ongoing) {
+-            block_job_progress_update(&s->common, op->bytes);
++            job_progress_update(&s->common.job, op->bytes);
+         }
+     }
+     qemu_iovec_destroy(&op->qiov);
+@@ -792,7 +792,7 @@ static void coroutine_fn mirror_run(void *opaque)
+         /* cnt is the number of dirty bytes remaining and s->bytes_in_flight is
+          * the number of bytes currently being processed; together those are
+          * the current remaining operation length */
+-        block_job_progress_set_remaining(&s->common, s->bytes_in_flight + cnt);
++        job_progress_set_remaining(&s->common.job, s->bytes_in_flight + cnt);
+ 
+         /* Note that even when no rate limit is applied we need to yield
+          * periodically with no pending I/O so that bdrv_drain_all() returns.
+diff --git a/block/stream.c b/block/stream.c
+index 8546c41..a5d6e0c 100644
+--- a/block/stream.c
++++ b/block/stream.c
+@@ -121,7 +121,7 @@ static void coroutine_fn stream_run(void *opaque)
+         ret = len;
+         goto out;
+     }
+-    block_job_progress_set_remaining(&s->common, len);
++    job_progress_set_remaining(&s->common.job, len);
+ 
+     buf = qemu_blockalign(bs, STREAM_BUFFER_SIZE);
+ 
+@@ -184,7 +184,7 @@ static void coroutine_fn stream_run(void *opaque)
+         ret = 0;
+ 
+         /* Publish progress */
+-        block_job_progress_update(&s->common, n);
++        job_progress_update(&s->common.job, n);
+         if (copy) {
+             delay_ns = block_job_ratelimit_get_delay(&s->common, n);
+         } else {
+diff --git a/blockjob.c b/blockjob.c
+index da11b3b..5c8ff6f 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -242,16 +242,6 @@ int64_t block_job_ratelimit_get_delay(BlockJob *job, uint64_t n)
+     return ratelimit_calculate_delay(&job->limit, n);
+ }
+ 
+-void block_job_progress_update(BlockJob *job, uint64_t done)
+-{
+-    job->offset += done;
+-}
+-
+-void block_job_progress_set_remaining(BlockJob *job, uint64_t remaining)
+-{
+-    job->len = job->offset + remaining;
+-}
+-
+ BlockJobInfo *block_job_query(BlockJob *job, Error **errp)
+ {
+     BlockJobInfo *info;
+@@ -263,10 +253,10 @@ BlockJobInfo *block_job_query(BlockJob *job, Error **errp)
+     info = g_new0(BlockJobInfo, 1);
+     info->type      = g_strdup(job_type_str(&job->job));
+     info->device    = g_strdup(job->job.id);
+-    info->len       = job->len;
+     info->busy      = atomic_read(&job->job.busy);
+     info->paused    = job->job.pause_count > 0;
+-    info->offset    = job->offset;
++    info->offset    = job->job.progress_current;
++    info->len       = job->job.progress_total;
+     info->speed     = job->speed;
+     info->io_status = job->iostatus;
+     info->ready     = job_is_ready(&job->job),
+@@ -296,8 +286,8 @@ static void block_job_event_cancelled(Notifier *n, void *opaque)
+ 
+     qapi_event_send_block_job_cancelled(job_type(&job->job),
+                                         job->job.id,
+-                                        job->len,
+-                                        job->offset,
++                                        job->job.progress_total,
++                                        job->job.progress_current,
+                                         job->speed,
+                                         &error_abort);
+ }
+@@ -317,8 +307,8 @@ static void block_job_event_completed(Notifier *n, void *opaque)
+ 
+     qapi_event_send_block_job_completed(job_type(&job->job),
+                                         job->job.id,
+-                                        job->len,
+-                                        job->offset,
++                                        job->job.progress_total,
++                                        job->job.progress_current,
+                                         job->speed,
+                                         !!msg,
+                                         msg,
+@@ -348,8 +338,8 @@ static void block_job_event_ready(Notifier *n, void *opaque)
+ 
+     qapi_event_send_block_job_ready(job_type(&job->job),
+                                     job->job.id,
+-                                    job->len,
+-                                    job->offset,
++                                    job->job.progress_total,
++                                    job->job.progress_current,
+                                     job->speed, &error_abort);
+ }
+ 
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index 4fca45f..3021d11 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -52,12 +52,6 @@ typedef struct BlockJob {
+     /** Status that is published by the query-block-jobs QMP API */
+     BlockDeviceIoStatus iostatus;
+ 
+-    /** Offset that is published by the query-block-jobs QMP API */
+-    int64_t offset;
+-
+-    /** Length that is published by the query-block-jobs QMP API */
+-    int64_t len;
+-
+     /** Speed that was set with @block_job_set_speed.  */
+     int64_t speed;
+ 
+@@ -139,25 +133,6 @@ void block_job_remove_all_bdrv(BlockJob *job);
+ void block_job_set_speed(BlockJob *job, int64_t speed, Error **errp);
+ 
+ /**
+- * block_job_progress_update:
+- * @job: The job that has made progress
+- * @done: How much progress the job made
+- *
+- * Updates the progress counter of the job.
+- */
+-void block_job_progress_update(BlockJob *job, uint64_t done);
+-
+-/**
+- * block_job_progress_set_remaining:
+- * @job: The job whose expected progress end value is set
+- * @remaining: Expected end value of the progress counter of the job
+- *
+- * Sets the expected end value of the progress counter of a job so that a
+- * completion percentage can be calculated when the progress is updated.
+- */
+-void block_job_progress_set_remaining(BlockJob *job, uint64_t remaining);
+-
+-/**
+  * block_job_query:
+  * @job: The job to get information about.
+  *
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index bfc2bc5..92d1d24 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -114,6 +114,16 @@ typedef struct Job {
+     /** True if this job should automatically dismiss itself */
+     bool auto_dismiss;
+ 
++    /**
++     * Current progress. The unit is arbitrary as long as the ratio between
++     * progress_current and progress_total represents the estimated percentage
++     * of work already done.
++     */
++    int64_t progress_current;
++
++    /** Estimated progress_current value at the completion of the job */
++    int64_t progress_total;
++
+     /** ret code passed to job_completed. */
+     int ret;
+ 
+@@ -304,6 +314,24 @@ void job_ref(Job *job);
+  */
+ void job_unref(Job *job);
+ 
++/**
++ * @job: The job that has made progress
++ * @done: How much progress the job made since the last call
++ *
++ * Updates the progress counter of the job.
++ */
++void job_progress_update(Job *job, uint64_t done);
++
++/**
++ * @job: The job whose expected progress end value is set
++ * @remaining: Missing progress (on top of the current progress counter value)
++ *             until the new expected end value is reached
++ *
++ * Sets the expected end value of the progress counter of a job so that a
++ * completion percentage can be calculated when the progress is updated.
++ */
++void job_progress_set_remaining(Job *job, uint64_t remaining);
++
+ /** To be called when a cancelled job is finalised. */
+ void job_event_cancelled(Job *job);
+ 
+diff --git a/job.c b/job.c
+index b5bd51b..2046d2f 100644
+--- a/job.c
++++ b/job.c
+@@ -364,6 +364,16 @@ void job_unref(Job *job)
+     }
+ }
+ 
++void job_progress_update(Job *job, uint64_t done)
++{
++    job->progress_current += done;
++}
++
++void job_progress_set_remaining(Job *job, uint64_t remaining)
++{
++    job->progress_total = job->progress_current + remaining;
++}
++
+ void job_event_cancelled(Job *job)
+ {
+     notifier_list_notify(&job->on_finalize_cancelled, job);
+diff --git a/qemu-img.c b/qemu-img.c
+index 3c449a2..9fc8e66 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -875,9 +875,13 @@ static void run_block_job(BlockJob *job, Error **errp)
+     aio_context_acquire(aio_context);
+     job_ref(&job->job);
+     do {
++        float progress = 0.0f;
+         aio_poll(aio_context, true);
+-        qemu_progress_print(job->len ?
+-                            ((float)job->offset / job->len * 100.f) : 0.0f, 0);
++        if (job->job.progress_total) {
++            progress = (float)job->job.progress_current /
++                       job->job.progress_total * 100.f;
++        }
++        qemu_progress_print(progress, 0);
+     } while (!job_is_ready(&job->job) && !job_is_completed(&job->job));
+ 
+     if (!job_is_completed(&job->job)) {
+-- 
+1.8.3.1
+

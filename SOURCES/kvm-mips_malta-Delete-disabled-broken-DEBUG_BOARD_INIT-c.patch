@@ -1,0 +1,74 @@
+From 186549785eab7b0b7ac1063b942a317c80867766 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:01 +0200
+Subject: [PATCH 34/53] mips_malta: Delete disabled, broken DEBUG_BOARD_INIT
+ code
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-13-armbru@redhat.com>
+Patchwork-id: 88001
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 12/31] mips_malta: Delete disabled, broken DEBUG_BOARD_INIT code
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+The debug code under DEBUG_BOARD_INIT doesn't compile:
+
+      hw/mips/mips_malta.c:1273:16: error: implicit declaration of function ‘blk_name’; did you mean ‘basename’? [-Werror=implicit-function-declaration]
+                    blk_name(dinfo->bdrv), fl_sectors);
+                    ^~~~~~~~
+      hw/mips/mips_malta.c:1273:16: error: nested extern declaration of ‘blk_name’ [-Werror=nested-externs]
+      hw/mips/mips_malta.c:1273:30: error: ‘DriveInfo’ {aka ‘struct DriveInfo’} has no member named ‘bdrv’
+                    blk_name(dinfo->bdrv), fl_sectors);
+                                    ^~
+
+Delete it.
+
+Reported-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Aleksandar Markovic <amarkovic@wavecomp.com>
+Message-Id: <20190308094610.21210-11-armbru@redhat.com>
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Tested-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+(cherry picked from commit 5a4abb197b2ee8e6c545a8ec6e0bf9ca4e470127)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/mips/mips_malta.c | 10 ----------
+ 1 file changed, 10 deletions(-)
+
+diff --git a/hw/mips/mips_malta.c b/hw/mips/mips_malta.c
+index 88fd7d6..7f19bdc 100644
+--- a/hw/mips/mips_malta.c
++++ b/hw/mips/mips_malta.c
+@@ -58,8 +58,6 @@
+ #include "exec/semihost.h"
+ #include "hw/mips/cps.h"
+ 
+-//#define DEBUG_BOARD_INIT
+-
+ #define ENVP_ADDR		0x80002000l
+ #define ENVP_NB_ENTRIES	 	16
+ #define ENVP_ENTRY_SIZE	 	256
+@@ -1066,14 +1064,6 @@ void mips_malta_init(MachineState *machine)
+ 
+     /* Load firmware in flash / BIOS. */
+     dinfo = drive_get(IF_PFLASH, 0, fl_idx);
+-#ifdef DEBUG_BOARD_INIT
+-    if (dinfo) {
+-        printf("Register parallel flash %d size " TARGET_FMT_lx " at "
+-               "addr %08llx '%s' %x\n",
+-               fl_idx, bios_size, FLASH_ADDRESS,
+-               blk_name(dinfo->bdrv), fl_sectors);
+-    }
+-#endif
+     fl = pflash_cfi01_register(FLASH_ADDRESS, NULL, "mips_malta.bios",
+                                BIOS_SIZE,
+                                dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
+-- 
+1.8.3.1
+

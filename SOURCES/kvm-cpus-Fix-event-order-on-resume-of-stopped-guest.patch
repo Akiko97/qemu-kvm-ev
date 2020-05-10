@@ -1,0 +1,149 @@
+From f94e1c832c510a3ca1b8bf0d383e7be2dce4909c Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Wed, 9 May 2018 14:42:21 +0200
+Subject: [PATCH 13/13] cpus: Fix event order on resume of stopped guest
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180509144221.14799-2-armbru@redhat.com>
+Patchwork-id: 80191
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] cpus: Fix event order on resume of stopped guest
+Bugzilla: 1566153
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+
+When resume of a stopped guest immediately runs into block device
+errors, the BLOCK_IO_ERROR event is sent before the RESUME event.
+
+Reproducer:
+
+1. Create a scratch image
+   $ dd if=/dev/zero of=scratch.img bs=1M count=100
+
+   Size doesn't actually matter.
+
+2. Prepare blkdebug configuration:
+
+   $ cat >blkdebug.conf <<EOF
+   [inject-error]
+   event = "write_aio"
+   errno = "5"
+   EOF
+
+   Note that errno 5 is EIO.
+
+3. Run a guest with an additional scratch disk, i.e. with additional
+   arguments
+   -drive if=none,id=scratch-drive,format=raw,werror=stop,file=blkdebug:blkdebug.conf:scratch.img
+   -device virtio-blk-pci,id=scratch,drive=scratch-drive
+
+   The blkdebug part makes all writes to the scratch drive fail with
+   EIO.  The werror=stop pauses the guest on write errors.
+
+4. Connect to the QMP socket e.g. like this:
+   $ socat UNIX:/your/qmp/socket READLINE,history=$HOME/.qmp_history,prompt='QMP> '
+
+   Issue QMP command 'qmp_capabilities':
+   QMP> { "execute": "qmp_capabilities" }
+
+5. Boot the guest.
+
+6. In the guest, write to the scratch disk, e.g. like this:
+
+   # dd if=/dev/zero of=/dev/vdb count=1
+
+   Do double-check the device specified with of= is actually the
+   scratch device!
+
+7. Issue QMP command 'cont':
+   QMP> { "execute": "cont" }
+
+After step 6, I get a BLOCK_IO_ERROR event followed by a STOP event.  Good.
+
+After step 7, I get BLOCK_IO_ERROR, then RESUME, then STOP.  Not so
+good; I'd expect RESUME, then BLOCK_IO_ERROR, then STOP.
+
+The funny event order confuses libvirt: virsh -r domstate DOMAIN
+--reason reports "paused (unknown)" rather than "paused (I/O error)".
+
+The culprit is vm_prepare_start().
+
+    /* Ensure that a STOP/RESUME pair of events is emitted if a
+     * vmstop request was pending.  The BLOCK_IO_ERROR event, for
+     * example, according to documentation is always followed by
+     * the STOP event.
+     */
+    if (runstate_is_running()) {
+        qapi_event_send_stop(&error_abort);
+        res = -1;
+    } else {
+        replay_enable_events();
+        cpu_enable_ticks();
+        runstate_set(RUN_STATE_RUNNING);
+        vm_state_notify(1, RUN_STATE_RUNNING);
+    }
+
+    /* We are sending this now, but the CPUs will be resumed shortly later */
+    qapi_event_send_resume(&error_abort);
+    return res;
+
+When resuming a stopped guest, we take the else branch before we get
+to sending RESUME.  vm_state_notify() runs virtio_vmstate_change(),
+among other things.  This restarts I/O, triggering the BLOCK_IO_ERROR
+event.
+
+Reshuffle vm_prepare_start() to send the RESUME event earlier.
+
+Fixes RHBZ 1566153.
+
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20180423084518.2426-1-armbru@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit f056158d694d2adc63ff120ca71c73ae8b14426c)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ cpus.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/cpus.c b/cpus.c
+index 38eba8b..398392b 100644
+--- a/cpus.c
++++ b/cpus.c
+@@ -2043,7 +2043,6 @@ int vm_stop(RunState state)
+ int vm_prepare_start(void)
+ {
+     RunState requested;
+-    int res = 0;
+ 
+     qemu_vmstop_requested(&requested);
+     if (runstate_is_running() && requested == RUN_STATE__MAX) {
+@@ -2057,17 +2056,18 @@ int vm_prepare_start(void)
+      */
+     if (runstate_is_running()) {
+         qapi_event_send_stop(&error_abort);
+-        res = -1;
+-    } else {
+-        replay_enable_events();
+-        cpu_enable_ticks();
+-        runstate_set(RUN_STATE_RUNNING);
+-        vm_state_notify(1, RUN_STATE_RUNNING);
++        qapi_event_send_resume(&error_abort);
++        return -1;
+     }
+ 
+     /* We are sending this now, but the CPUs will be resumed shortly later */
+     qapi_event_send_resume(&error_abort);
+-    return res;
++
++    replay_enable_events();
++    cpu_enable_ticks();
++    runstate_set(RUN_STATE_RUNNING);
++    vm_state_notify(1, RUN_STATE_RUNNING);
++    return 0;
+ }
+ 
+ void vm_start(void)
+-- 
+1.8.3.1
+

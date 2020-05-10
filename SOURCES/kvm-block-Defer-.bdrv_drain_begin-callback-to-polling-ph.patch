@@ -1,0 +1,83 @@
+From 2e9423c192511fd2704eea357403f6817cb9aae7 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:12 +0200
+Subject: [PATCH 21/49] block: Defer .bdrv_drain_begin callback to polling
+ phase
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-15-kwolf@redhat.com>
+Patchwork-id: 82166
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 14/42] block: Defer .bdrv_drain_begin callback to polling phase
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+We cannot allow aio_poll() in bdrv_drain_invoke(begin=true) until we're
+done with propagating the drain through the graph and are doing the
+single final BDRV_POLL_WHILE().
+
+Just schedule the coroutine with the callback and increase bs->in_flight
+to make sure that the polling phase will wait for it.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 0109e7e6f83ae5166b81bbd9a4319d60be49985a)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c | 28 +++++++++++++++++++++++-----
+ 1 file changed, 23 insertions(+), 5 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 9c41ff9..23fe069 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -181,22 +181,40 @@ static void coroutine_fn bdrv_drain_invoke_entry(void *opaque)
+ 
+     /* Set data->done before reading bs->wakeup.  */
+     atomic_mb_set(&data->done, true);
+-    bdrv_wakeup(bs);
++    bdrv_dec_in_flight(bs);
++
++    if (data->begin) {
++        g_free(data);
++    }
+ }
+ 
+ /* Recursively call BlockDriver.bdrv_co_drain_begin/end callbacks */
+ static void bdrv_drain_invoke(BlockDriverState *bs, bool begin)
+ {
+-    BdrvCoDrainData data = { .bs = bs, .done = false, .begin = begin};
++    BdrvCoDrainData *data;
+ 
+     if (!bs->drv || (begin && !bs->drv->bdrv_co_drain_begin) ||
+             (!begin && !bs->drv->bdrv_co_drain_end)) {
+         return;
+     }
+ 
+-    data.co = qemu_coroutine_create(bdrv_drain_invoke_entry, &data);
+-    bdrv_coroutine_enter(bs, data.co);
+-    BDRV_POLL_WHILE(bs, !data.done);
++    data = g_new(BdrvCoDrainData, 1);
++    *data = (BdrvCoDrainData) {
++        .bs = bs,
++        .done = false,
++        .begin = begin
++    };
++
++    /* Make sure the driver callback completes during the polling phase for
++     * drain_begin. */
++    bdrv_inc_in_flight(bs);
++    data->co = qemu_coroutine_create(bdrv_drain_invoke_entry, data);
++    aio_co_schedule(bdrv_get_aio_context(bs), data->co);
++
++    if (!begin) {
++        BDRV_POLL_WHILE(bs, !data->done);
++        g_free(data);
++    }
+ }
+ 
+ /* Returns true if BDRV_POLL_WHILE() should go into a blocking aio_poll() */
+-- 
+1.8.3.1
+

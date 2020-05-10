@@ -1,0 +1,112 @@
+From 72f0fcad0938bba82537e78753e242d53f3f2583 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:10 +0200
+Subject: [PATCH 19/49] block: Don't poll in parent drain callbacks
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-13-kwolf@redhat.com>
+Patchwork-id: 82164
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 12/42] block: Don't poll in parent drain callbacks
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+bdrv_do_drained_begin() is only safe if we have a single
+BDRV_POLL_WHILE() after quiescing all affected nodes. We cannot allow
+that parent callbacks introduce a nested polling loop that could cause
+graph changes while we're traversing the graph.
+
+Split off bdrv_do_drained_begin_quiesce(), which only quiesces a single
+node without waiting for its requests to complete. These requests will
+be waited for in the BDRV_POLL_WHILE() call down the call chain.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit dcf94a23b1add0f856db51e9ff5ba0774e096076)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c               |  2 +-
+ block/io.c            | 24 ++++++++++++++++--------
+ include/block/block.h |  9 +++++++++
+ 3 files changed, 26 insertions(+), 9 deletions(-)
+
+diff --git a/block.c b/block.c
+index 9afaf26..5a50de6 100644
+--- a/block.c
++++ b/block.c
+@@ -818,7 +818,7 @@ static char *bdrv_child_get_parent_desc(BdrvChild *c)
+ static void bdrv_child_cb_drained_begin(BdrvChild *child)
+ {
+     BlockDriverState *bs = child->opaque;
+-    bdrv_drained_begin(bs);
++    bdrv_do_drained_begin_quiesce(bs, NULL);
+ }
+ 
+ static bool bdrv_child_cb_drained_poll(BdrvChild *child)
+diff --git a/block/io.c b/block/io.c
+index 442ded1..9c41ff9 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -285,15 +285,10 @@ static void coroutine_fn bdrv_co_yield_to_drain(BlockDriverState *bs,
+     assert(data.done);
+ }
+ 
+-void bdrv_do_drained_begin(BlockDriverState *bs, bool recursive,
+-                           BdrvChild *parent, bool poll)
++void bdrv_do_drained_begin_quiesce(BlockDriverState *bs,
++                                   BdrvChild *parent)
+ {
+-    BdrvChild *child, *next;
+-
+-    if (qemu_in_coroutine()) {
+-        bdrv_co_yield_to_drain(bs, true, recursive, parent, poll);
+-        return;
+-    }
++    assert(!qemu_in_coroutine());
+ 
+     /* Stop things in parent-to-child order */
+     if (atomic_fetch_inc(&bs->quiesce_counter) == 0) {
+@@ -302,6 +297,19 @@ void bdrv_do_drained_begin(BlockDriverState *bs, bool recursive,
+ 
+     bdrv_parent_drained_begin(bs, parent);
+     bdrv_drain_invoke(bs, true);
++}
++
++static void bdrv_do_drained_begin(BlockDriverState *bs, bool recursive,
++                                  BdrvChild *parent, bool poll)
++{
++    BdrvChild *child, *next;
++
++    if (qemu_in_coroutine()) {
++        bdrv_co_yield_to_drain(bs, true, recursive, parent, poll);
++        return;
++    }
++
++    bdrv_do_drained_begin_quiesce(bs, parent);
+ 
+     if (recursive) {
+         bs->recursive_quiesce_counter++;
+diff --git a/include/block/block.h b/include/block/block.h
+index 2bbea7c..43f29b5 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -619,6 +619,15 @@ bool bdrv_drain_poll(BlockDriverState *bs, bool recursive,
+ void bdrv_drained_begin(BlockDriverState *bs);
+ 
+ /**
++ * bdrv_do_drained_begin_quiesce:
++ *
++ * Quiesces a BDS like bdrv_drained_begin(), but does not wait for already
++ * running requests to complete.
++ */
++void bdrv_do_drained_begin_quiesce(BlockDriverState *bs,
++                                   BdrvChild *parent);
++
++/**
+  * Like bdrv_drained_begin, but recursively begins a quiesced section for
+  * exclusive access to all child nodes as well.
+  */
+-- 
+1.8.3.1
+

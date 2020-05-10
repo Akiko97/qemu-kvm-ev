@@ -1,0 +1,69 @@
+From ffe4cdcc9b82668410476d565961821515dde5b1 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 6 Jul 2018 17:56:52 +0200
+Subject: [PATCH 18/89] pr-helper: fix assertion failure on failed multipath
+ PERSISTENT RESERVE IN
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20180706175659.30615-3-pbonzini@redhat.com>
+Patchwork-id: 81246
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 2/9] pr-helper: fix assertion failure on failed multipath PERSISTENT RESERVE IN
+Bugzilla: 1533158
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Michal Privoznik <mprivozn@redhat.com>
+
+The response size is expected to be zero if the SCSI status is not
+"GOOD", but nothing was resetting it.
+
+This can be reproduced simply by "sg_persist -s /dev/sdb" where /dev/sdb
+in the guest is a scsi-block device corresponding to a multipath device
+on the host.
+
+Before:
+
+  PR in (Read full status): Aborted command
+
+and on the host:
+
+  prh_write_response: Assertion `resp->sz == 0' failed.
+
+After:
+
+  PR in (Read full status): bad field in cdb or parameter list
+  (perhaps unsupported service action)
+
+Reported-by: Jiri Belka <jbelka@redhat.com>
+Reviewed-by: Michal Privoznik <mprivozn@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Reviewed-by: Paolo Bonzini <pbonzini@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+(cherry picked from commit 86933b4e7879e427e03365bf352c0964640cb37b)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ scsi/qemu-pr-helper.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/scsi/qemu-pr-helper.c b/scsi/qemu-pr-helper.c
+index 19887f5..3961023 100644
+--- a/scsi/qemu-pr-helper.c
++++ b/scsi/qemu-pr-helper.c
+@@ -547,7 +547,11 @@ static int do_pr_in(int fd, const uint8_t *cdb, uint8_t *sense,
+ #ifdef CONFIG_MPATH
+     if (is_mpath(fd)) {
+         /* multipath_pr_in fills the whole input buffer.  */
+-        return multipath_pr_in(fd, cdb, sense, data, *resp_sz);
++        int r = multipath_pr_in(fd, cdb, sense, data, *resp_sz);
++        if (r != GOOD) {
++            *resp_sz = 0;
++        }
++        return r;
+     }
+ #endif
+ 
+-- 
+1.8.3.1
+

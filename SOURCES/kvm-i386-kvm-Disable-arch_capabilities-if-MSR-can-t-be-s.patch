@@ -1,0 +1,71 @@
+From 38633bfc500ac284a13f7da53ea5aabacb8006e1 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Tue, 4 Jun 2019 21:47:26 +0200
+Subject: [PATCH 07/23] i386: kvm: Disable arch_capabilities if MSR can't be
+ set
+
+RH-Author: plai@redhat.com
+Message-id: <1559684847-10889-8-git-send-email-plai@redhat.com>
+Patchwork-id: 88536
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH v4 7/8] i386: kvm: Disable arch_capabilities if MSR can't be set
+Bugzilla: 1709972
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eduardo Habkost <ehabkost@redhat.com>
+
+KVM has two bugs in the handling of MSR_IA32_ARCH_CAPABILITIES:
+
+1) Linux commit commit 1eaafe91a0df ("kvm: x86: IA32_ARCH_CAPABILITIES
+   is always supported") makes GET_SUPPORTED_CPUID return
+   arch_capabilities even if running on SVM.  This makes "-cpu
+   host,migratable=off" incorrectly expose arch_capabilities on CPUID on
+   AMD hosts (where the MSR is not emulated by KVM).
+
+2) KVM_GET_MSR_INDEX_LIST does not return MSR_IA32_ARCH_CAPABILITIES if
+   the MSR is not supported by the host CPU.  This makes QEMU not
+   initialize the MSR properly at kvm_put_msrs() on those hosts.
+
+Work around both bugs on the QEMU side, by checking if the MSR
+was returned by KVM_GET_MSR_INDEX_LIST before returning the
+feature flag on kvm_arch_get_supported_cpuid().
+
+This has the unfortunate side effect of making arch_capabilities
+unavailable on hosts without hardware support for the MSR until bug #2
+is fixed on KVM, but I can't see another way to work around bug #1
+without that side effect.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <20190125220606.4864-2-ehabkost@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 485b1d256bcb0874bcde0223727c159b6837e6f8)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/kvm.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/target/i386/kvm.c b/target/i386/kvm.c
+index c99c0ef..7afad93 100644
+--- a/target/i386/kvm.c
++++ b/target/i386/kvm.c
+@@ -374,6 +374,15 @@ uint32_t kvm_arch_get_supported_cpuid(KVMState *s, uint32_t function,
+         if (host_tsx_blacklisted()) {
+             ret &= ~(CPUID_7_0_EBX_RTM | CPUID_7_0_EBX_HLE);
+         }
++    } else if (function == 7 && index == 0 && reg == R_EDX) {
++        /*
++         * Linux v4.17-v4.20 incorrectly return ARCH_CAPABILITIES on SVM hosts.
++         * We can detect the bug by checking if MSR_IA32_ARCH_CAPABILITIES is
++         * returned by KVM_GET_MSR_INDEX_LIST.
++         */
++        if (!has_msr_arch_capabs) {
++            ret &= ~CPUID_7_0_EDX_ARCH_CAPABILITIES;
++        }
+     } else if (function == 0x80000001 && reg == R_ECX) {
+         /*
+          * It's safe to enable TOPOEXT even if it's not returned by
+-- 
+1.8.3.1
+

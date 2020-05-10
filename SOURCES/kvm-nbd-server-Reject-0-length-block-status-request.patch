@@ -1,0 +1,51 @@
+From 32058dd38df873a275bc004c53b5ae7e74af6871 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:59 +0200
+Subject: [PATCH 74/89] nbd/server: Reject 0-length block status request
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-24-jsnow@redhat.com>
+Patchwork-id: 81423
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 23/35] nbd/server: Reject 0-length block status request
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+The NBD spec says that behavior is unspecified if the client
+requests 0 length for block status; but since the structured
+reply is documenting as returning a non-zero length, it's
+easier to just diagnose this with an EINVAL error than to
+figure out what to return.
+
+CC: qemu-stable@nongnu.org
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180621124937.166549-1-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit d8b20291cba6aa9bb295885a34f2b5f05d59d1b2)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 9e1f227..493a926 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -2007,6 +2007,10 @@ static coroutine_fn int nbd_handle_request(NBDClient *client,
+                                       "discard failed", errp);
+ 
+     case NBD_CMD_BLOCK_STATUS:
++        if (!request->len) {
++            return nbd_send_generic_reply(client, request->handle, -EINVAL,
++                                          "need non-zero length", errp);
++        }
+         if (client->export_meta.valid && client->export_meta.base_allocation) {
+             return nbd_co_send_block_status(client, request->handle,
+                                             blk_bs(exp->blk), request->from,
+-- 
+1.8.3.1
+

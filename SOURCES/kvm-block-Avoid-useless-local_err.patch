@@ -1,0 +1,47 @@
+From 6e21eb2623d4103257fc9d849a639eb70ae20920 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:09:58 +0100
+Subject: [PATCH 002/163] block: Avoid useless local_err
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-3-kwolf@redhat.com>
+Patchwork-id: 84879
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 02/14] block: Avoid useless local_err
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit a4615ab31cade201641cbb17a81dcac1b3bea624)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/block.c b/block.c
+index c47e5b0..ccf9acb 100644
+--- a/block.c
++++ b/block.c
+@@ -3061,14 +3061,12 @@ int bdrv_reopen_multiple(AioContext *ctx, BlockReopenQueue *bs_queue, Error **er
+ {
+     int ret = -1;
+     BlockReopenQueueEntry *bs_entry, *next;
+-    Error *local_err = NULL;
+ 
+     assert(bs_queue != NULL);
+ 
+     QSIMPLEQ_FOREACH(bs_entry, bs_queue, entry) {
+         assert(bs_entry->state.bs->quiesce_counter > 0);
+-        if (bdrv_reopen_prepare(&bs_entry->state, bs_queue, &local_err)) {
+-            error_propagate(errp, local_err);
++        if (bdrv_reopen_prepare(&bs_entry->state, bs_queue, errp)) {
+             goto cleanup;
+         }
+         bs_entry->prepared = true;
+-- 
+1.8.3.1
+

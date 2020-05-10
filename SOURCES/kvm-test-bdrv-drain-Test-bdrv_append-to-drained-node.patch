@@ -1,0 +1,86 @@
+From 55be3bf080a5b4768b88c1bc37b0867031add03d Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:20 +0200
+Subject: [PATCH 29/49] test-bdrv-drain: Test bdrv_append() to drained node
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-23-kwolf@redhat.com>
+Patchwork-id: 82174
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 22/42] test-bdrv-drain: Test bdrv_append() to drained node
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit b994c5bc515fe611885113e7cfa7e87817bfd4e2)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/test-bdrv-drain.c | 43 +++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/tests/test-bdrv-drain.c b/tests/test-bdrv-drain.c
+index 1c8162f..9bcb3c7 100644
+--- a/tests/test-bdrv-drain.c
++++ b/tests/test-bdrv-drain.c
+@@ -1245,6 +1245,47 @@ static void test_detach_by_driver_cb(void)
+     test_detach_indirect(false);
+ }
+ 
++static void test_append_to_drained(void)
++{
++    BlockBackend *blk;
++    BlockDriverState *base, *overlay;
++    BDRVTestState *base_s, *overlay_s;
++
++    blk = blk_new(BLK_PERM_ALL, BLK_PERM_ALL);
++    base = bdrv_new_open_driver(&bdrv_test, "base", BDRV_O_RDWR, &error_abort);
++    base_s = base->opaque;
++    blk_insert_bs(blk, base, &error_abort);
++
++    overlay = bdrv_new_open_driver(&bdrv_test, "overlay", BDRV_O_RDWR,
++                                   &error_abort);
++    overlay_s = overlay->opaque;
++
++    do_drain_begin(BDRV_DRAIN, base);
++    g_assert_cmpint(base->quiesce_counter, ==, 1);
++    g_assert_cmpint(base_s->drain_count, ==, 1);
++    g_assert_cmpint(base->in_flight, ==, 0);
++
++    /* Takes ownership of overlay, so we don't have to unref it later */
++    bdrv_append(overlay, base, &error_abort);
++    g_assert_cmpint(base->in_flight, ==, 0);
++    g_assert_cmpint(overlay->in_flight, ==, 0);
++
++    g_assert_cmpint(base->quiesce_counter, ==, 1);
++    g_assert_cmpint(base_s->drain_count, ==, 1);
++    g_assert_cmpint(overlay->quiesce_counter, ==, 1);
++    g_assert_cmpint(overlay_s->drain_count, ==, 1);
++
++    do_drain_end(BDRV_DRAIN, base);
++
++    g_assert_cmpint(base->quiesce_counter, ==, 0);
++    g_assert_cmpint(base_s->drain_count, ==, 0);
++    g_assert_cmpint(overlay->quiesce_counter, ==, 0);
++    g_assert_cmpint(overlay_s->drain_count, ==, 0);
++
++    bdrv_unref(base);
++    blk_unref(blk);
++}
++
+ int main(int argc, char **argv)
+ {
+     int ret;
+@@ -1303,6 +1344,8 @@ int main(int argc, char **argv)
+     g_test_add_func("/bdrv-drain/detach/parent_cb", test_detach_by_parent_cb);
+     g_test_add_func("/bdrv-drain/detach/driver_cb", test_detach_by_driver_cb);
+ 
++    g_test_add_func("/bdrv-drain/attach/drain", test_append_to_drained);
++
+     ret = g_test_run();
+     qemu_event_destroy(&done_event);
+     return ret;
+-- 
+1.8.3.1
+

@@ -1,0 +1,50 @@
+From 68b3e533a4531486fe346f042e190fb5c426f24f Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 16:12:05 +0200
+Subject: [PATCH 29/54] block: BLK_PERM_WRITE includes ..._UNCHANGED
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618161212.14444-4-mreitz@redhat.com>
+Patchwork-id: 80763
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 03/10] block: BLK_PERM_WRITE includes ..._UNCHANGED
+Bugzilla: 1518738
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Currently we never actually check whether the WRITE_UNCHANGED
+permission has been taken for unchanging writes.  But the one check that
+is commented out checks both WRITE and WRITE_UNCHANGED; and considering
+that WRITE_UNCHANGED is already documented as being weaker than WRITE,
+we should probably explicitly document WRITE to include WRITE_UNCHANGED.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Message-id: 20180421132929.21610-3-mreitz@redhat.com
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 24b7c538fea86b598e2a335f4805a0ab50a30e98)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/block/block.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/include/block/block.h b/include/block/block.h
+index cdec363..397b5e8 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -205,6 +205,9 @@ enum {
+      * This permission (which is weaker than BLK_PERM_WRITE) is both enough and
+      * required for writes to the block node when the caller promises that
+      * the visible disk content doesn't change.
++     *
++     * As the BLK_PERM_WRITE permission is strictly stronger, either is
++     * sufficient to perform an unchanging write.
+      */
+     BLK_PERM_WRITE_UNCHANGED    = 0x04,
+ 
+-- 
+1.8.3.1
+

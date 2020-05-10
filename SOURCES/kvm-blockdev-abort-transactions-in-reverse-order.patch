@@ -1,0 +1,97 @@
+From 68dbabe0167538bcf3996692b3dc3dce01e34f74 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Thu, 24 Jan 2019 00:55:10 +0100
+Subject: [PATCH 5/8] blockdev: abort transactions in reverse order
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190124005511.27662-2-jsnow@redhat.com>
+Patchwork-id: 84105
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/2] blockdev: abort transactions in reverse order
+Bugzilla: 1658426
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+
+Presently, we abort transactions in the same order they were processed in.
+Bitmap commands, though, attempt to restore backup data structures on abort.
+
+That's not valid, they need to be aborted in reverse chronological order.
+
+Replace the QSIMPLEQ data structure with a QTAILQ one, so we can iterate
+in reverse for the abort phase of the transaction.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20181221093529.23855-2-jsnow@redhat.com>
+[eblake: rebase]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit f4de0f8c40b70c4c9308b4670e0a6ad9faed0262)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index 3eb1880..f25ab15 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -1491,7 +1491,7 @@ struct BlkActionState {
+     const BlkActionOps *ops;
+     JobTxn *block_job_txn;
+     TransactionProperties *txn_props;
+-    QSIMPLEQ_ENTRY(BlkActionState) entry;
++    QTAILQ_ENTRY(BlkActionState) entry;
+ };
+ 
+ /* internal snapshot private data */
+@@ -2376,8 +2376,8 @@ void qmp_transaction(TransactionActionList *dev_list,
+     BlkActionState *state, *next;
+     Error *local_err = NULL;
+ 
+-    QSIMPLEQ_HEAD(snap_bdrv_states, BlkActionState) snap_bdrv_states;
+-    QSIMPLEQ_INIT(&snap_bdrv_states);
++    QTAILQ_HEAD(snap_bdrv_states, BlkActionState) snap_bdrv_states;
++    QTAILQ_INIT(&snap_bdrv_states);
+ 
+     /* Does this transaction get canceled as a group on failure?
+      * If not, we don't really need to make a JobTxn.
+@@ -2408,7 +2408,7 @@ void qmp_transaction(TransactionActionList *dev_list,
+         state->action = dev_info;
+         state->block_job_txn = block_job_txn;
+         state->txn_props = props;
+-        QSIMPLEQ_INSERT_TAIL(&snap_bdrv_states, state, entry);
++        QTAILQ_INSERT_TAIL(&snap_bdrv_states, state, entry);
+ 
+         state->ops->prepare(state, &local_err);
+         if (local_err) {
+@@ -2417,7 +2417,7 @@ void qmp_transaction(TransactionActionList *dev_list,
+         }
+     }
+ 
+-    QSIMPLEQ_FOREACH(state, &snap_bdrv_states, entry) {
++    QTAILQ_FOREACH(state, &snap_bdrv_states, entry) {
+         if (state->ops->commit) {
+             state->ops->commit(state);
+         }
+@@ -2428,13 +2428,13 @@ void qmp_transaction(TransactionActionList *dev_list,
+ 
+ delete_and_fail:
+     /* failure, and it is all-or-none; roll back all operations */
+-    QSIMPLEQ_FOREACH(state, &snap_bdrv_states, entry) {
++    QTAILQ_FOREACH_REVERSE(state, &snap_bdrv_states, snap_bdrv_states, entry) {
+         if (state->ops->abort) {
+             state->ops->abort(state);
+         }
+     }
+ exit:
+-    QSIMPLEQ_FOREACH_SAFE(state, &snap_bdrv_states, entry, next) {
++    QTAILQ_FOREACH_SAFE(state, &snap_bdrv_states, entry, next) {
+         if (state->ops->clean) {
+             state->ops->clean(state);
+         }
+-- 
+1.8.3.1
+

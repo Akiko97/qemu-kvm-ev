@@ -1,0 +1,43 @@
+From 7b60eac4fb7e3f0373381e148f963878e0325916 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:47 +0200
+Subject: [PATCH 142/163] blockdev: remove unused paio parameter documentation
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-12-jsnow@redhat.com>
+Patchwork-id: 85424
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 11/21] blockdev: remove unused paio parameter documentation
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+This field isn't present anymore.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190223000614.13894-10-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 2f158ca7b63175c5f0ac9a65e933e23deac46caa)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index c9ade12..a9e2e1d 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -1407,7 +1407,6 @@ out_aio_context:
+  * @node: The name of the BDS node to search for bitmaps
+  * @name: The name of the bitmap to search for
+  * @pbs: Output pointer for BDS lookup, if desired. Can be NULL.
+- * @paio: Output pointer for aio_context acquisition, if desired. Can be NULL.
+  * @errp: Output pointer for error information. Can be NULL.
+  *
+  * @return: A bitmap object on success, or NULL on failure.
+-- 
+1.8.3.1
+

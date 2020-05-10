@@ -1,0 +1,200 @@
+From d5c834ab75d9e3e67e6f8489fef32dc4d22443a1 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:30 +0100
+Subject: [PATCH 091/163] nbd: Allow bitmap export during QMP nbd-server-add
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-18-jsnow@redhat.com>
+Patchwork-id: 85188
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 17/55] nbd: Allow bitmap export during QMP nbd-server-add
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+With the experimental x-nbd-server-add-bitmap command, there was
+a window of time where an NBD client could see the export but not
+the associated dirty bitmap, which can cause a client that planned
+on using the dirty bitmap to be forced to treat the entire image
+as dirty as a safety fallback.  Furthermore, if the QMP client
+successfully exports a disk but then fails to add the bitmap, it
+has to take on the burden of removing the export.  Since we don't
+allow changing the exposed dirty bitmap (whether to a different
+bitmap, or removing advertisement of the bitmap), it is nicer to
+make the bitmap tied to the export at the time the export is
+created, with automatic failure to export if the bitmap is not
+available.
+
+The experimental command included an optional 'bitmap-export-name'
+field for remapping the name exposed over NBD to be different from
+the bitmap name stored on disk.  However, my libvirt demo code
+for implementing differential backups on top of persistent bitmaps
+did not need to take advantage of that feature (it is instead
+possible to create a new temporary bitmap with the desired name,
+use block-dirty-bitmap-merge to merge one or more persistent
+bitmaps into the temporary, then associate the temporary with the
+NBD export, if control is needed over the exported bitmap name).
+Hence, I'm not copying that part of the experiment over to the
+stable addition. For more details on the libvirt demo, see
+https://www.redhat.com/archives/libvir-list/2018-October/msg01254.html,
+https://kvmforum2018.sched.com/event/FzuB/facilitating-incremental-backup-eric-blake-red-hat
+
+This patch focuses on the user interface, and reduces (but does
+not completely eliminate) the window where an NBD client can see
+the export but not the dirty bitmap, with less work to clean up
+after errors.  Later patches will add further cleanups now that
+this interface is declared stable via a single QMP command,
+including removing the race window.
+
+Update test 223 to use the new interface.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20190111194720.15671-6-eblake@redhat.com>
+(cherry picked from commit 5fcbeb06812685a2c6d7e0e6f28f018987d08b79)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev-nbd.c             | 12 +++++++++++-
+ hmp.c                      |  5 +++--
+ qapi/block.json            |  7 ++++++-
+ tests/qemu-iotests/223     | 19 ++++++++-----------
+ tests/qemu-iotests/223.out |  5 +----
+ 5 files changed, 29 insertions(+), 19 deletions(-)
+
+diff --git a/blockdev-nbd.c b/blockdev-nbd.c
+index 582ffde..ec8cf0a 100644
+--- a/blockdev-nbd.c
++++ b/blockdev-nbd.c
+@@ -140,7 +140,8 @@ void qmp_nbd_server_start(SocketAddressLegacy *addr,
+ }
+ 
+ void qmp_nbd_server_add(const char *device, bool has_name, const char *name,
+-                        bool has_writable, bool writable, Error **errp)
++                        bool has_writable, bool writable,
++                        bool has_bitmap, const char *bitmap, Error **errp)
+ {
+     BlockDriverState *bs = NULL;
+     BlockBackend *on_eject_blk;
+@@ -185,6 +186,15 @@ void qmp_nbd_server_add(const char *device, bool has_name, const char *name,
+      * our only way of accessing it is through nbd_export_find(), so we can drop
+      * the strong reference that is @exp. */
+     nbd_export_put(exp);
++
++    if (has_bitmap) {
++        Error *err = NULL;
++        nbd_export_bitmap(exp, bitmap, bitmap, &err);
++        if (err) {
++            error_propagate(errp, err);
++            nbd_export_remove(exp, NBD_SERVER_REMOVE_MODE_HARD, NULL);
++        }
++    }
+ }
+ 
+ void qmp_nbd_server_remove(const char *name,
+diff --git a/hmp.c b/hmp.c
+index cc088da..59e52b9 100644
+--- a/hmp.c
++++ b/hmp.c
+@@ -2212,7 +2212,7 @@ void hmp_nbd_server_start(Monitor *mon, const QDict *qdict)
+         }
+ 
+         qmp_nbd_server_add(info->value->device, false, NULL,
+-                           true, writable, &local_err);
++                           true, writable, false, NULL, &local_err);
+ 
+         if (local_err != NULL) {
+             qmp_nbd_server_stop(NULL);
+@@ -2233,7 +2233,8 @@ void hmp_nbd_server_add(Monitor *mon, const QDict *qdict)
+     bool writable = qdict_get_try_bool(qdict, "writable", false);
+     Error *local_err = NULL;
+ 
+-    qmp_nbd_server_add(device, !!name, name, true, writable, &local_err);
++    qmp_nbd_server_add(device, !!name, name, true, writable,
++                       false, NULL, &local_err);
+     hmp_handle_error(mon, &local_err);
+ }
+ 
+diff --git a/qapi/block.json b/qapi/block.json
+index ba85ceb..b04fcdc 100644
+--- a/qapi/block.json
++++ b/qapi/block.json
+@@ -313,6 +313,10 @@
+ #
+ # @writable: Whether clients should be able to write to the device via the
+ #     NBD connection (default false).
++
++# @bitmap: Also export the dirty bitmap reachable from @device, so the
++#          NBD client can use NBD_OPT_SET_META_CONTEXT with
++#          "qemu:dirty-bitmap:NAME" to inspect the bitmap. (since 4.0)
+ #
+ # Returns: error if the server is not running, or export with the same name
+ #          already exists.
+@@ -320,7 +324,8 @@
+ # Since: 1.3.0
+ ##
+ { 'command': 'nbd-server-add',
+-  'data': {'device': 'str', '*name': 'str', '*writable': 'bool'} }
++  'data': {'device': 'str', '*name': 'str', '*writable': 'bool',
++           '*bitmap': 'str' } }
+ 
+ ##
+ # @NbdServerRemoveMode:
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+index f200e31..0bcc98a 100755
+--- a/tests/qemu-iotests/223
++++ b/tests/qemu-iotests/223
+@@ -126,23 +126,20 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-start",
+   "arguments":{"addr":{"type":"unix",
+     "data":{"path":"'"$TEST_DIR/nbd"1'"}}}}' "error" # Attempt second server
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+-  "arguments":{"device":"n"}}' "return"
++  "arguments":{"device":"n", "bitmap":"b"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+   "arguments":{"device":"nosuch"}}' "error" # Attempt to export missing node
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+   "arguments":{"device":"n"}}' "error" # Attempt to export same name twice
+-_send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
+-  "arguments":{"name":"n", "bitmap":"b"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+-  "arguments":{"device":"n", "name":"n2"}}' "return"
+-_send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
+-  "arguments":{"name":"n2", "bitmap":"b2"}}' "error" # Enabled vs. read-only
+-_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
+-  "arguments":{"name":"n2"}}' "return"
++  "arguments":{"device":"n", "name":"n2",
++  "bitmap":"b2"}}' "error" # enabled vs. read-only
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
++  "arguments":{"device":"n", "name":"n2",
++  "bitmap":"b3"}}' "error" # Missing bitmap
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+-  "arguments":{"device":"n", "name":"n2", "writable":true}}' "return"
+-_send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
+-  "arguments":{"name":"n2", "bitmap":"b2"}}' "return"
++  "arguments":{"device":"n", "name":"n2", "writable":true,
++  "bitmap":"b2"}}' "return"
+ 
+ echo
+ echo "=== Contrast normal status to large granularity dirty-bitmap ==="
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+index 3028857..a0c2dec 100644
+--- a/tests/qemu-iotests/223.out
++++ b/tests/qemu-iotests/223.out
+@@ -33,11 +33,8 @@ wrote 2097152/2097152 bytes at offset 2097152
+ {"return": {}}
+ {"error": {"class": "GenericError", "desc": "Cannot find device=nosuch nor node_name=nosuch"}}
+ {"error": {"class": "GenericError", "desc": "NBD server already has export named 'n'"}}
+-{"return": {}}
+-{"return": {}}
+ {"error": {"class": "GenericError", "desc": "Enabled bitmap 'b2' incompatible with readonly export"}}
+-{"return": {}}
+-{"return": {}}
++{"error": {"class": "GenericError", "desc": "Bitmap 'b3' is not found"}}
+ {"return": {}}
+ 
+ === Contrast normal status to large granularity dirty-bitmap ===
+-- 
+1.8.3.1
+

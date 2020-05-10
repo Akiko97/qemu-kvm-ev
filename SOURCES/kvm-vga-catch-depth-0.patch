@@ -1,0 +1,82 @@
+From 18adbd3883efdd681ed30402c0127971bf058031 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Tue, 29 May 2018 10:57:04 +0200
+Subject: [PATCH 6/8] vga: catch depth 0
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20180529105704.21419-2-kraxel@redhat.com>
+Patchwork-id: 80500
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] vga: catch depth 0
+Bugzilla: 1575541
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+depth == 0 is used to indicate 256 color modes.  Our region calculation
+goes wrong in that case.  So detect that and just take the safe code
+path we already have for the wraparound case.
+
+While being at it also catch depth == 15 (where our region size
+calculation goes wrong too).  And make the comment more verbose,
+explaining what is going on here.
+
+Without this windows guest install might trigger an assert due to trying
+to check dirty bitmap outside the snapshot region.
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1575541
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: 20180514103117.21059-1-kraxel@redhat.com
+(cherry picked from commit a89fe6c329799e47aaa1663650f076b28808e186)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/display/vga.c | 23 ++++++++++++++++++-----
+ 1 file changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/hw/display/vga.c b/hw/display/vga.c
+index 7218133..a7794f6 100644
+--- a/hw/display/vga.c
++++ b/hw/display/vga.c
+@@ -1480,13 +1480,28 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
+ 
+     s->get_resolution(s, &width, &height);
+     disp_width = width;
++    depth = s->get_bpp(s);
+ 
+     region_start = (s->start_addr * 4);
+     region_end = region_start + (ram_addr_t)s->line_offset * height;
+-    region_end += width * s->get_bpp(s) / 8; /* scanline length */
++    region_end += width * depth / 8; /* scanline length */
+     region_end -= s->line_offset;
+-    if (region_end > s->vbe_size) {
+-        /* wraps around (can happen with cirrus vbe modes) */
++    if (region_end > s->vbe_size || depth == 0 || depth == 15) {
++        /*
++         * We land here on:
++         *  - wraps around (can happen with cirrus vbe modes)
++         *  - depth == 0 (256 color palette video mode)
++         *  - depth == 15
++         *
++         * Take the safe and slow route:
++         *   - create a dirty bitmap snapshot for all vga memory.
++         *   - force shadowing (so all vga memory access goes
++         *     through vga_read_*() helpers).
++         *
++         * Given this affects only vga features which are pretty much
++         * unused by modern guests there should be no performance
++         * impact.
++         */
+         region_start = 0;
+         region_end = s->vbe_size;
+         force_shadow = true;
+@@ -1520,8 +1535,6 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
+         }
+     }
+ 
+-    depth = s->get_bpp(s);
+-
+     /*
+      * Check whether we can share the surface with the backend
+      * or whether we need a shadow surface. We share native
+-- 
+1.8.3.1
+

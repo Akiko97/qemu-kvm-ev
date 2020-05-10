@@ -1,0 +1,113 @@
+From f9867a5df572d3b52fcd08b86878de9426354503 Mon Sep 17 00:00:00 2001
+From: Suraj Jitindar Singh <sursingh@redhat.com>
+Date: Thu, 21 Jun 2018 06:56:47 +0200
+Subject: [PATCH 52/54] target/ppc: Factor out the parsing in
+ kvmppc_get_cpu_characteristics()
+
+RH-Author: Suraj Jitindar Singh <sursingh@redhat.com>
+Message-id: <1529564209-30369-2-git-send-email-sursingh@redhat.com>
+Patchwork-id: 80927
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/3] target/ppc: Factor out the parsing in kvmppc_get_cpu_characteristics()
+Bugzilla: 1560847
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Suraj Jitindar Singh <sjitindarsingh@gmail.com>
+
+Factor out the parsing of struct kvm_ppc_cpu_char in
+kvmppc_get_cpu_characteristics() into a separate function for each cap
+for simplicity.
+
+Signed-off-by: Suraj Jitindar Singh <sjitindarsingh@gmail.com>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+(cherry picked from commit 8fea70440eb0d095442de7e80d586a285cf96be5)
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1560847
+
+Signed-off-by: Suraj Jitindar Singh <sursingh@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/ppc/kvm.c | 59 +++++++++++++++++++++++++++++++++++++-------------------
+ 1 file changed, 39 insertions(+), 20 deletions(-)
+
+diff --git a/target/ppc/kvm.c b/target/ppc/kvm.c
+index 79a436a..d787032 100644
+--- a/target/ppc/kvm.c
++++ b/target/ppc/kvm.c
+@@ -2461,6 +2461,41 @@ bool kvmppc_has_cap_mmu_hash_v3(void)
+     return cap_mmu_hash_v3;
+ }
+ 
++static int parse_cap_ppc_safe_cache(struct kvm_ppc_cpu_char c)
++{
++    if (~c.behaviour & c.behaviour_mask & H_CPU_BEHAV_L1D_FLUSH_PR) {
++        return 2;
++    } else if ((c.character & c.character_mask & H_CPU_CHAR_L1D_THREAD_PRIV) &&
++               (c.character & c.character_mask
++                & (H_CPU_CHAR_L1D_FLUSH_ORI30 | H_CPU_CHAR_L1D_FLUSH_TRIG2))) {
++        return 1;
++    }
++
++    return 0;
++}
++
++static int parse_cap_ppc_safe_bounds_check(struct kvm_ppc_cpu_char c)
++{
++    if (~c.behaviour & c.behaviour_mask & H_CPU_BEHAV_BNDS_CHK_SPEC_BAR) {
++        return 2;
++    } else if (c.character & c.character_mask & H_CPU_CHAR_SPEC_BAR_ORI31) {
++        return 1;
++    }
++
++    return 0;
++}
++
++static int parse_cap_ppc_safe_indirect_branch(struct kvm_ppc_cpu_char c)
++{
++    if (c.character & c.character_mask & H_CPU_CHAR_CACHE_COUNT_DIS) {
++        return  SPAPR_CAP_FIXED_CCD;
++    } else if (c.character & c.character_mask & H_CPU_CHAR_BCCTRL_SERIALISED) {
++        return SPAPR_CAP_FIXED_IBS;
++    }
++
++    return 0;
++}
++
+ static void kvmppc_get_cpu_characteristics(KVMState *s)
+ {
+     struct kvm_ppc_cpu_char c;
+@@ -2479,26 +2514,10 @@ static void kvmppc_get_cpu_characteristics(KVMState *s)
+     if (ret < 0) {
+         return;
+     }
+-    /* Parse and set cap_ppc_safe_cache */
+-    if (~c.behaviour & c.behaviour_mask & H_CPU_BEHAV_L1D_FLUSH_PR) {
+-        cap_ppc_safe_cache = 2;
+-    } else if ((c.character & c.character_mask & H_CPU_CHAR_L1D_THREAD_PRIV) &&
+-               (c.character & c.character_mask
+-                & (H_CPU_CHAR_L1D_FLUSH_ORI30 | H_CPU_CHAR_L1D_FLUSH_TRIG2))) {
+-        cap_ppc_safe_cache = 1;
+-    }
+-    /* Parse and set cap_ppc_safe_bounds_check */
+-    if (~c.behaviour & c.behaviour_mask & H_CPU_BEHAV_BNDS_CHK_SPEC_BAR) {
+-        cap_ppc_safe_bounds_check = 2;
+-    } else if (c.character & c.character_mask & H_CPU_CHAR_SPEC_BAR_ORI31) {
+-        cap_ppc_safe_bounds_check = 1;
+-    }
+-    /* Parse and set cap_ppc_safe_indirect_branch */
+-    if (c.character & c.character_mask & H_CPU_CHAR_CACHE_COUNT_DIS) {
+-        cap_ppc_safe_indirect_branch = SPAPR_CAP_FIXED_CCD;
+-    } else if (c.character & c.character_mask & H_CPU_CHAR_BCCTRL_SERIALISED) {
+-        cap_ppc_safe_indirect_branch = SPAPR_CAP_FIXED_IBS;
+-    }
++
++    cap_ppc_safe_cache = parse_cap_ppc_safe_cache(c);
++    cap_ppc_safe_bounds_check = parse_cap_ppc_safe_bounds_check(c);
++    cap_ppc_safe_indirect_branch = parse_cap_ppc_safe_indirect_branch(c);
+ }
+ 
+ int kvmppc_get_cap_safe_cache(void)
+-- 
+1.8.3.1
+

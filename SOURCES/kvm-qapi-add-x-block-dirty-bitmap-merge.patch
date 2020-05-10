@@ -1,0 +1,171 @@
+From 56f208617b142524b79ddd060db62c045561c418 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:40 +0200
+Subject: [PATCH 55/89] qapi: add x-block-dirty-bitmap-merge
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-5-jsnow@redhat.com>
+Patchwork-id: 81397
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 04/35] qapi: add x-block-dirty-bitmap-merge
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Message-id: 20180606182449.1607-5-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit b598e531f1123d2fb72615f1161c66093be751ea)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c         | 18 ++++++++++++++++++
+ blockdev.c                   | 30 ++++++++++++++++++++++++++++++
+ include/block/dirty-bitmap.h |  3 ++-
+ qapi/block-core.json         | 38 ++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 88 insertions(+), 1 deletion(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index 5623425..4159d39 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -757,3 +757,21 @@ int64_t bdrv_dirty_bitmap_next_zero(BdrvDirtyBitmap *bitmap, uint64_t offset)
+ {
+     return hbitmap_next_zero(bitmap->bitmap, offset);
+ }
++
++void bdrv_merge_dirty_bitmap(BdrvDirtyBitmap *dest, const BdrvDirtyBitmap *src,
++                             Error **errp)
++{
++    /* only bitmaps from one bds are supported */
++    assert(dest->mutex == src->mutex);
++
++    qemu_mutex_lock(dest->mutex);
++
++    assert(bdrv_dirty_bitmap_enabled(dest));
++    assert(!bdrv_dirty_bitmap_readonly(dest));
++
++    if (!hbitmap_merge(dest->bitmap, src->bitmap)) {
++        error_setg(errp, "Bitmaps are incompatible and can't be merged");
++    }
++
++    qemu_mutex_unlock(dest->mutex);
++}
+diff --git a/blockdev.c b/blockdev.c
+index a88d792..3728082 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3086,6 +3086,36 @@ void qmp_x_block_dirty_bitmap_disable(const char *node, const char *name,
+     bdrv_disable_dirty_bitmap(bitmap);
+ }
+ 
++void qmp_x_block_dirty_bitmap_merge(const char *node, const char *dst_name,
++                                    const char *src_name, Error **errp)
++{
++    BlockDriverState *bs;
++    BdrvDirtyBitmap *dst, *src;
++
++    dst = block_dirty_bitmap_lookup(node, dst_name, &bs, errp);
++    if (!dst) {
++        return;
++    }
++
++    if (bdrv_dirty_bitmap_frozen(dst)) {
++        error_setg(errp, "Bitmap '%s' is frozen and cannot be modified",
++                   dst_name);
++        return;
++    } else if (bdrv_dirty_bitmap_readonly(dst)) {
++        error_setg(errp, "Bitmap '%s' is readonly and cannot be modified",
++                   dst_name);
++        return;
++    }
++
++    src = bdrv_find_dirty_bitmap(bs, src_name);
++    if (!src) {
++        error_setg(errp, "Dirty bitmap '%s' not found", src_name);
++        return;
++    }
++
++    bdrv_merge_dirty_bitmap(dst, src, errp);
++}
++
+ BlockDirtyBitmapSha256 *qmp_x_debug_block_dirty_bitmap_sha256(const char *node,
+                                                               const char *name,
+                                                               Error **errp)
+diff --git a/include/block/dirty-bitmap.h b/include/block/dirty-bitmap.h
+index 1ff8949..1e14743 100644
+--- a/include/block/dirty-bitmap.h
++++ b/include/block/dirty-bitmap.h
+@@ -70,7 +70,8 @@ void bdrv_dirty_bitmap_set_readonly(BdrvDirtyBitmap *bitmap, bool value);
+ void bdrv_dirty_bitmap_set_persistance(BdrvDirtyBitmap *bitmap,
+                                        bool persistent);
+ void bdrv_dirty_bitmap_set_qmp_locked(BdrvDirtyBitmap *bitmap, bool qmp_locked);
+-
++void bdrv_merge_dirty_bitmap(BdrvDirtyBitmap *dest, const BdrvDirtyBitmap *src,
++                             Error **errp);
+ 
+ /* Functions that require manual locking.  */
+ void bdrv_dirty_bitmap_lock(BdrvDirtyBitmap *bitmap);
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 5c8cfa3..4e1fda3 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1741,6 +1741,20 @@
+             '*persistent': 'bool', '*autoload': 'bool' } }
+ 
+ ##
++# @BlockDirtyBitmapMerge:
++#
++# @node: name of device/node which the bitmap is tracking
++#
++# @dst_name: name of the destination dirty bitmap
++#
++# @src_name: name of the source dirty bitmap
++#
++# Since: 3.0
++##
++{ 'struct': 'BlockDirtyBitmapMerge',
++  'data': { 'node': 'str', 'dst_name': 'str', 'src_name': 'str' } }
++
++##
+ # @block-dirty-bitmap-add:
+ #
+ # Create a dirty bitmap with a name on the node, and start tracking the writes.
+@@ -1851,6 +1865,30 @@
+       'data': 'BlockDirtyBitmap' }
+ 
+ ##
++# @x-block-dirty-bitmap-merge:
++#
++# Merge @src_name dirty bitmap to @dst_name dirty bitmap. @src_name dirty
++# bitmap is unchanged. On error, @dst_name is unchanged.
++#
++# Returns: nothing on success
++#          If @node is not a valid block device, DeviceNotFound
++#          If @dst_name or @src_name is not found, GenericError
++#          If bitmaps has different sizes or granularities, GenericError
++#
++# Since: 3.0
++#
++# Example:
++#
++# -> { "execute": "x-block-dirty-bitmap-merge",
++#      "arguments": { "node": "drive0", "dst_name": "bitmap0",
++#                     "src_name": "bitmap1" } }
++# <- { "return": {} }
++#
++##
++      { 'command': 'x-block-dirty-bitmap-merge',
++        'data': 'BlockDirtyBitmapMerge' }
++
++##
+ # @BlockDirtyBitmapSha256:
+ #
+ # SHA256 hash of dirty bitmap data
+-- 
+1.8.3.1
+

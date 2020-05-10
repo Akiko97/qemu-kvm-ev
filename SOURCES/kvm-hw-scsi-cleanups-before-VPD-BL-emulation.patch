@@ -1,0 +1,597 @@
+From 3597e0269b24fe17de30e1554f33b1770852211b Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 7 Nov 2018 18:00:00 +0100
+Subject: [PATCH 26/34] hw/scsi: cleanups before VPD BL emulation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20181107180007.22954-3-pbonzini@redhat.com>
+Patchwork-id: 82948
+O-Subject: [RHEL7.6.z qemu-kvm-rhev PATCH 2/9] hw/scsi: cleanups before VPD BL emulation
+Bugzilla: 1566195
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+From: Daniel Henrique Barboza <danielhb413@gmail.com>
+
+To add support for the emulation of Block Limits VPD page
+for passthrough devices, a few adjustments in the current code
+base is required to avoid repetition and improve clarity.
+
+In scsi-generic.c, detach the Inquiry handling from
+scsi_read_complete and put it into a new function called
+scsi_handle_inquiry_reply. This change aims to avoid
+cluttering of scsi_read_complete when we more logic in the
+Inquiry response handling is added in the next patches,
+centralizing the changes in the new function.
+
+In scsi-disk.c, take the build of all emulated VPD pages
+from scsi_disk_emulate_inquiry and make it available to
+other files into a non-static function called
+scsi_disk_emulate_vpd_page. Making it public will allow
+the future VPD BL emulation code for passthrough devices
+to use it from scsi-generic.c, avoiding copy/pasting this
+code solely for that purpose. It also has the advantage of
+providing emulation of all VPD pages in case we need to
+emulate other pages in other scenarios. As a bonus,
+scsi_disk_emulate_inquiry got tidier.
+
+Signed-off-by: Daniel Henrique Barboza <danielhb413@gmail.com>
+Message-Id: <20180627172432.11120-2-danielhb413@gmail.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 0a96ca2437646bad197b0108c5f4a93e7ead05a9)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/scsi-disk.c    | 407 +++++++++++++++++++++++++------------------------
+ hw/scsi/scsi-generic.c |  71 +++++----
+ include/hw/scsi/scsi.h |   1 +
+ 3 files changed, 249 insertions(+), 230 deletions(-)
+
+diff --git a/hw/scsi/scsi-disk.c b/hw/scsi/scsi-disk.c
+index ded23d3..ae5b4c0 100644
+--- a/hw/scsi/scsi-disk.c
++++ b/hw/scsi/scsi-disk.c
+@@ -585,219 +585,228 @@ static uint8_t *scsi_get_buf(SCSIRequest *req)
+     return (uint8_t *)r->iov.iov_base;
+ }
+ 
+-static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
++int scsi_disk_emulate_vpd_page(SCSIRequest *req, uint8_t *outbuf)
+ {
+     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
+-    int buflen = 0;
+-    int start;
+-
+-    if (req->cmd.buf[1] & 0x1) {
+-        /* Vital product data */
+-        uint8_t page_code = req->cmd.buf[2];
+-
+-        outbuf[buflen++] = s->qdev.type & 0x1f;
+-        outbuf[buflen++] = page_code ; // this page
+-        outbuf[buflen++] = 0x00;
+-        outbuf[buflen++] = 0x00;
+-        start = buflen;
+-
+-        switch (page_code) {
+-        case 0x00: /* Supported page codes, mandatory */
+-        {
+-            DPRINTF("Inquiry EVPD[Supported pages] "
+-                    "buffer size %zd\n", req->cmd.xfer);
+-            outbuf[buflen++] = 0x00; // list of supported pages (this page)
+-            if (s->serial) {
+-                outbuf[buflen++] = 0x80; // unit serial number
+-            }
+-            outbuf[buflen++] = 0x83; // device identification
+-            if (s->qdev.type == TYPE_DISK) {
+-                outbuf[buflen++] = 0xb0; // block limits
+-                outbuf[buflen++] = 0xb1; /* block device characteristics */
+-                outbuf[buflen++] = 0xb2; // thin provisioning
+-            }
+-            break;
+-        }
+-        case 0x80: /* Device serial number, optional */
+-        {
+-            int l;
++    uint8_t page_code = req->cmd.buf[2];
++    int start, buflen = 0;
+ 
+-            if (!s->serial) {
+-                DPRINTF("Inquiry (EVPD[Serial number] not supported\n");
+-                return -1;
+-            }
++    outbuf[buflen++] = s->qdev.type & 0x1f;
++    outbuf[buflen++] = page_code;
++    outbuf[buflen++] = 0x00;
++    outbuf[buflen++] = 0x00;
++    start = buflen;
+ 
+-            l = strlen(s->serial);
+-            if (l > 36) {
+-                l = 36;
+-            }
++    switch (page_code) {
++    case 0x00: /* Supported page codes, mandatory */
++    {
++        DPRINTF("Inquiry EVPD[Supported pages] "
++                "buffer size %zd\n", req->cmd.xfer);
++        outbuf[buflen++] = 0x00; /* list of supported pages (this page) */
++        if (s->serial) {
++            outbuf[buflen++] = 0x80; /* unit serial number */
++        }
++        outbuf[buflen++] = 0x83; /* device identification */
++        if (s->qdev.type == TYPE_DISK) {
++            outbuf[buflen++] = 0xb0; /* block limits */
++            outbuf[buflen++] = 0xb1; /* block device characteristics */
++            outbuf[buflen++] = 0xb2; /* thin provisioning */
++        }
++        break;
++    }
++    case 0x80: /* Device serial number, optional */
++    {
++        int l;
+ 
+-            DPRINTF("Inquiry EVPD[Serial number] "
+-                    "buffer size %zd\n", req->cmd.xfer);
+-            memcpy(outbuf+buflen, s->serial, l);
+-            buflen += l;
+-            break;
++        if (!s->serial) {
++            DPRINTF("Inquiry (EVPD[Serial number] not supported\n");
++            return -1;
+         }
+ 
+-        case 0x83: /* Device identification page, mandatory */
+-        {
+-            const char *str = s->serial ?: blk_name(s->qdev.conf.blk);
+-            int max_len = s->serial ? 20 : 255 - 8;
+-            int id_len = strlen(str);
++        l = strlen(s->serial);
++        if (l > 36) {
++            l = 36;
++        }
+ 
+-            if (id_len > max_len) {
+-                id_len = max_len;
+-            }
+-            DPRINTF("Inquiry EVPD[Device identification] "
+-                    "buffer size %zd\n", req->cmd.xfer);
+-
+-            outbuf[buflen++] = 0x2; // ASCII
+-            outbuf[buflen++] = 0;   // not officially assigned
+-            outbuf[buflen++] = 0;   // reserved
+-            outbuf[buflen++] = id_len; // length of data following
+-            memcpy(outbuf+buflen, str, id_len);
+-            buflen += id_len;
+-
+-            if (s->qdev.wwn) {
+-                outbuf[buflen++] = 0x1; // Binary
+-                outbuf[buflen++] = 0x3; // NAA
+-                outbuf[buflen++] = 0;   // reserved
+-                outbuf[buflen++] = 8;
+-                stq_be_p(&outbuf[buflen], s->qdev.wwn);
+-                buflen += 8;
+-            }
++        DPRINTF("Inquiry EVPD[Serial number] "
++                "buffer size %zd\n", req->cmd.xfer);
++        memcpy(outbuf + buflen, s->serial, l);
++        buflen += l;
++        break;
++    }
+ 
+-            if (s->qdev.port_wwn) {
+-                outbuf[buflen++] = 0x61; // SAS / Binary
+-                outbuf[buflen++] = 0x93; // PIV / Target port / NAA
+-                outbuf[buflen++] = 0;    // reserved
+-                outbuf[buflen++] = 8;
+-                stq_be_p(&outbuf[buflen], s->qdev.port_wwn);
+-                buflen += 8;
+-            }
++    case 0x83: /* Device identification page, mandatory */
++    {
++        const char *str = s->serial ?: blk_name(s->qdev.conf.blk);
++        int max_len = s->serial ? 20 : 255 - 8;
++        int id_len = strlen(str);
+ 
+-            if (s->port_index) {
+-                outbuf[buflen++] = 0x61; // SAS / Binary
+-                outbuf[buflen++] = 0x94; // PIV / Target port / relative target port
+-                outbuf[buflen++] = 0;    // reserved
+-                outbuf[buflen++] = 4;
+-                stw_be_p(&outbuf[buflen + 2], s->port_index);
+-                buflen += 4;
+-            }
+-            break;
++        if (id_len > max_len) {
++            id_len = max_len;
+         }
+-        case 0xb0: /* block limits */
+-        {
+-            unsigned int unmap_sectors =
+-                    s->qdev.conf.discard_granularity / s->qdev.blocksize;
+-            unsigned int min_io_size =
+-                    s->qdev.conf.min_io_size / s->qdev.blocksize;
+-            unsigned int opt_io_size =
+-                    s->qdev.conf.opt_io_size / s->qdev.blocksize;
+-            unsigned int max_unmap_sectors =
+-                    s->max_unmap_size / s->qdev.blocksize;
+-            unsigned int max_io_sectors =
+-                    s->max_io_size / s->qdev.blocksize;
+-
+-            if (s->qdev.type == TYPE_ROM) {
+-                DPRINTF("Inquiry (EVPD[%02X] not supported for CDROM\n",
+-                        page_code);
+-                return -1;
+-            }
+-            if (s->qdev.type == TYPE_DISK) {
+-                int max_transfer_blk = blk_get_max_transfer(s->qdev.conf.blk);
+-                int max_io_sectors_blk =
+-                    max_transfer_blk / s->qdev.blocksize;
+-
+-                max_io_sectors =
+-                    MIN_NON_ZERO(max_io_sectors_blk, max_io_sectors);
+-
+-                /* min_io_size and opt_io_size can't be greater than
+-                 * max_io_sectors */
+-                if (min_io_size) {
+-                    min_io_size = MIN(min_io_size, max_io_sectors);
+-                }
+-                if (opt_io_size) {
+-                    opt_io_size = MIN(opt_io_size, max_io_sectors);
+-                }
+-            }
+-            /* required VPD size with unmap support */
+-            buflen = 0x40;
+-            memset(outbuf + 4, 0, buflen - 4);
+-
+-            outbuf[4] = 0x1; /* wsnz */
+-
+-            /* optimal transfer length granularity */
+-            outbuf[6] = (min_io_size >> 8) & 0xff;
+-            outbuf[7] = min_io_size & 0xff;
+-
+-            /* maximum transfer length */
+-            outbuf[8] = (max_io_sectors >> 24) & 0xff;
+-            outbuf[9] = (max_io_sectors >> 16) & 0xff;
+-            outbuf[10] = (max_io_sectors >> 8) & 0xff;
+-            outbuf[11] = max_io_sectors & 0xff;
+-
+-            /* optimal transfer length */
+-            outbuf[12] = (opt_io_size >> 24) & 0xff;
+-            outbuf[13] = (opt_io_size >> 16) & 0xff;
+-            outbuf[14] = (opt_io_size >> 8) & 0xff;
+-            outbuf[15] = opt_io_size & 0xff;
+-
+-            /* max unmap LBA count, default is 1GB */
+-            outbuf[20] = (max_unmap_sectors >> 24) & 0xff;
+-            outbuf[21] = (max_unmap_sectors >> 16) & 0xff;
+-            outbuf[22] = (max_unmap_sectors >> 8) & 0xff;
+-            outbuf[23] = max_unmap_sectors & 0xff;
+-
+-            /* max unmap descriptors, 255 fit in 4 kb with an 8-byte header.  */
+-            outbuf[24] = 0;
+-            outbuf[25] = 0;
+-            outbuf[26] = 0;
+-            outbuf[27] = 255;
+-
+-            /* optimal unmap granularity */
+-            outbuf[28] = (unmap_sectors >> 24) & 0xff;
+-            outbuf[29] = (unmap_sectors >> 16) & 0xff;
+-            outbuf[30] = (unmap_sectors >> 8) & 0xff;
+-            outbuf[31] = unmap_sectors & 0xff;
+-
+-            /* max write same size */
+-            outbuf[36] = 0;
+-            outbuf[37] = 0;
+-            outbuf[38] = 0;
+-            outbuf[39] = 0;
+-
+-            outbuf[40] = (max_io_sectors >> 24) & 0xff;
+-            outbuf[41] = (max_io_sectors >> 16) & 0xff;
+-            outbuf[42] = (max_io_sectors >> 8) & 0xff;
+-            outbuf[43] = max_io_sectors & 0xff;
+-            break;
++        DPRINTF("Inquiry EVPD[Device identification] "
++                "buffer size %zd\n", req->cmd.xfer);
++
++        outbuf[buflen++] = 0x2; /* ASCII */
++        outbuf[buflen++] = 0;   /* not officially assigned */
++        outbuf[buflen++] = 0;   /* reserved */
++        outbuf[buflen++] = id_len; /* length of data following */
++        memcpy(outbuf + buflen, str, id_len);
++        buflen += id_len;
++
++        if (s->qdev.wwn) {
++            outbuf[buflen++] = 0x1; /* Binary */
++            outbuf[buflen++] = 0x3; /* NAA */
++            outbuf[buflen++] = 0;   /* reserved */
++            outbuf[buflen++] = 8;
++            stq_be_p(&outbuf[buflen], s->qdev.wwn);
++            buflen += 8;
+         }
+-        case 0xb1: /* block device characteristics */
+-        {
+-            buflen = 8;
+-            outbuf[4] = (s->rotation_rate >> 8) & 0xff;
+-            outbuf[5] = s->rotation_rate & 0xff;
+-            outbuf[6] = 0;
+-            outbuf[7] = 0;
+-            break;
++
++        if (s->qdev.port_wwn) {
++            outbuf[buflen++] = 0x61; /* SAS / Binary */
++            outbuf[buflen++] = 0x93; /* PIV / Target port / NAA */
++            outbuf[buflen++] = 0;    /* reserved */
++            outbuf[buflen++] = 8;
++            stq_be_p(&outbuf[buflen], s->qdev.port_wwn);
++            buflen += 8;
+         }
+-        case 0xb2: /* thin provisioning */
+-        {
+-            buflen = 8;
+-            outbuf[4] = 0;
+-            outbuf[5] = 0xe0; /* unmap & write_same 10/16 all supported */
+-            outbuf[6] = s->qdev.conf.discard_granularity ? 2 : 1;
+-            outbuf[7] = 0;
+-            break;
++
++        if (s->port_index) {
++            outbuf[buflen++] = 0x61; /* SAS / Binary */
++
++            /* PIV/Target port/relative target port */
++            outbuf[buflen++] = 0x94;
++
++            outbuf[buflen++] = 0;    /* reserved */
++            outbuf[buflen++] = 4;
++            stw_be_p(&outbuf[buflen + 2], s->port_index);
++            buflen += 4;
+         }
+-        default:
++        break;
++    }
++    case 0xb0: /* block limits */
++    {
++        unsigned int unmap_sectors =
++            s->qdev.conf.discard_granularity / s->qdev.blocksize;
++        unsigned int min_io_size =
++            s->qdev.conf.min_io_size / s->qdev.blocksize;
++        unsigned int opt_io_size =
++            s->qdev.conf.opt_io_size / s->qdev.blocksize;
++        unsigned int max_unmap_sectors =
++            s->max_unmap_size / s->qdev.blocksize;
++        unsigned int max_io_sectors =
++            s->max_io_size / s->qdev.blocksize;
++
++        if (s->qdev.type == TYPE_ROM) {
++            DPRINTF("Inquiry (EVPD[%02X] not supported for CDROM\n",
++                    page_code);
+             return -1;
+         }
+-        /* done with EVPD */
+-        assert(buflen - start <= 255);
+-        outbuf[start - 1] = buflen - start;
+-        return buflen;
++        if (s->qdev.type == TYPE_DISK) {
++            int max_transfer_blk = blk_get_max_transfer(s->qdev.conf.blk);
++            int max_io_sectors_blk =
++                max_transfer_blk / s->qdev.blocksize;
++
++            max_io_sectors =
++                MIN_NON_ZERO(max_io_sectors_blk, max_io_sectors);
++
++            /* min_io_size and opt_io_size can't be greater than
++             * max_io_sectors */
++            if (min_io_size) {
++                min_io_size = MIN(min_io_size, max_io_sectors);
++            }
++            if (opt_io_size) {
++                opt_io_size = MIN(opt_io_size, max_io_sectors);
++            }
++        }
++        /* required VPD size with unmap support */
++        buflen = 0x40;
++        memset(outbuf + 4, 0, buflen - 4);
++
++        outbuf[4] = 0x1; /* wsnz */
++
++        /* optimal transfer length granularity */
++        outbuf[6] = (min_io_size >> 8) & 0xff;
++        outbuf[7] = min_io_size & 0xff;
++
++        /* maximum transfer length */
++        outbuf[8] = (max_io_sectors >> 24) & 0xff;
++        outbuf[9] = (max_io_sectors >> 16) & 0xff;
++        outbuf[10] = (max_io_sectors >> 8) & 0xff;
++        outbuf[11] = max_io_sectors & 0xff;
++
++        /* optimal transfer length */
++        outbuf[12] = (opt_io_size >> 24) & 0xff;
++        outbuf[13] = (opt_io_size >> 16) & 0xff;
++        outbuf[14] = (opt_io_size >> 8) & 0xff;
++        outbuf[15] = opt_io_size & 0xff;
++
++        /* max unmap LBA count, default is 1GB */
++        outbuf[20] = (max_unmap_sectors >> 24) & 0xff;
++        outbuf[21] = (max_unmap_sectors >> 16) & 0xff;
++        outbuf[22] = (max_unmap_sectors >> 8) & 0xff;
++        outbuf[23] = max_unmap_sectors & 0xff;
++
++        /* max unmap descriptors, 255 fit in 4 kb with an 8-byte header */
++        outbuf[24] = 0;
++        outbuf[25] = 0;
++        outbuf[26] = 0;
++        outbuf[27] = 255;
++
++        /* optimal unmap granularity */
++        outbuf[28] = (unmap_sectors >> 24) & 0xff;
++        outbuf[29] = (unmap_sectors >> 16) & 0xff;
++        outbuf[30] = (unmap_sectors >> 8) & 0xff;
++        outbuf[31] = unmap_sectors & 0xff;
++
++        /* max write same size */
++        outbuf[36] = 0;
++        outbuf[37] = 0;
++        outbuf[38] = 0;
++        outbuf[39] = 0;
++
++        outbuf[40] = (max_io_sectors >> 24) & 0xff;
++        outbuf[41] = (max_io_sectors >> 16) & 0xff;
++        outbuf[42] = (max_io_sectors >> 8) & 0xff;
++        outbuf[43] = max_io_sectors & 0xff;
++        break;
++    }
++    case 0xb1: /* block device characteristics */
++    {
++        buflen = 8;
++        outbuf[4] = (s->rotation_rate >> 8) & 0xff;
++        outbuf[5] = s->rotation_rate & 0xff;
++        outbuf[6] = 0;
++        outbuf[7] = 0;
++        break;
++    }
++    case 0xb2: /* thin provisioning */
++    {
++        buflen = 8;
++        outbuf[4] = 0;
++        outbuf[5] = 0xe0; /* unmap & write_same 10/16 all supported */
++        outbuf[6] = s->qdev.conf.discard_granularity ? 2 : 1;
++        outbuf[7] = 0;
++        break;
++    }
++    default:
++        return -1;
++    }
++    /* done with EVPD */
++    assert(buflen - start <= 255);
++    outbuf[start - 1] = buflen - start;
++    return buflen;
++}
++
++static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
++{
++    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
++    int buflen = 0;
++
++    if (req->cmd.buf[1] & 0x1) {
++        /* Vital product data */
++        return scsi_disk_emulate_vpd_page(req, outbuf);
+     }
+ 
+     /* Standard INQUIRY data */
+@@ -3040,6 +3049,10 @@ static Property scsi_block_properties[] = {
+     DEFINE_PROP_DRIVE("drive", SCSIDiskState, qdev.conf.blk),
+     DEFINE_PROP_BOOL("share-rw", SCSIDiskState, qdev.conf.share_rw, false),
+     DEFINE_PROP_UINT16("rotation_rate", SCSIDiskState, rotation_rate, 0),
++    DEFINE_PROP_UINT64("max_unmap_size", SCSIDiskState, max_unmap_size,
++                       DEFAULT_MAX_UNMAP_SIZE),
++    DEFINE_PROP_UINT64("max_io_size", SCSIDiskState, max_io_size,
++                       DEFAULT_MAX_IO_SIZE),
+     DEFINE_PROP_INT32("scsi_version", SCSIDiskState, qdev.default_scsi_version,
+                       -1),
+     DEFINE_PROP_END_OF_LIST(),
+diff --git a/hw/scsi/scsi-generic.c b/hw/scsi/scsi-generic.c
+index 381f04e..796162c 100644
+--- a/hw/scsi/scsi-generic.c
++++ b/hw/scsi/scsi-generic.c
+@@ -143,6 +143,43 @@ static int execute_command(BlockBackend *blk,
+     return 0;
+ }
+ 
++static void scsi_handle_inquiry_reply(SCSIGenericReq *r, SCSIDevice *s)
++{
++    /*
++     *  EVPD set to zero returns the standard INQUIRY data.
++     *
++     *  Check if scsi_version is unset (-1) to avoid re-defining it
++     *  each time an INQUIRY with standard data is received.
++     *  scsi_version is initialized with -1 in scsi_generic_reset
++     *  and scsi_disk_reset, making sure that we'll set the
++     *  scsi_version after a reset. If the version field of the
++     *  INQUIRY response somehow changes after a guest reboot,
++     *  we'll be able to keep track of it.
++     *
++     *  On SCSI-2 and older, first 3 bits of byte 2 is the
++     *  ANSI-approved version, while on later versions the
++     *  whole byte 2 contains the version. Check if we're dealing
++     *  with a newer version and, in that case, assign the
++     *  whole byte.
++     */
++    if (s->scsi_version == -1 && !(r->req.cmd.buf[1] & 0x01)) {
++        s->scsi_version = r->buf[2] & 0x07;
++        if (s->scsi_version > 2) {
++            s->scsi_version = r->buf[2];
++        }
++    }
++    if (s->type == TYPE_DISK && r->req.cmd.buf[2] == 0xb0) {
++        uint32_t max_transfer =
++            blk_get_max_transfer(s->conf.blk) / s->blocksize;
++
++        assert(max_transfer);
++        stl_be_p(&r->buf[8], max_transfer);
++        /* Also take care of the opt xfer len. */
++        stl_be_p(&r->buf[12],
++                 MIN_NON_ZERO(max_transfer, ldl_be_p(&r->buf[12])));
++    }
++}
++
+ static void scsi_read_complete(void * opaque, int ret)
+ {
+     SCSIGenericReq *r = (SCSIGenericReq *)opaque;
+@@ -195,39 +232,7 @@ static void scsi_read_complete(void * opaque, int ret)
+         }
+     }
+     if (r->req.cmd.buf[0] == INQUIRY) {
+-        /*
+-         *  EVPD set to zero returns the standard INQUIRY data.
+-         *
+-         *  Check if scsi_version is unset (-1) to avoid re-defining it
+-         *  each time an INQUIRY with standard data is received.
+-         *  scsi_version is initialized with -1 in scsi_generic_reset
+-         *  and scsi_disk_reset, making sure that we'll set the
+-         *  scsi_version after a reset. If the version field of the
+-         *  INQUIRY response somehow changes after a guest reboot,
+-         *  we'll be able to keep track of it.
+-         *
+-         *  On SCSI-2 and older, first 3 bits of byte 2 is the
+-         *  ANSI-approved version, while on later versions the
+-         *  whole byte 2 contains the version. Check if we're dealing
+-         *  with a newer version and, in that case, assign the
+-         *  whole byte.
+-         */
+-        if (s->scsi_version == -1 && !(r->req.cmd.buf[1] & 0x01)) {
+-            s->scsi_version = r->buf[2] & 0x07;
+-            if (s->scsi_version > 2) {
+-                s->scsi_version = r->buf[2];
+-            }
+-        }
+-        if (s->type == TYPE_DISK && r->req.cmd.buf[2] == 0xb0) {
+-            uint32_t max_transfer =
+-                blk_get_max_transfer(s->conf.blk) / s->blocksize;
+-
+-            assert(max_transfer);
+-            stl_be_p(&r->buf[8], max_transfer);
+-            /* Also take care of the opt xfer len. */
+-            stl_be_p(&r->buf[12],
+-                     MIN_NON_ZERO(max_transfer, ldl_be_p(&r->buf[12])));
+-        }
++        scsi_handle_inquiry_reply(r, s);
+     }
+     scsi_req_data(&r->req, len);
+     scsi_req_unref(&r->req);
+diff --git a/include/hw/scsi/scsi.h b/include/hw/scsi/scsi.h
+index 1a7290d..5930a43 100644
+--- a/include/hw/scsi/scsi.h
++++ b/include/hw/scsi/scsi.h
+@@ -188,6 +188,7 @@ void scsi_device_report_change(SCSIDevice *dev, SCSISense sense);
+ void scsi_device_unit_attention_reported(SCSIDevice *dev);
+ void scsi_generic_read_device_identification(SCSIDevice *dev);
+ int scsi_device_get_sense(SCSIDevice *dev, uint8_t *buf, int len, bool fixed);
++int scsi_disk_emulate_vpd_page(SCSIRequest *req, uint8_t *outbuf);
+ SCSIDevice *scsi_device_find(SCSIBus *bus, int channel, int target, int lun);
+ 
+ /* scsi-generic.c. */
+-- 
+1.8.3.1
+

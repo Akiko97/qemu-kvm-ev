@@ -1,0 +1,156 @@
+From cffbabd734488678614832ff26222aaa10920472 Mon Sep 17 00:00:00 2001
+From: Igor Mammedov <imammedo@redhat.com>
+Date: Wed, 12 Sep 2018 15:21:41 +0200
+Subject: [PATCH 06/49] pc: acpi: revert back to 1 SRAT entry for hotpluggable
+ area
+
+RH-Author: Igor Mammedov <imammedo@redhat.com>
+Message-id: <1536765701-266415-1-git-send-email-imammedo@redhat.com>
+Patchwork-id: 82145
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] pc: acpi: revert back to 1 SRAT entry for hotpluggable area
+Bugzilla: 1626059
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+
+Commit
+  10efd7e108 "pc: acpi: fix memory hotplug regression by reducing stub SRAT entry size"
+attemped to fix hotplug regression introduced by
+  848a1cc1e "hw/acpi-build: build SRAT memory affinity structures for DIMM devices"
+
+fixed issue for Windows/3.0+ linux kernels, however it regressed 2.6 based
+kernels (RHEL6) to the point where guest might crash at boot.
+Reason is that 2.6 kernel discards SRAT table due too small last entry
+which down the road leads to crashes. Hack I've tried in 10efd7e108 is also
+not ACPI spec compliant according to which whole possible RAM should be
+described in SRAT. Revert 10efd7e108 to fix regression for 2.6 based kernels.
+
+With 10efd7e108 reverted, I've also tried splitting SRAT table statically
+in different ways %/node and %/slot but Windows still fails to online
+2nd pc-dimm hot-plugged into node 0 (as described in 10efd7e108) and
+sometimes even coldplugged pc-dimms where affected with static SRAT
+partitioning.
+The only known so far way where Windows stays happy is when we have 1
+SRAT entry in the last node covering all hotplug area.
+
+Revert 848a1cc1e until we come up with a way to avoid regression
+on Windows with hotplug area split in several entries.
+Tested this with 2.6/3.0 based kernels (RHEL6/7) and WS20[08/12/12R2/16]).
+
+Signed-off-by: Igor Mammedov <imammedo@redhat.com>
+Acked-by: Laszlo Ersek <lersek@redhat.com>
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(pull request  https://www.mail-archive.com/qemu-devel@nongnu.org/msg560638.html)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Conflicts:
+  hw/i386/acpi-build.c
+    - contextual conflict since we do not have
+         (d471bf3e hw/i386: Use the IEC binary prefix definitions)
+         (b0c14ec4 machine: make MemoryHotplugState accessible via the machine)
+
+Since it's blocker and urgent, sending patch without waiting for upstream
+commit id (pull req is out there but it looks like Peter is absent to merge it)
+---
+ hw/i386/acpi-build.c | 74 +++++++++-------------------------------------------
+ 1 file changed, 13 insertions(+), 61 deletions(-)
+
+diff --git a/hw/i386/acpi-build.c b/hw/i386/acpi-build.c
+index 683e5f4..2bc8117 100644
+--- a/hw/i386/acpi-build.c
++++ b/hw/i386/acpi-build.c
+@@ -2253,64 +2253,6 @@ build_tpm2(GArray *table_data, BIOSLinker *linker, GArray *tcpalog)
+ #define HOLE_640K_START  (640 * 1024)
+ #define HOLE_640K_END   (1024 * 1024)
+ 
+-static void build_srat_hotpluggable_memory(GArray *table_data, uint64_t base,
+-                                           uint64_t len, int default_node)
+-{
+-    MemoryDeviceInfoList *info_list = qmp_pc_dimm_device_list();
+-    MemoryDeviceInfoList *info;
+-    MemoryDeviceInfo *mi;
+-    PCDIMMDeviceInfo *di;
+-    uint64_t end = base + len, cur, size;
+-    bool is_nvdimm;
+-    AcpiSratMemoryAffinity *numamem;
+-    MemoryAffinityFlags flags;
+-
+-    for (cur = base, info = info_list;
+-         cur < end;
+-         cur += size, info = info->next) {
+-        numamem = acpi_data_push(table_data, sizeof *numamem);
+-
+-        if (!info) {
+-            /*
+-             * Entry is required for Windows to enable memory hotplug in OS
+-             * and for Linux to enable SWIOTLB when booted with less than
+-             * 4G of RAM. Windows works better if the entry sets proximity
+-             * to the highest NUMA node in the machine at the end of the
+-             * reserved space.
+-             * Memory devices may override proximity set by this entry,
+-             * providing _PXM method if necessary.
+-             */
+-            build_srat_memory(numamem, end - 1, 1, default_node,
+-                              MEM_AFFINITY_HOTPLUGGABLE | MEM_AFFINITY_ENABLED);
+-            break;
+-        }
+-
+-        mi = info->value;
+-        is_nvdimm = (mi->type == MEMORY_DEVICE_INFO_KIND_NVDIMM);
+-        di = !is_nvdimm ? mi->u.dimm.data : mi->u.nvdimm.data;
+-
+-        if (cur < di->addr) {
+-            build_srat_memory(numamem, cur, di->addr - cur, default_node,
+-                              MEM_AFFINITY_HOTPLUGGABLE | MEM_AFFINITY_ENABLED);
+-            numamem = acpi_data_push(table_data, sizeof *numamem);
+-        }
+-
+-        size = di->size;
+-
+-        flags = MEM_AFFINITY_ENABLED;
+-        if (di->hotpluggable) {
+-            flags |= MEM_AFFINITY_HOTPLUGGABLE;
+-        }
+-        if (is_nvdimm) {
+-            flags |= MEM_AFFINITY_NON_VOLATILE;
+-        }
+-
+-        build_srat_memory(numamem, di->addr, size, di->node, flags);
+-    }
+-
+-    qapi_free_MemoryDeviceInfoList(info_list);
+-}
+-
+ static void
+ build_srat(GArray *table_data, BIOSLinker *linker, MachineState *machine)
+ {
+@@ -2413,10 +2355,20 @@ build_srat(GArray *table_data, BIOSLinker *linker, MachineState *machine)
+         build_srat_memory(numamem, 0, 0, 0, MEM_AFFINITY_NOFLAGS);
+     }
+ 
++    /*
++     * Entry is required for Windows to enable memory hotplug in OS
++     * and for Linux to enable SWIOTLB when booted with less than
++     * 4G of RAM. Windows works better if the entry sets proximity
++     * to the highest NUMA node in the machine at the end of the
++     * reserved space.
++     * Memory devices may override proximity set by this entry,
++     * providing _PXM method if necessary.
++     */
+     if (hotplugabble_address_space_size) {
+-        build_srat_hotpluggable_memory(table_data, pcms->hotplug_memory.base,
+-                                       hotplugabble_address_space_size,
+-                                       pcms->numa_nodes - 1);
++        numamem = acpi_data_push(table_data, sizeof *numamem);
++        build_srat_memory(numamem, pcms->hotplug_memory.base,
++                          hotplugabble_address_space_size, pcms->numa_nodes - 1,
++                          MEM_AFFINITY_HOTPLUGGABLE | MEM_AFFINITY_ENABLED);
+     }
+ 
+     build_header(linker, table_data,
+-- 
+1.8.3.1
+

@@ -1,0 +1,60 @@
+From 003ad494e12c03291a61039302eb766372929130 Mon Sep 17 00:00:00 2001
+From: Suraj Jitindar Singh <sursingh@redhat.com>
+Date: Thu, 21 Jun 2018 06:56:49 +0200
+Subject: [PATCH 54/54] ppc/spapr_caps: Don't disable cap_cfpc on POWER8 by
+ default
+
+RH-Author: Suraj Jitindar Singh <sursingh@redhat.com>
+Message-id: <1529564209-30369-4-git-send-email-sursingh@redhat.com>
+Patchwork-id: 80929
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 3/3] ppc/spapr_caps: Don't disable cap_cfpc on POWER8 by default
+Bugzilla: 1560847
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Suraj Jitindar Singh <sjitindarsingh@gmail.com>
+
+In default_caps_with_cpu() we set spapr_cap_cfpc to broken for POWER8
+processors and before.
+
+Since we no longer require private l1d cache on POWER8 for this cap to
+be set to workaround change this to default to broken for POWER7
+processors and before.
+
+Signed-off-by: Suraj Jitindar Singh <sjitindarsingh@gmail.com>
+Reviewed-by: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+(cherry picked from commit b2540203bdf4a390c3489146eae82ce237303653)
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1560847
+
+Signed-off-by: Suraj Jitindar Singh <sursingh@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/spapr_caps.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/hw/ppc/spapr_caps.c b/hw/ppc/spapr_caps.c
+index 531e145..00e43a9 100644
+--- a/hw/ppc/spapr_caps.c
++++ b/hw/ppc/spapr_caps.c
+@@ -335,14 +335,10 @@ static sPAPRCapabilities default_caps_with_cpu(sPAPRMachineState *spapr,
+ 
+     caps = smc->default_caps;
+ 
+-    if (!ppc_check_compat(cpu, CPU_POWERPC_LOGICAL_3_00,
+-                          0, spapr->max_compat_pvr)) {
+-        caps.caps[SPAPR_CAP_CFPC] = SPAPR_CAP_BROKEN;
+-    }
+-
+     if (!ppc_check_compat(cpu, CPU_POWERPC_LOGICAL_2_07,
+                           0, spapr->max_compat_pvr)) {
+         caps.caps[SPAPR_CAP_HTM] = SPAPR_CAP_OFF;
++        caps.caps[SPAPR_CAP_CFPC] = SPAPR_CAP_BROKEN;
+     }
+ 
+     if (!ppc_check_compat(cpu, CPU_POWERPC_LOGICAL_2_06_PLUS,
+-- 
+1.8.3.1
+

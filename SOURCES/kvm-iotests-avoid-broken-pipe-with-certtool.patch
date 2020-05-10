@@ -1,0 +1,126 @@
+From f4ab0fe995c89692656af2c792a66892fcfbb862 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:23:06 +0100
+Subject: [PATCH 128/163] iotests: avoid broken pipe with certtool
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-54-jsnow@redhat.com>
+Patchwork-id: 85220
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 53/55] iotests: avoid broken pipe with certtool
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Daniel P. Berrangé <berrange@redhat.com>
+
+When we run "certtool 2>&1 | head -1" the latter command is likely to
+complete and exit before certtool has written everything it wants to
+stderr. In at least the RHEL-7 gnutls 3.3.29 this causes certtool to
+quit with broken pipe before it has finished writing the desired
+output file to disk. This causes non-deterministic failures of the
+iotest 233 because the certs are sometimes zero length files.
+If certtool fails the "head -1" means we also lose any useful error
+message it would have printed.
+
+Thus this patch gets rid of the pipe and post-processes the output in a
+more flexible & reliable manner.
+
+Reported-by: Thomas Huth <thuth@redhat.com>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <20190220145819.30969-3-berrange@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 3e6f45446b11ccc20b4b751f70331f03d70369b8)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/common.tls | 48 ++++++++++++++++++++++++++++---------------
+ 1 file changed, 32 insertions(+), 16 deletions(-)
+
+diff --git a/tests/qemu-iotests/common.tls b/tests/qemu-iotests/common.tls
+index eae8178..3caf989 100644
+--- a/tests/qemu-iotests/common.tls
++++ b/tests/qemu-iotests/common.tls
+@@ -29,6 +29,17 @@ tls_x509_cleanup()
+ }
+ 
+ 
++tls_certtool()
++{
++    certtool "$@" 1>"${tls_dir}"/certtool.log 2>&1
++    if test "$?" = 0; then
++      head -1 "${tls_dir}"/certtool.log
++    else
++      cat "${tls_dir}"/certtool.log
++    fi
++    rm -f "${tls_dir}"/certtool.log
++}
++
+ tls_x509_init()
+ {
+     (certtool --help) >/dev/null 2>&1 || \
+@@ -71,10 +82,11 @@ ca
+ cert_signing_key
+ EOF
+ 
+-    certtool --generate-self-signed \
+-             --load-privkey "${tls_dir}/key.pem" \
+-             --template "${tls_dir}/ca.info" \
+-             --outfile "${tls_dir}/$name-cert.pem" 2>&1 | head -1
++    tls_certtool \
++        --generate-self-signed \
++        --load-privkey "${tls_dir}/key.pem" \
++        --template "${tls_dir}/ca.info" \
++        --outfile "${tls_dir}/$name-cert.pem"
+ 
+     rm -f "${tls_dir}/ca.info"
+ }
+@@ -98,12 +110,14 @@ encryption_key
+ signing_key
+ EOF
+ 
+-    certtool --generate-certificate \
+-             --load-ca-privkey "${tls_dir}/key.pem" \
+-             --load-ca-certificate "${tls_dir}/$caname-cert.pem" \
+-             --load-privkey "${tls_dir}/key.pem" \
+-             --template "${tls_dir}/cert.info" \
+-             --outfile "${tls_dir}/$name/server-cert.pem" 2>&1 | head -1
++    tls_certtool \
++        --generate-certificate \
++        --load-ca-privkey "${tls_dir}/key.pem" \
++        --load-ca-certificate "${tls_dir}/$caname-cert.pem" \
++        --load-privkey "${tls_dir}/key.pem" \
++        --template "${tls_dir}/cert.info" \
++        --outfile "${tls_dir}/$name/server-cert.pem"
++
+     ln -s "${tls_dir}/$caname-cert.pem" "${tls_dir}/$name/ca-cert.pem"
+     ln -s "${tls_dir}/key.pem" "${tls_dir}/$name/server-key.pem"
+ 
+@@ -127,12 +141,14 @@ encryption_key
+ signing_key
+ EOF
+ 
+-    certtool --generate-certificate \
+-             --load-ca-privkey "${tls_dir}/key.pem" \
+-             --load-ca-certificate "${tls_dir}/$caname-cert.pem" \
+-             --load-privkey "${tls_dir}/key.pem" \
+-             --template "${tls_dir}/cert.info" \
+-             --outfile "${tls_dir}/$name/client-cert.pem" 2>&1 | head -1
++    tls_certtool \
++        --generate-certificate \
++        --load-ca-privkey "${tls_dir}/key.pem" \
++        --load-ca-certificate "${tls_dir}/$caname-cert.pem" \
++        --load-privkey "${tls_dir}/key.pem" \
++        --template "${tls_dir}/cert.info" \
++        --outfile "${tls_dir}/$name/client-cert.pem"
++
+     ln -s "${tls_dir}/$caname-cert.pem" "${tls_dir}/$name/ca-cert.pem"
+     ln -s "${tls_dir}/key.pem" "${tls_dir}/$name/client-key.pem"
+ 
+-- 
+1.8.3.1
+

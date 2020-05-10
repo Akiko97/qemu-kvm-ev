@@ -1,0 +1,81 @@
+From 7d01c30800f4009d770cb44e377886a7a47f3e47 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:20 +0200
+Subject: [PATCH 53/53] migration: Support adding migration blockers earlier
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-32-armbru@redhat.com>
+Patchwork-id: 88011
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 31/31] migration: Support adding migration blockers earlier
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+migrate_add_blocker() asserts we have a current_migration object, in
+migrate_get_current().  We do only after migration_object_init().
+
+This contributes to the following dependency cycle:
+
+* configure_blockdev() must run before machine_set_property()
+  so machine properties can refer to block backends
+
+* machine_set_property() before configure_accelerator()
+  so machine properties like kvm-irqchip get applied
+
+* configure_accelerator() before migration_object_init()
+  so that Xen's accelerator compat properties get applied.
+
+* migration_object_init() before configure_blockdev()
+  so configure_blockdev() can add migration blockers
+
+The cycle was closed when recent commit cda4aa9a5a0 "Create block
+backends before setting machine properties" added the first
+dependency, and satisfied it by violating the last one.  Broke block
+backends that add migration blockers, as demonstrated by qemu-iotests
+055.
+
+To fix it, break the last dependency: make migrate_add_blocker()
+usable before migration_object_init().
+
+The previous commit already removed the use of migrate_get_current()
+from migrate_add_blocker() itself.  Didn't quite do the trick, as
+there's another one hiding in migration_is_idle().
+
+The use there isn't actually necessary: when no migration object has
+been created yet, migration is surely idle.  Make migration_is_idle()
+return true then.
+
+Fixes: cda4aa9a5a08777cf13e164c0543bd4888b8adce
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20190401090827.20793-4-armbru@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+(cherry picked from commit daff7f0bbe9950d045bb5b74f202295f70ab3aaa)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/migration.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index 83b8d6a..69011d1 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -1270,7 +1270,11 @@ bool migration_in_postcopy_after_devices(MigrationState *s)
+ 
+ bool migration_is_idle(void)
+ {
+-    MigrationState *s = migrate_get_current();
++    MigrationState *s = current_migration;
++
++    if (!s) {
++        return true;
++    }
+ 
+     switch (s->state) {
+     case MIGRATION_STATUS_NONE:
+-- 
+1.8.3.1
+

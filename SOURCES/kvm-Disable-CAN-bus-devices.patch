@@ -1,0 +1,40 @@
+From 354b15f627251bf85363350a529cface7eef208d Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 7 Jun 2018 07:43:12 +0200
+Subject: [PATCH 04/15] Disable CAN bus devices
+
+RH-Author: Miroslav Rezanina <mrezanin@redhat.com>
+Message-id: <706a21b4d25946165513ff99619c0fed0852dc50.1528355911.git.mrezanin@redhat.com>
+Patchwork-id: 80593
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 4/7] Disable CAN bus devices
+Bugzilla: 1586357
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+From: Miroslav Rezanina <mrezanin@redhat.com>
+
+We do not want to support new CAN devices (kvaser_pci, mioe3680_pci
+and pcm3680_pci).
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ default-configs/pci.mak | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/default-configs/pci.mak b/default-configs/pci.mak
+index 4c8c296..25fc382 100644
+--- a/default-configs/pci.mak
++++ b/default-configs/pci.mak
+@@ -33,7 +33,7 @@ CONFIG_SERIAL_ISA=y
+ CONFIG_SERIAL_PCI=y
+ CONFIG_CAN_BUS=y
+ CONFIG_CAN_SJA1000=y
+-CONFIG_CAN_PCI=y
++#CONFIG_CAN_PCI=y
+ #CONFIG_IPACK=y
+ CONFIG_WDT_IB6300ESB=y
+ CONFIG_PCI_TESTDEV=y
+-- 
+1.8.3.1
+

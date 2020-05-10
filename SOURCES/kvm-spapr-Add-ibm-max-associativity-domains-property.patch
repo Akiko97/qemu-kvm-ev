@@ -1,0 +1,63 @@
+From 5a7d9ce549b777d52cd680327e4dc17921ab882c Mon Sep 17 00:00:00 2001
+From: Serhii Popovych <spopovyc@redhat.com>
+Date: Wed, 2 May 2018 18:52:27 +0200
+Subject: [PATCH 04/13] spapr: Add ibm, max-associativity-domains property
+
+RH-Author: Serhii Popovych <spopovyc@redhat.com>
+Message-id: <1525287148-92715-2-git-send-email-spopovyc@redhat.com>
+Patchwork-id: 80013
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] spapr: Add ibm, max-associativity-domains property
+Bugzilla: 1570525
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+Now recent kernels (i.e. since linux-stable commit a346137e9142
+("powerpc/numa: Use ibm,max-associativity-domains to discover possible nodes")
+support this property to mark initially memory-less NUMA nodes as "possible"
+to allow further memory hot-add to them.
+
+Advertise this property for pSeries machines to let guest kernels detect
+maximum supported node configuration and benefit from kernel side change
+when hot-add memory to specific, possibly empty before, NUMA node.
+
+Signed-off-by: Serhii Popovych <spopovyc@redhat.com>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+(cherry picked from commit da9f80fbad21319194e73355dea8a1cff6a574e4)
+Signed-off-by: Serhii Popovych <spopovyc@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/spapr.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index 360a258..c9561e1 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -910,6 +910,13 @@ static void spapr_dt_rtas(sPAPRMachineState *spapr, void *fdt)
+         0, cpu_to_be32(SPAPR_MEMORY_BLOCK_SIZE),
+         cpu_to_be32(max_cpus / smp_threads),
+     };
++    uint32_t maxdomains[] = {
++        cpu_to_be32(4),
++        cpu_to_be32(0),
++        cpu_to_be32(0),
++        cpu_to_be32(0),
++        cpu_to_be32(nb_numa_nodes ? nb_numa_nodes - 1 : 0),
++    };
+ 
+     _FDT(rtas = fdt_add_subnode(fdt, 0, "rtas"));
+ 
+@@ -946,6 +953,9 @@ static void spapr_dt_rtas(sPAPRMachineState *spapr, void *fdt)
+     _FDT(fdt_setprop(fdt, rtas, "ibm,associativity-reference-points",
+                      refpoints, sizeof(refpoints)));
+ 
++    _FDT(fdt_setprop(fdt, rtas, "ibm,max-associativity-domains",
++                     maxdomains, sizeof(maxdomains)));
++
+     _FDT(fdt_setprop_cell(fdt, rtas, "rtas-error-log-max",
+                           RTAS_ERROR_LOG_MAX));
+     _FDT(fdt_setprop_cell(fdt, rtas, "rtas-event-scan-rate",
+-- 
+1.8.3.1
+

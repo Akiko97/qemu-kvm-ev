@@ -1,0 +1,104 @@
+From 6d28e6c096b3015387788dc1f140df0be3c28a6f Mon Sep 17 00:00:00 2001
+From: Yash Mankad <ymankad@redhat.com>
+Date: Tue, 17 Jul 2018 23:38:06 +0200
+Subject: [PATCH 49/89] Acceptance tests: add quick VNC tests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Yash Mankad <ymankad@redhat.com>
+Message-id: <51cad6473c9d59a780befb5d96c8534affd938cf.1531870629.git.ymankad@redhat.com>
+Patchwork-id: 81383
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 3/5] Acceptance tests: add quick VNC tests
+Bugzilla:
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+
+From: Cleber Rosa <crosa@redhat.com>
+
+This patch adds a few simple behavior tests for VNC.
+
+Signed-off-by: Cleber Rosa <crosa@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-Id: <20180530184156.15634-4-crosa@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Tested-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 7b1bd11cff0915a1266c34bdfb66d70f6372340d)
+Signed-off-by: Yash Mankad <ymankad@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/acceptance/vnc.py | 60 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 60 insertions(+)
+ create mode 100644 tests/acceptance/vnc.py
+
+diff --git a/tests/acceptance/vnc.py b/tests/acceptance/vnc.py
+new file mode 100644
+index 0000000..b1ef9d7
+--- /dev/null
++++ b/tests/acceptance/vnc.py
+@@ -0,0 +1,60 @@
++# Simple functional tests for VNC functionality
++#
++# Copyright (c) 2018 Red Hat, Inc.
++#
++# Author:
++#  Cleber Rosa <crosa@redhat.com>
++#
++# This work is licensed under the terms of the GNU GPL, version 2 or
++# later.  See the COPYING file in the top-level directory.
++
++from avocado_qemu import Test
++
++
++class Vnc(Test):
++    """
++    :avocado: enable
++    :avocado: tags=vnc,quick
++    """
++    def test_no_vnc(self):
++        self.vm.add_args('-nodefaults', '-S')
++        self.vm.launch()
++        self.assertFalse(self.vm.qmp('query-vnc')['return']['enabled'])
++
++    def test_no_vnc_change_password(self):
++        self.vm.add_args('-nodefaults', '-S')
++        self.vm.launch()
++        self.assertFalse(self.vm.qmp('query-vnc')['return']['enabled'])
++        set_password_response = self.vm.qmp('change',
++                                            device='vnc',
++                                            target='password',
++                                            arg='new_password')
++        self.assertIn('error', set_password_response)
++        self.assertEqual(set_password_response['error']['class'],
++                         'GenericError')
++        self.assertEqual(set_password_response['error']['desc'],
++                         'Could not set password')
++
++    def test_vnc_change_password_requires_a_password(self):
++        self.vm.add_args('-nodefaults', '-S', '-vnc', ':0')
++        self.vm.launch()
++        self.assertTrue(self.vm.qmp('query-vnc')['return']['enabled'])
++        set_password_response = self.vm.qmp('change',
++                                            device='vnc',
++                                            target='password',
++                                            arg='new_password')
++        self.assertIn('error', set_password_response)
++        self.assertEqual(set_password_response['error']['class'],
++                         'GenericError')
++        self.assertEqual(set_password_response['error']['desc'],
++                         'Could not set password')
++
++    def test_vnc_change_password(self):
++        self.vm.add_args('-nodefaults', '-S', '-vnc', ':0,password')
++        self.vm.launch()
++        self.assertTrue(self.vm.qmp('query-vnc')['return']['enabled'])
++        set_password_response = self.vm.qmp('change',
++                                            device='vnc',
++                                            target='password',
++                                            arg='new_password')
++        self.assertEqual(set_password_response['return'], {})
+-- 
+1.8.3.1
+

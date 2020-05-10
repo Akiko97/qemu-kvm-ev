@@ -1,0 +1,73 @@
+From f7de511ab11650d017d75a73a3492fe964ec3f95 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:10:03 +0100
+Subject: [PATCH 007/163] qemu-iotests: Test snapshot=on with nonexistent
+ TMPDIR
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-8-kwolf@redhat.com>
+Patchwork-id: 84884
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 07/14] qemu-iotests: Test snapshot=on with nonexistent TMPDIR
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Alberto Garcia <berto@igalia.com>
+
+We just fixed a bug that was causing a use-after-free when QEMU was
+unable to create a temporary snapshot. This is a test case for this
+scenario.
+
+Signed-off-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 6a7014ef22ad3cf9110ca0e178f73a67a6483e00)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/051        | 3 +++
+ tests/qemu-iotests/051.out    | 3 +++
+ tests/qemu-iotests/051.pc.out | 3 +++
+ 3 files changed, 9 insertions(+)
+
+diff --git a/tests/qemu-iotests/051 b/tests/qemu-iotests/051
+index c5cc0ee..4899f84 100755
+--- a/tests/qemu-iotests/051
++++ b/tests/qemu-iotests/051
+@@ -354,6 +354,9 @@ printf %b "qemu-io $device_id \"write -P 0x33 0 4k\"\ncommit $device_id\n" |
+ 
+ $QEMU_IO -c "read -P 0x33 0 4k" "$TEST_IMG" | _filter_qemu_io
+ 
++# Using snapshot=on with a non-existent TMPDIR
++TMPDIR=/nonexistent run_qemu -drive driver=null-co,snapshot=on
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/051.out b/tests/qemu-iotests/051.out
+index b727350..793af2a 100644
+--- a/tests/qemu-iotests/051.out
++++ b/tests/qemu-iotests/051.out
+@@ -455,4 +455,7 @@ wrote 4096/4096 bytes at offset 0
+ 
+ read 4096/4096 bytes at offset 0
+ 4 KiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++Testing: -drive driver=null-co,snapshot=on
++QEMU_PROG: -drive driver=null-co,snapshot=on: Could not get temporary filename: No such file or directory
++
+ *** done
+diff --git a/tests/qemu-iotests/051.pc.out b/tests/qemu-iotests/051.pc.out
+index e9257fe..ca64eda 100644
+--- a/tests/qemu-iotests/051.pc.out
++++ b/tests/qemu-iotests/051.pc.out
+@@ -527,4 +527,7 @@ wrote 4096/4096 bytes at offset 0
+ 
+ read 4096/4096 bytes at offset 0
+ 4 KiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++Testing: -drive driver=null-co,snapshot=on
++QEMU_PROG: -drive driver=null-co,snapshot=on: Could not get temporary filename: No such file or directory
++
+ *** done
+-- 
+1.8.3.1
+

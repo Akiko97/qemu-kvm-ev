@@ -1,0 +1,99 @@
+From f8516c7e4c09fce49f49d065a1facd6240e9c8c3 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 5 Jun 2019 13:56:59 +0200
+Subject: [PATCH 11/23] block: Advertise BDRV_REQ_NO_FALLBACK in filter drivers
+
+RH-Author: Maxim Levitsky <mlevitsk@redhat.com>
+Message-id: <20190605135705.24526-4-mlevitsk@redhat.com>
+Patchwork-id: 88559
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/9] block: Advertise BDRV_REQ_NO_FALLBACK in filter drivers
+Bugzilla: 1648622
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Kevin Wolf <kwolf@redhat.com>
+
+Filter drivers that support .bdrv_co_pwrite_zeroes can safely advertise
+BDRV_REQ_NO_FALLBACK because they just forward the request flags to
+their child node.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Acked-by: Eric Blake <eblake@redhat.com>
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1648622
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+(Cherry picked from 80f5c33ff31eb9333f5036ee278fb1483fb4ff41 with some conflicts)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/blkdebug.c     | 2 +-
+ block/copy-on-read.c | 7 +++----
+ block/mirror.c       | 3 ++-
+ block/raw-format.c   | 2 +-
+ 4 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/block/blkdebug.c b/block/blkdebug.c
+index 526af2a..bb38e70 100644
+--- a/block/blkdebug.c
++++ b/block/blkdebug.c
+@@ -401,7 +401,7 @@ static int blkdebug_open(BlockDriverState *bs, QDict *options, int flags,
+     bs->supported_write_flags = BDRV_REQ_WRITE_UNCHANGED |
+         (BDRV_REQ_FUA & bs->file->bs->supported_write_flags);
+     bs->supported_zero_flags = BDRV_REQ_WRITE_UNCHANGED |
+-        ((BDRV_REQ_FUA | BDRV_REQ_MAY_UNMAP) &
++        ((BDRV_REQ_FUA | BDRV_REQ_MAY_UNMAP | BDRV_REQ_NO_FALLBACK) &
+             bs->file->bs->supported_zero_flags);
+     ret = -EINVAL;
+ 
+diff --git a/block/copy-on-read.c b/block/copy-on-read.c
+index 1dcdaee..dfa40a9 100644
+--- a/block/copy-on-read.c
++++ b/block/copy-on-read.c
+@@ -34,12 +34,11 @@ static int cor_open(BlockDriverState *bs, QDict *options, int flags,
+     }
+ 
+     bs->supported_write_flags = BDRV_REQ_WRITE_UNCHANGED |
+-                                (BDRV_REQ_FUA &
+-                                    bs->file->bs->supported_write_flags);
++        (BDRV_REQ_FUA & bs->file->bs->supported_write_flags);
+ 
+     bs->supported_zero_flags = BDRV_REQ_WRITE_UNCHANGED |
+-                               ((BDRV_REQ_FUA | BDRV_REQ_MAY_UNMAP) &
+-                                    bs->file->bs->supported_zero_flags);
++        ((BDRV_REQ_FUA | BDRV_REQ_MAY_UNMAP | BDRV_REQ_NO_FALLBACK) &
++            bs->file->bs->supported_zero_flags);
+ 
+     return 0;
+ }
+diff --git a/block/mirror.c b/block/mirror.c
+index 8658873..55dc94f 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -1175,7 +1175,8 @@ static void mirror_start_job(const char *job_id, BlockDriverState *bs,
+     }
+     mirror_top_bs->total_sectors = bs->total_sectors;
+     mirror_top_bs->supported_write_flags = BDRV_REQ_WRITE_UNCHANGED;
+-    mirror_top_bs->supported_zero_flags = BDRV_REQ_WRITE_UNCHANGED;
++    mirror_top_bs->supported_zero_flags = BDRV_REQ_WRITE_UNCHANGED |
++                                          BDRV_REQ_NO_FALLBACK;
+     bdrv_set_aio_context(mirror_top_bs, bdrv_get_aio_context(bs));
+ 
+     /* bdrv_append takes ownership of the mirror_top_bs reference, need to keep
+diff --git a/block/raw-format.c b/block/raw-format.c
+index a359198..f5d26cd 100644
+--- a/block/raw-format.c
++++ b/block/raw-format.c
+@@ -432,7 +432,7 @@ static int raw_open(BlockDriverState *bs, QDict *options, int flags,
+     bs->supported_write_flags = BDRV_REQ_WRITE_UNCHANGED |
+         (BDRV_REQ_FUA & bs->file->bs->supported_write_flags);
+     bs->supported_zero_flags = BDRV_REQ_WRITE_UNCHANGED |
+-        ((BDRV_REQ_FUA | BDRV_REQ_MAY_UNMAP) &
++        ((BDRV_REQ_FUA | BDRV_REQ_MAY_UNMAP | BDRV_REQ_NO_FALLBACK) &
+             bs->file->bs->supported_zero_flags);
+ 
+     if (bs->probed && !bdrv_is_read_only(bs)) {
+-- 
+1.8.3.1
+

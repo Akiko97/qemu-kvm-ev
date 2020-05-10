@@ -1,0 +1,81 @@
+From 627a30ded957f715a9832e8fe93feb3f03575095 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:21 +0100
+Subject: [PATCH 082/163] nbd: Document timeline of various features
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-9-jsnow@redhat.com>
+Patchwork-id: 85169
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 08/55] nbd: Document timeline of various features
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+It can be useful to figure out which NBD protocol features are
+exposed by a server, as well as what features a client will
+take advantage of if available, for a given qemu release.  It's
+not always precise to base features on version numbers (thanks
+to downstream backports), but any documentation is better than
+making users search through git logs themselves.
+
+This patch originally stemmed from a request to document that
+pristine 3.0 has a known bug where NBD_OPT_LIST_META_CONTEXT
+with 0 queries forgot to advertise an available
+"qemu:dirty-bitmap" context, but documenting bugs like this (or
+the fact that 3.0 also botched NBD_CMD_CACHE) gets to be too
+much details, especially since buggy releases will be less
+likely connection targets over time.  Instead, I chose to just
+remind users to check stable release branches.
+
+Suggested-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20181215135324.152629-3-eblake@redhat.com>
+Reviewed-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit ba2d3b3ab217784822e4232f0acd71fc523d571f)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ docs/interop/nbd.txt | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/docs/interop/nbd.txt b/docs/interop/nbd.txt
+index 77b5f45..fc64473 100644
+--- a/docs/interop/nbd.txt
++++ b/docs/interop/nbd.txt
+@@ -15,7 +15,6 @@ Qemu supports the "base:allocation" metadata context as defined in the
+ NBD protocol specification, and also defines an additional metadata
+ namespace "qemu".
+ 
+-
+ == "qemu" namespace ==
+ 
+ The "qemu" namespace currently contains only one type of context,
+@@ -36,3 +35,21 @@ in addition to "qemu:dirty-bitmap:<dirty-bitmap-export-name>":
+             namespace.
+ * "qemu:dirty-bitmap:" - returns list of all available dirty-bitmap
+                          metadata contexts.
++
++= Features by version =
++
++The following list documents which qemu version first implemented
++various features (both as a server exposing the feature, and as a
++client taking advantage of the feature when present), to make it
++easier to plan for cross-version interoperability.  Note that in
++several cases, the initial release containing a feature may require
++additional patches from the corresponding stable branch to fix bugs in
++the operation of that feature.
++
++* 2.6: NBD_OPT_STARTTLS with TLS X.509 Certificates
++* 2.8: NBD_CMD_WRITE_ZEROES
++* 2.10: NBD_OPT_GO, NBD_INFO_BLOCK
++* 2.11: NBD_OPT_STRUCTURED_REPLY
++* 2.12: NBD_CMD_BLOCK_STATUS for "base:allocation"
++* 3.0: NBD_OPT_STARTTLS with TLS Pre-Shared Keys (PSK),
++NBD_CMD_BLOCK_STATUS for "qemu:dirty-bitmap:", NBD_CMD_CACHE
+-- 
+1.8.3.1
+

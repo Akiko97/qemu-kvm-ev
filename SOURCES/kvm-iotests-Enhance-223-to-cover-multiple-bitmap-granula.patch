@@ -1,0 +1,216 @@
+From 4398dec3833e9a4c27c0394aaeee4329008d489a Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:14 +0100
+Subject: [PATCH 016/163] iotests: Enhance 223 to cover multiple bitmap
+ granularities
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-3-jsnow@redhat.com>
+Patchwork-id: 84939
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 02/19] iotests: Enhance 223 to cover multiple bitmap granularities
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Testing granularity at the same size as the cluster isn't quite
+as fun as what happens when it is larger or smaller.  This
+enhancement also shows that qemu's nbd server can serve the
+same disk over multiple exports simultaneously.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Tested-by: John Snow <jsnow@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit a237dea330a2be9a2cbe95056b9a8d67627d95c6)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/223     | 43 +++++++++++++++++++++++++++++++++++--------
+ tests/qemu-iotests/223.out | 32 +++++++++++++++++++++++++-------
+ 2 files changed, 60 insertions(+), 15 deletions(-)
+
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+index b63b7a4..a462f41 100755
+--- a/tests/qemu-iotests/223
++++ b/tests/qemu-iotests/223
+@@ -56,10 +56,11 @@ function run_qemu()
+ }
+ 
+ echo
+-echo "=== Create partially sparse image, then add dirty bitmap ==="
++echo "=== Create partially sparse image, then add dirty bitmaps ==="
+ echo
+ 
+-_make_test_img 4M
++# Two bitmaps, to contrast granularity issues
++_make_test_img -o cluster_size=4k 4M
+ $QEMU_IO -c 'w -P 0x11 1M 2M' "$TEST_IMG" | _filter_qemu_io
+ run_qemu <<EOF
+ { "execute": "qmp_capabilities" }
+@@ -77,7 +78,16 @@ run_qemu <<EOF
+   "arguments": {
+     "node": "n",
+     "name": "b",
+-    "persistent": true
++    "persistent": true,
++    "granularity": 65536
++  }
++}
++{ "execute": "block-dirty-bitmap-add",
++  "arguments": {
++    "node": "n",
++    "name": "b2",
++    "persistent": true,
++    "granularity": 512
+   }
+ }
+ { "execute": "quit" }
+@@ -87,10 +97,11 @@ echo
+ echo "=== Write part of the file under active bitmap ==="
+ echo
+ 
+-$QEMU_IO -c 'w -P 0x22 2M 2M' "$TEST_IMG" | _filter_qemu_io
++$QEMU_IO -c 'w -P 0x22 512 512' -c 'w -P 0x33 2M 2M' "$TEST_IMG" \
++    | _filter_qemu_io
+ 
+ echo
+-echo "=== End dirty bitmap, and start serving image over NBD ==="
++echo "=== End dirty bitmaps, and start serving image over NBD ==="
+ echo
+ 
+ _launch_qemu 2> >(_filter_nbd)
+@@ -102,6 +113,8 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"blockdev-add",
+     "file":{"driver":"file", "filename":"'"$TEST_IMG"'"}}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"x-block-dirty-bitmap-disable",
+   "arguments":{"node":"n", "name":"b"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"x-block-dirty-bitmap-disable",
++  "arguments":{"node":"n", "name":"b2"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-start",
+   "arguments":{"addr":{"type":"unix",
+     "data":{"path":"'"$TEST_DIR/nbd"'"}}}}' "return"
+@@ -109,26 +122,40 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+   "arguments":{"device":"n"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
+   "arguments":{"name":"n", "bitmap":"b"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
++  "arguments":{"device":"n", "name":"n2"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
++  "arguments":{"name":"n2", "bitmap":"b2"}}' "return"
+ 
+ echo
+-echo "=== Contrast normal status with dirty-bitmap status ==="
++echo "=== Contrast normal status to large granularity dirty-bitmap ==="
+ echo
+ 
+ QEMU_IO_OPTIONS=$QEMU_IO_OPTIONS_NO_FMT
+ IMG="driver=nbd,export=n,server.type=unix,server.path=$TEST_DIR/nbd"
+-$QEMU_IO -r -c 'r -P 0 0 1m' -c 'r -P 0x11 1m 1m' \
+-  -c 'r -P 0x22 2m 2m' --image-opts "$IMG" | _filter_qemu_io
++$QEMU_IO -r -c 'r -P 0x22 512 512' -c 'r -P 0 512k 512k' -c 'r -P 0x11 1m 1m' \
++  -c 'r -P 0x33 2m 2m' --image-opts "$IMG" | _filter_qemu_io
+ $QEMU_IMG map --output=json --image-opts \
+   "$IMG" | _filter_qemu_img_map
+ $QEMU_IMG map --output=json --image-opts \
+   "$IMG,x-dirty-bitmap=qemu:dirty-bitmap:b" | _filter_qemu_img_map
+ 
+ echo
++echo "=== Contrast to small granularity dirty-bitmap ==="
++echo
++
++IMG="driver=nbd,export=n2,server.type=unix,server.path=$TEST_DIR/nbd"
++$QEMU_IMG map --output=json --image-opts \
++  "$IMG,x-dirty-bitmap=qemu:dirty-bitmap:b2" | _filter_qemu_img_map
++
++echo
+ echo "=== End NBD server ==="
+ echo
+ 
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
+   "arguments":{"name":"n"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
++  "arguments":{"name":"n2"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"quit"}' "return"
+ 
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+index 33021c8..de41747 100644
+--- a/tests/qemu-iotests/223.out
++++ b/tests/qemu-iotests/223.out
+@@ -1,6 +1,6 @@
+ QA output created by 223
+ 
+-=== Create partially sparse image, then add dirty bitmap ===
++=== Create partially sparse image, then add dirty bitmaps ===
+ 
+ Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=4194304
+ wrote 2097152/2097152 bytes at offset 1048576
+@@ -11,15 +11,18 @@ QMP_VERSION
+ {"return": {}}
+ {"return": {}}
+ {"return": {}}
++{"return": {}}
+ {"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
+ 
+ 
+ === Write part of the file under active bitmap ===
+ 
++wrote 512/512 bytes at offset 512
++512 bytes, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+ wrote 2097152/2097152 bytes at offset 2097152
+ 2 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+ 
+-=== End dirty bitmap, and start serving image over NBD ===
++=== End dirty bitmaps, and start serving image over NBD ===
+ 
+ {"return": {}}
+ {"return": {}}
+@@ -27,18 +30,32 @@ wrote 2097152/2097152 bytes at offset 2097152
+ {"return": {}}
+ {"return": {}}
+ {"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
+ 
+-=== Contrast normal status with dirty-bitmap status ===
++=== Contrast normal status to large granularity dirty-bitmap ===
+ 
+-read 1048576/1048576 bytes at offset 0
+-1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++read 512/512 bytes at offset 512
++512 bytes, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++read 524288/524288 bytes at offset 524288
++512 KiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+ read 1048576/1048576 bytes at offset 1048576
+ 1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+ read 2097152/2097152 bytes at offset 2097152
+ 2 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+-[{ "start": 0, "length": 1048576, "depth": 0, "zero": true, "data": false},
++[{ "start": 0, "length": 4096, "depth": 0, "zero": false, "data": true},
++{ "start": 4096, "length": 1044480, "depth": 0, "zero": true, "data": false},
+ { "start": 1048576, "length": 3145728, "depth": 0, "zero": false, "data": true}]
+-[{ "start": 0, "length": 2097152, "depth": 0, "zero": false, "data": true},
++[{ "start": 0, "length": 65536, "depth": 0, "zero": false, "data": false},
++{ "start": 65536, "length": 2031616, "depth": 0, "zero": false, "data": true},
++{ "start": 2097152, "length": 2097152, "depth": 0, "zero": false, "data": false}]
++
++=== Contrast to small granularity dirty-bitmap ===
++
++[{ "start": 0, "length": 512, "depth": 0, "zero": false, "data": true},
++{ "start": 512, "length": 512, "depth": 0, "zero": false, "data": false},
++{ "start": 1024, "length": 2096128, "depth": 0, "zero": false, "data": true},
+ { "start": 2097152, "length": 2097152, "depth": 0, "zero": false, "data": false}]
+ 
+ === End NBD server ===
+@@ -46,4 +63,5 @@ read 2097152/2097152 bytes at offset 2097152
+ {"return": {}}
+ {"return": {}}
+ {"return": {}}
++{"return": {}}
+ *** done
+-- 
+1.8.3.1
+

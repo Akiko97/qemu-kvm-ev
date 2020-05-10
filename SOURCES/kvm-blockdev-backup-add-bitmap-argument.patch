@@ -1,0 +1,97 @@
+From f165f8b7819f9c9aa0358a1e0bc1f48cf4dfa98f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 14 Sep 2018 04:08:14 +0200
+Subject: [PATCH 07/49] blockdev-backup: add bitmap argument
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180914040814.14950-2-jsnow@redhat.com>
+Patchwork-id: 82149
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] blockdev-backup: add bitmap argument
+Bugzilla: 1628373
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+
+It is only an oversight that we don't allow incremental backup with
+blockdev-backup. Add the bitmap argument which enables this.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Message-id: 20180830211605.13683-2-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 4034c1a9fd503f9fa488dc9b851bc4497f374e98)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c           | 16 +++++++++++++++-
+ qapi/block-core.json |  7 ++++++-
+ 2 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index fb355c8..6e8a1e9 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3701,6 +3701,7 @@ BlockJob *do_blockdev_backup(BlockdevBackup *backup, JobTxn *txn,
+     BlockDriverState *bs;
+     BlockDriverState *target_bs;
+     Error *local_err = NULL;
++    BdrvDirtyBitmap *bmap = NULL;
+     AioContext *aio_context;
+     BlockJob *job = NULL;
+     int job_flags = JOB_DEFAULT;
+@@ -3751,6 +3752,19 @@ BlockJob *do_blockdev_backup(BlockdevBackup *backup, JobTxn *txn,
+             goto out;
+         }
+     }
++    if (backup->has_bitmap) {
++        bmap = bdrv_find_dirty_bitmap(bs, backup->bitmap);
++        if (!bmap) {
++            error_setg(errp, "Bitmap '%s' could not be found", backup->bitmap);
++            goto out;
++        }
++        if (bdrv_dirty_bitmap_qmp_locked(bmap)) {
++            error_setg(errp,
++                       "Bitmap '%s' is currently locked and cannot be used for "
++                       "backup", backup->bitmap);
++            goto out;
++        }
++    }
+     if (!backup->auto_finalize) {
+         job_flags |= JOB_MANUAL_FINALIZE;
+     }
+@@ -3758,7 +3772,7 @@ BlockJob *do_blockdev_backup(BlockdevBackup *backup, JobTxn *txn,
+         job_flags |= JOB_MANUAL_DISMISS;
+     }
+     job = backup_job_create(backup->job_id, bs, target_bs, backup->speed,
+-                            backup->sync, NULL, backup->compress,
++                            backup->sync, bmap, backup->compress,
+                             backup->on_source_error, backup->on_target_error,
+                             job_flags, NULL, NULL, txn, &local_err);
+     if (local_err != NULL) {
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 8da07cd..2706012 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1299,6 +1299,10 @@
+ # @speed: the maximum speed, in bytes per second. The default is 0,
+ #         for unlimited.
+ #
++# @bitmap: the name of dirty bitmap if sync is "incremental".
++#          Must be present if sync is "incremental", must NOT be present
++#          otherwise. (Since 3.1)
++#
+ # @compress: true to compress data, if the target format supports it.
+ #            (default: false) (since 2.8)
+ #
+@@ -1331,7 +1335,8 @@
+ ##
+ { 'struct': 'BlockdevBackup',
+   'data': { '*job-id': 'str', 'device': 'str', 'target': 'str',
+-            'sync': 'MirrorSyncMode', '*speed': 'int', '*compress': 'bool',
++            'sync': 'MirrorSyncMode', '*speed': 'int',
++            '*bitmap': 'str', '*compress': 'bool',
+             '*on-source-error': 'BlockdevOnError',
+             '*on-target-error': 'BlockdevOnError',
+             '*auto-finalize': 'bool', '*auto-dismiss': 'bool' } }
+-- 
+1.8.3.1
+

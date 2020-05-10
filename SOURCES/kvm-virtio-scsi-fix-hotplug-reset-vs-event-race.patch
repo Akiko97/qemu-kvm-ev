@@ -1,0 +1,77 @@
+From 68bd30cd50bff358594045cb03494132af3e09a5 Mon Sep 17 00:00:00 2001
+From: Stefan Hajnoczi <stefanha@redhat.com>
+Date: Tue, 24 Jul 2018 15:13:08 +0200
+Subject: [PATCH 09/15] virtio-scsi: fix hotplug ->reset() vs event race
+
+RH-Author: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: <20180724151308.20500-3-stefanha@redhat.com>
+Patchwork-id: 81486
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/2] virtio-scsi: fix hotplug ->reset() vs event race
+Bugzilla: 1607891
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+
+There is a race condition during hotplug when iothread is used.  It
+occurs because virtio-scsi may be processing command queues in the
+iothread while the monitor performs SCSI device hotplug.
+
+When a SCSI device is hotplugged the HotplugHandler->plug() callback is
+invoked and virtio-scsi emits a rescan event to the guest.
+
+If the guest submits a SCSI command at this point then it may be
+cancelled before hotplug completes.  This happens because ->reset() is
+called by hw/core/qdev.c:device_set_realized() after
+HotplugHandler->plug() has been called and
+hw/scsi/scsi-disk.c:scsi_disk_reset() purges all requests.
+
+This patch uses the new HotplugHandler->post_plug() callback to emit the
+rescan event after ->reset().  This eliminates the race conditions where
+requests could be cancelled.
+
+Reported-by: l00284672 <lizhengui@huawei.com>
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Cc: Fam Zheng <famz@redhat.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-Id: <20180716083732.3347-3-stefanha@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 8449bcf94986156a1476d6647c75ec1ce3db64d0)
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/virtio-scsi.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/hw/scsi/virtio-scsi.c b/hw/scsi/virtio-scsi.c
+index 9f754c4..52a3c1d 100644
+--- a/hw/scsi/virtio-scsi.c
++++ b/hw/scsi/virtio-scsi.c
+@@ -806,8 +806,16 @@ static void virtio_scsi_hotplug(HotplugHandler *hotplug_dev, DeviceState *dev,
+         virtio_scsi_acquire(s);
+         blk_set_aio_context(sd->conf.blk, s->ctx);
+         virtio_scsi_release(s);
+-
+     }
++}
++
++/* Announce the new device after it has been plugged */
++static void virtio_scsi_post_hotplug(HotplugHandler *hotplug_dev,
++                                     DeviceState *dev)
++{
++    VirtIODevice *vdev = VIRTIO_DEVICE(hotplug_dev);
++    VirtIOSCSI *s = VIRTIO_SCSI(vdev);
++    SCSIDevice *sd = SCSI_DEVICE(dev);
+ 
+     if (virtio_vdev_has_feature(vdev, VIRTIO_SCSI_F_HOTPLUG)) {
+         virtio_scsi_acquire(s);
+@@ -977,6 +985,7 @@ static void virtio_scsi_class_init(ObjectClass *klass, void *data)
+     vdc->start_ioeventfd = virtio_scsi_dataplane_start;
+     vdc->stop_ioeventfd = virtio_scsi_dataplane_stop;
+     hc->plug = virtio_scsi_hotplug;
++    hc->post_plug = virtio_scsi_post_hotplug;
+     hc->unplug = virtio_scsi_hotunplug;
+ }
+ 
+-- 
+1.8.3.1
+

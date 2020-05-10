@@ -1,0 +1,46 @@
+From a58a90bf5d832135b8e36fdeafed35a92abe79bd Mon Sep 17 00:00:00 2001
+From: Alex Williamson <alex.williamson@redhat.com>
+Date: Tue, 12 Jun 2018 14:51:43 +0200
+Subject: [PATCH 01/57] vfio/pci: Default display option to "off"
+
+RH-Author: Alex Williamson <alex.williamson@redhat.com>
+Message-id: <20180612145121.14019.7760.stgit@gimli.home>
+Patchwork-id: 80641
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] vfio/pci: Default display option to "off"
+Bugzilla: 1583050
+RH-Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+Commit a9994687cb9b ("vfio/display: core & wireup") added display
+support to vfio-pci with the default being "auto", which breaks
+existing VMs when the vGPU requires GL support but had no previous
+requirement for a GL compatible configuration.  "Off" is the safer
+default as we impose no new requirements to VM configurations.
+
+Fixes: a9994687cb9b ("vfio/display: core & wireup")
+Cc: qemu-stable@nongnu.org
+Cc: Gerd Hoffmann <kraxel@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+(cherry picked from commit 8151a9c56d31eeeea872b8103c8b86d03c411667)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/vfio/pci.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/vfio/pci.c b/hw/vfio/pci.c
+index 34b9d19..4683eb4 100644
+--- a/hw/vfio/pci.c
++++ b/hw/vfio/pci.c
+@@ -3167,7 +3167,7 @@ static Property vfio_pci_dev_properties[] = {
+     DEFINE_PROP_PCI_HOST_DEVADDR("host", VFIOPCIDevice, host),
+     DEFINE_PROP_STRING("sysfsdev", VFIOPCIDevice, vbasedev.sysfsdev),
+     DEFINE_PROP_ON_OFF_AUTO("display", VFIOPCIDevice,
+-                            display, ON_OFF_AUTO_AUTO),
++                            display, ON_OFF_AUTO_OFF),
+     DEFINE_PROP_UINT32("x-intx-mmap-timeout-ms", VFIOPCIDevice,
+                        intx.mmap_timeout, 1100),
+     DEFINE_PROP_BIT("x-vga", VFIOPCIDevice, features,
+-- 
+1.8.3.1
+

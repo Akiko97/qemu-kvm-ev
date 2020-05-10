@@ -1,0 +1,1799 @@
+From 9746c4059558e94c983df315f61203f766ceb500 Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Mon, 11 Jan 2016 11:53:33 +0100
+Subject: Enable/disable devices for RHEL 7
+
+This commit adds all changes related to changes in supported devices
+up to qemu-kvm-rhev-2.1.2-16.el7.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Rebase notes (2.12.0):
+- Disable AMD_IOMMU
+- New handling of VHOST_USER_* device disabling
+- Use cpu_type instead of cpu_model
+- Disabled CONFIG_P4XXX for power64
+- Disabled sam460ex board tests
+
+Rebase notes (2.11.0):
+- Switched order with machine type commit
+- Removed CONFIG_STELLARIS from aarch64
+- Blacklist isapc for qom and hmp tests
+
+Rebase notes (2.10.0):
+- replace cannot_instantiate_with_device_add_yet with user_creatable (upstream e90f2a)
+- Comment out default configs instead of removing the options
+- Reenable test_unaligned_write_same
+- Remove default-configs changes for 32bit architectures
+- Removed unnecessary usage of user_creatable
+- Documented arm cpu changes
+
+Rebase notes (2.9.0):
+- enabled CONFIG_ARM_V7M for aarch64
+- need to fix cpu mask
+- disabled some irrelevant ppc64 tests
+- Adding pxe-e1000e.rom to Inital redhat commit
+- Context changed in vfio_probe_igd_bar4_quirk (rc3)
+- Remove fdc test
+- Enabled null-co driver
+- Disabled megasas and bios-tables test
+- Disabled netfilter tests for ppc64
+- Disabled ivshmem test for ppc64
+- Disabled numa test for aarhc64
+- Add CONFIG_USB_XHCI_NEC option for ppc64
+- Enable vhost-user-scsi for ppc64 and aarch64
+- Disable ipmi_bt, ipmi_local, impi_extern for ppc64
+
+Rebase notes (2.8.0):
+- Removed CONFIG_PIIX_PCI (upstream)
+- Disabled POWERNV
+- Disabled additional occurencies of prom-env-test
+- Disabled additional occurencies of usb-hcd-ohci-test and usb-hcd-uhci-test
+- Disabled unsupported machine types in boot-serieal-test
+- Disabled 2.7 machine type compatibility test in test-x86-cpuid-compat
+- Disabled pnv-xscom-test
+- Disabled RHEl 6 machine types for qom-test (failing acpi setting)
+- Added diffutils BuildRequires and diff usage for make check
+
+Rebase notes (2.6.0):
+- disabled prom-env-test
+
+Rebase notes (2.4.0):
+- fixed types
+- include CONFIG_PLATFORM_BUS for aarch64
+- disable failing virtio-scsi-test
+
+Rebase notes (2.3.0):
+- Added USB=y in 2.3-rc2 (used instead of downstream version fora aarch64)
+
+Merged patches (2.11.):
+- e6c4563d68 hw: Remove the redundant user_creatable = false from SYS_BUS_DEVICEs
+- 35474b23b1 hw/pci-host/q35: Remove redundant downstream user_creatable = false
+- 374294de46 hw/dma/i8257: Remove redundant downstream user_creatable = false
+- 17abc4f5bd RHEL: Disable vfio-ccw and x-terminal270 devices
+- b303e792c3 Disable vhost-user-scsi and vhost-user-scsi-pci
+- 28f294c023 Disable sm501 and sysbus-sm501 devices
+- d5959fcefc s390x/cpumodel: Disable unsupported CPU models
+
+Merged patches (2.10.0):
+- e9b413e Add PCIe bridge devices for AArch64
+- a522114 s390x/virtio-ccw: Disable crypto device in downstream RHEL builds
+- 15dbf98 Disable unimplemented device
+- 5c0ea49 Disable serial-isa for ppc64
+- 728e7e8 Disable rs6000-mc device
+- 2a11896 ppc64le: Remove isabus-bridge device
+- 5c4df94 Reenable Educational device
+- a936463 aarch64: Enable usb-xhci
+- 984f5cd Enable USB_CONFIG for aarch64
+- f13b783 AArch64: Add pci-testdev
+- 81867af Disable virtio-pci for s390x builds
+- bf5f636 target/ppc: Show POWER9 in -cpu help
+
+Merged patches (2.9.0):
+- 9320fc1 Fix unuseds/Fedora build
+- cb16934 config: Remove EHCI from ppc64 builds
+- 626fe4d Disable qemu,register device
+- 783a0b2 Disable vfio-pci-igd-lpc-bridge device
+- bf7c127 Disable new virtio crypto devices
+- a4d3c4e Disable amd iommu devices
+- 5396ebc Disable loader device
+- 1957779 Disable or-irq device
+- 25ee621 Hide new floppy device
+- 2bd29ed Disable devices for for AArch64 QEMU
+
+Merged patches (2.7.0):
+- e2944a5 RHEL: Disable unsupported PowerPC CPU models
+ - have to add additional "if 0" sections to hw/ppc/spapr_cpu_core.c
+- 81b2836 Remove unsupported VFIO devices from QEMU
+- 1248029 Disable spapr-rng
+- 351e1fb Disable Windows enlightnementas
+- 5760290 Disable mptsas1068 device
+- 0b74460 Disable sd-card
+- 2eaf71c Disable rocker device
+- e0ed699 Disable new ipmi devices
+ - disable ipmi tests in bios-tables-test
+- 30e3bee Disable hyperv-testdev
+- 8a9aadf Disable allwiner_ahci device
+- a41119d Disable igd-passthrough-i440FX
+- e305bb4 Disable vfio-platform device
+- a127042 rhel: Revert unwanted inconsequential changes to ivshmem
+- ce1419c rhel: Disable ivshmem-plain migration, ivshmem-doorbell, ivshmem
+- 3f9349b q35: disable s3/s4 by default
+- 2158ca1 i8257: Set no-user flag
+- b2a3bb9 e1000e: add boot rom
+- have to add pxe-e1000e.rom to source files
+
+Merged patches (2.6.0):
+- ce3206a qemu-iotests: Fix broken test cases
+ - Reduced to disabling test 071 only
+- bb34585 qemu-iotests: Disable 099 (requires blkverify)
+- 81be408 build: reenable local builds to pass --enable-debug (downstream only)
+
+Merged patches (2.4.0):
+- fa4fd10 AArch64: Enable ACPI
+- 1219d52 ivshmem: RHEL-only: remove unsupported code
+- 5f6d954 ivshmem: RHEL-only: explicitly remove dead code
+- b88bbf0 Revert "rhel: Drop "ivshmem" device"
+- 8f0aadf Split serial-isa into its own config option
+- 01bff0f rhel: Disable "info irq" and "info pic" for Power
+- b915077 RHEL: Disable remaining unsupported devices for ppc
+- 64cbdc5 Mark onboard devices as cannot_instantiate_with_device_add_yet
+- 4792566 Disable sdhci device
+- bda8169 Disable Educational device
+- a17a8fb rhel: Revert unwanted cannot_instantiate_with_device_add_yet changes
+- 91c76c5 Remove intel-iommu device
+- ec1615d Disable additional e1000 models
+
+(cherry picked from commit 0e72e616b2d80e47c0eb6c5976276e9f8d920e92)
+
+Conflicts:
+	redhat/qemu-kvm.spec.template
+
+Conflicts:
+	default-configs/aarch64-softmmu.mak
+	default-configs/pci.mak
+	default-configs/ppc64-softmmu.mak
+	default-configs/s390x-softmmu.mak
+	hw/arm/Makefile.objs
+	hw/core/Makefile.objs
+	hw/i386/Makefile.objs
+	hw/i386/pc.c
+	hw/ppc/Makefile.objs
+	stubs/Makefile.objs
+	tests/Makefile.include
+	tests/boot-serial-test.c
+	tests/qemu-iotests/051
+
+Conflicts:
+	target/i386/cpu.c
+	tests/boot-serial-test.c
+
+(cherry picked from commit d62675886ef77b23a774523cb33cc3037b7f7a8b)
+---
+ default-configs/aarch64-softmmu.mak | 35 ++++++++++++++----
+ default-configs/pci.mak             | 38 +++++++++----------
+ default-configs/ppc64-softmmu.mak   | 30 ++++++++++++---
+ default-configs/s390x-softmmu.mak   | 12 +++---
+ default-configs/sound.mak           |  8 ++--
+ default-configs/usb.mak             | 14 +++----
+ default-configs/x86_64-softmmu.mak  | 30 ++++++++-------
+ hw/acpi/ich9.c                      |  4 +-
+ hw/block/fdc.c                      |  1 +
+ hw/char/serial-pci.c                |  4 ++
+ hw/core/Makefile.objs               |  7 ++--
+ hw/display/cirrus_vga.c             |  2 +
+ hw/i386/pc.c                        |  3 +-
+ hw/ide/piix.c                       |  5 ++-
+ hw/ide/via.c                        |  2 +
+ hw/input/pckbd.c                    |  2 +
+ hw/misc/Makefile.objs               |  2 +-
+ hw/misc/ivshmem.c                   | 11 ++++++
+ hw/net/e1000.c                      |  2 +
+ hw/net/e1000e.c                     |  2 +-
+ hw/pci-host/piix.c                  |  4 ++
+ hw/ppc/Makefile.objs                |  2 +-
+ hw/ppc/spapr.c                      |  3 +-
+ hw/ppc/spapr_cpu_core.c             |  2 +
+ hw/s390x/virtio-ccw.c               |  8 ++++
+ hw/usb/ccid-card-emulated.c         |  2 +
+ hw/vfio/Makefile.objs               |  3 --
+ hw/vfio/pci-quirks.c                |  5 +++
+ hw/virtio/Makefile.objs             |  5 ++-
+ hw/virtio/virtio-pci.c              |  8 ++--
+ qemu-options.hx                     |  5 ---
+ redhat/qemu-kvm.spec.template       |  4 +-
+ stubs/Makefile.objs                 |  1 +
+ stubs/ide-isa.c                     | 13 +++++++
+ target/arm/cpu.c                    |  4 +-
+ target/i386/cpu.c                   | 37 +++++++++++++++----
+ target/ppc/cpu-models.c             | 17 ++++++++-
+ target/s390x/cpu_models.c           |  3 ++
+ target/s390x/kvm.c                  |  8 ++++
+ tests/Makefile.include              | 73 +++++++++++--------------------------
+ tests/bios-tables-test.c            |  4 ++
+ tests/boot-order-test.c             |  7 ++++
+ tests/boot-serial-test.c            | 10 ++---
+ tests/e1000-test.c                  |  2 +
+ tests/endianness-test.c             |  2 +
+ tests/ivshmem-test.c                | 10 ++++-
+ tests/qemu-iotests/051              | 12 +++---
+ tests/qemu-iotests/group            |  4 +-
+ tests/qom-test.c                    |  4 +-
+ tests/test-hmp.c                    |  2 +-
+ tests/test-x86-cpuid-compat.c       |  2 +
+ tests/usb-hcd-xhci-test.c           |  5 ++-
+ vl.c                                |  2 +-
+ 53 files changed, 318 insertions(+), 169 deletions(-)
+ create mode 100644 stubs/ide-isa.c
+
+diff --git a/default-configs/aarch64-softmmu.mak b/default-configs/aarch64-softmmu.mak
+index 9ddccf8..001eb8e 100644
+--- a/default-configs/aarch64-softmmu.mak
++++ b/default-configs/aarch64-softmmu.mak
+@@ -1,10 +1,29 @@
+ # Default configuration for aarch64-softmmu
+ 
+-# We support all the 32 bit boards so need all their config
+-include arm-softmmu.mak
+-
+-CONFIG_AUX=y
+-CONFIG_DDC=y
+-CONFIG_DPCD=y
+-CONFIG_XLNX_ZYNQMP=y
+-CONFIG_XLNX_ZYNQMP_ARM=y
++# CONFIG_AUX=y
++# CONFIG_DDC=y
++# CONFIG_DPCD=y
++# CONFIG_XLNX_ZYNQMP=y
++# CONFIG_XLNX_ZYNQMP_ARM=y
++CONFIG_PCI=y
++CONFIG_PCI_TESTDEV=y
++CONFIG_VIRTIO_PCI=y
++CONFIG_VIRTIO=y
++CONFIG_ARM_GIC=y
++CONFIG_ARM_GIC_KVM=$(CONFIG_KVM)
++CONFIG_PL011=y
++CONFIG_PL031=y
++CONFIG_PFLASH_CFI01=y
++CONFIG_PCI_GENERIC=y
++CONFIG_ACPI=y
++CONFIG_PLATFORM_BUS=y
++CONFIG_SMBIOS=y
++CONFIG_PL061=y
++CONFIG_GPIO_KEY=y
++CONFIG_ARM_V7M=y
++CONFIG_PCIE_PORT=y
++CONFIG_XIO3130=y
++CONFIG_IOH3420=y
++CONFIG_USB_XHCI=y
++CONFIG_USB=y
++CONFIG_I2C=y
+diff --git a/default-configs/pci.mak b/default-configs/pci.mak
+index 35e7596..4c8c296 100644
+--- a/default-configs/pci.mak
++++ b/default-configs/pci.mak
+@@ -4,21 +4,21 @@ CONFIG_ISA_BUS=y
+ CONFIG_VIRTIO_PCI=y
+ CONFIG_VIRTIO=y
+ CONFIG_USB_UHCI=y
+-CONFIG_USB_OHCI=y
++#CONFIG_USB_OHCI=y
+ CONFIG_USB_EHCI=y
+ CONFIG_USB_XHCI=y
+ CONFIG_USB_XHCI_NEC=y
+-CONFIG_NE2000_PCI=y
+-CONFIG_EEPRO100_PCI=y
+-CONFIG_PCNET_PCI=y
+-CONFIG_PCNET_COMMON=y
++#CONFIG_NE2000_PCI=y
++#CONFIG_EEPRO100_PCI=y
++#CONFIG_PCNET_PCI=y
++#CONFIG_PCNET_COMMON=y
+ CONFIG_AC97=y
+ CONFIG_HDA=y
+-CONFIG_ES1370=y
+-CONFIG_LSI_SCSI_PCI=y
+-CONFIG_VMW_PVSCSI_SCSI_PCI=y
+-CONFIG_MEGASAS_SCSI_PCI=y
+-CONFIG_MPTSAS_SCSI_PCI=y
++#CONFIG_ES1370=y
++#CONFIG_LSI_SCSI_PCI=y
++#CONFIG_VMW_PVSCSI_SCSI_PCI=y
++#CONFIG_MEGASAS_SCSI_PCI=y
++#CONFIG_MPTSAS_SCSI_PCI=y
+ CONFIG_RTL8139_PCI=y
+ CONFIG_E1000_PCI=y
+ CONFIG_E1000E_PCI=y
+@@ -26,24 +26,24 @@ CONFIG_IDE_CORE=y
+ CONFIG_IDE_QDEV=y
+ CONFIG_IDE_PCI=y
+ CONFIG_AHCI=y
+-CONFIG_ESP=y
+-CONFIG_ESP_PCI=y
++#CONFIG_ESP=y
++#CONFIG_ESP_PCI=y
+ CONFIG_SERIAL=y
+ CONFIG_SERIAL_ISA=y
+ CONFIG_SERIAL_PCI=y
+ CONFIG_CAN_BUS=y
+ CONFIG_CAN_SJA1000=y
+ CONFIG_CAN_PCI=y
+-CONFIG_IPACK=y
++#CONFIG_IPACK=y
+ CONFIG_WDT_IB6300ESB=y
+ CONFIG_PCI_TESTDEV=y
+-CONFIG_NVME_PCI=y
+-CONFIG_SD=y
+-CONFIG_SDHCI=y
++#CONFIG_NVME_PCI=y
++#CONFIG_SD=y
++#CONFIG_SDHCI=y
+ CONFIG_EDU=y
+ CONFIG_VGA=y
+ CONFIG_VGA_PCI=y
+ CONFIG_IVSHMEM_DEVICE=$(CONFIG_IVSHMEM)
+-CONFIG_ROCKER=y
+-CONFIG_VHOST_USER_SCSI=$(call land,$(CONFIG_VHOST_USER),$(CONFIG_LINUX))
+-CONFIG_VHOST_USER_BLK=$(call land,$(CONFIG_VHOST_USER),$(CONFIG_LINUX))
++#CONFIG_ROCKER=y
++#CONFIG_VHOST_USER_SCSI=$(call land,$(CONFIG_VHOST_USER),$(CONFIG_LINUX))
++#CONFIG_VHOST_USER_BLK=$(call land,$(CONFIG_VHOST_USER),$(CONFIG_LINUX))
+diff --git a/default-configs/ppc64-softmmu.mak b/default-configs/ppc64-softmmu.mak
+index b94af6c..936ac17 100644
+--- a/default-configs/ppc64-softmmu.mak
++++ b/default-configs/ppc64-softmmu.mak
+@@ -1,14 +1,31 @@
+ # Default configuration for ppc64-softmmu
+ 
+-# Include all 32-bit boards
+-include ppc-softmmu.mak
++include sound.mak
++include usb.mak
++
++## PCI configuration - cut down from the defaults in pci.mak
++CONFIG_PCI=y
++CONFIG_VIRTIO_PCI=y
++CONFIG_VIRTIO=y
++CONFIG_USB_XHCI=y
++CONFIG_USB_XHCI_NEC=y
++CONFIG_WDT_IB6300ESB=y
++CONFIG_PCI_TESTDEV=y
++CONFIG_USB_OHCI=y
++CONFIG_VGA=y
++CONFIG_VGA_PCI=y
++CONFIG_SERIAL=y
++CONFIG_I2C=y
++
++# For embedded PPCs
++#CONFIG_PPC4XX=y
+ 
+ # For PowerNV
+-CONFIG_POWERNV=y
++#CONFIG_POWERNV=y
+ CONFIG_IPMI=y
+-CONFIG_IPMI_LOCAL=y
+-CONFIG_IPMI_EXTERN=y
+-CONFIG_ISA_IPMI_BT=y
++#CONFIG_IPMI_LOCAL=y
++#CONFIG_IPMI_EXTERN=y
++#CONFIG_ISA_IPMI_BT=y
+ 
+ # For pSeries
+ CONFIG_PSERIES=y
+@@ -17,3 +34,4 @@ CONFIG_XICS=$(CONFIG_PSERIES)
+ CONFIG_XICS_SPAPR=$(CONFIG_PSERIES)
+ CONFIG_XICS_KVM=$(call land,$(CONFIG_PSERIES),$(CONFIG_KVM))
+ CONFIG_MEM_HOTPLUG=y
++CONFIG_I2C=y
+diff --git a/default-configs/s390x-softmmu.mak b/default-configs/s390x-softmmu.mak
+index 2f4bfe7..649bf2c 100644
+--- a/default-configs/s390x-softmmu.mak
++++ b/default-configs/s390x-softmmu.mak
+@@ -1,11 +1,13 @@
+ CONFIG_PCI=y
+-CONFIG_VIRTIO_PCI=$(CONFIG_PCI)
+-CONFIG_VHOST_USER_SCSI=$(call land,$(CONFIG_VHOST_USER),$(CONFIG_LINUX))
+-CONFIG_VHOST_USER_BLK=$(call land,$(CONFIG_VHOST_USER),$(CONFIG_LINUX))
++#CONFIG_VIRTIO_PCI=$(CONFIG_PCI)
++#CONFIG_VHOST_USER_SCSI=$(call land,$(CONFIG_VHOST_USER),$(CONFIG_LINUX))
++#CONFIG_VHOST_USER_BLK=$(call land,$(CONFIG_VHOST_USER),$(CONFIG_LINUX))
+ CONFIG_VIRTIO=y
+ CONFIG_SCLPCONSOLE=y
+-CONFIG_TERMINAL3270=y
++# Disabled for Red Hat Enterprise Linux:
++# CONFIG_TERMINAL3270=y
+ CONFIG_S390_FLIC=y
+ CONFIG_S390_FLIC_KVM=$(CONFIG_KVM)
+-CONFIG_VFIO_CCW=$(CONFIG_LINUX)
++# Disabled for Red Hat Enterprise Linux:
++# CONFIG_VFIO_CCW=$(CONFIG_LINUX)
+ CONFIG_WDT_DIAG288=y
+diff --git a/default-configs/sound.mak b/default-configs/sound.mak
+index 4f22c34..1bead9b 100644
+--- a/default-configs/sound.mak
++++ b/default-configs/sound.mak
+@@ -1,4 +1,4 @@
+-CONFIG_SB16=y
+-CONFIG_ADLIB=y
+-CONFIG_GUS=y
+-CONFIG_CS4231A=y
++#CONFIG_SB16=y
++#CONFIG_ADLIB=y
++#CONFIG_GUS=y
++#CONFIG_CS4231A=y
+diff --git a/default-configs/usb.mak b/default-configs/usb.mak
+index f4b8568..a256f84 100644
+--- a/default-configs/usb.mak
++++ b/default-configs/usb.mak
+@@ -1,10 +1,10 @@
+ CONFIG_USB=y
+-CONFIG_USB_TABLET_WACOM=y
++#CONFIG_USB_TABLET_WACOM=y
+ CONFIG_USB_STORAGE_BOT=y
+-CONFIG_USB_STORAGE_UAS=y
+-CONFIG_USB_STORAGE_MTP=y
++#CONFIG_USB_STORAGE_UAS=y
++#CONFIG_USB_STORAGE_MTP=y
+ CONFIG_USB_SMARTCARD=y
+-CONFIG_USB_AUDIO=y
+-CONFIG_USB_SERIAL=y
+-CONFIG_USB_NETWORK=y
+-CONFIG_USB_BLUETOOTH=y
++#CONFIG_USB_AUDIO=y
++#CONFIG_USB_SERIAL=y
++#CONFIG_USB_NETWORK=y
++#CONFIG_USB_BLUETOOTH=y
+diff --git a/default-configs/x86_64-softmmu.mak b/default-configs/x86_64-softmmu.mak
+index 0390b43..2675606 100644
+--- a/default-configs/x86_64-softmmu.mak
++++ b/default-configs/x86_64-softmmu.mak
+@@ -4,20 +4,21 @@ include pci.mak
+ include sound.mak
+ include usb.mak
+ CONFIG_QXL=$(CONFIG_SPICE)
+-CONFIG_VGA_ISA=y
++#CONFIG_VGA_ISA=y
++CONFIG_VGA_PCI=y
+ CONFIG_VGA_CIRRUS=y
+-CONFIG_VMWARE_VGA=y
+-CONFIG_VMXNET3_PCI=y
++#CONFIG_VMWARE_VGA=y
++#CONFIG_VMXNET3_PCI=y
+ CONFIG_VIRTIO_VGA=y
+ CONFIG_VMMOUSE=y
+ CONFIG_IPMI=y
+-CONFIG_IPMI_LOCAL=y
+-CONFIG_IPMI_EXTERN=y
+-CONFIG_ISA_IPMI_KCS=y
+-CONFIG_ISA_IPMI_BT=y
++#CONFIG_IPMI_LOCAL=y
++#CONFIG_IPMI_EXTERN=y
++#CONFIG_ISA_IPMI_KCS=y
++#CONFIG_ISA_IPMI_BT=y
+ CONFIG_SERIAL=y
+ CONFIG_SERIAL_ISA=y
+-CONFIG_PARALLEL=y
++#CONFIG_PARALLEL=y
+ CONFIG_I8254=y
+ CONFIG_PCSPK=y
+ CONFIG_PCKBD=y
+@@ -29,11 +30,11 @@ CONFIG_ACPI_MEMORY_HOTPLUG=y
+ CONFIG_ACPI_CPU_HOTPLUG=y
+ CONFIG_APM=y
+ CONFIG_I8257=y
+-CONFIG_IDE_ISA=y
++#CONFIG_IDE_ISA=y
+ CONFIG_IDE_PIIX=y
+-CONFIG_NE2000_ISA=y
+-CONFIG_HPET=y
+-CONFIG_APPLESMC=y
++#CONFIG_NE2000_ISA=y
++#CONFIG_HPET=y
++#CONFIG_APPLESMC=y
+ CONFIG_I8259=y
+ CONFIG_PFLASH_CFI01=y
+ CONFIG_TPM_TIS=$(CONFIG_TPM)
+@@ -41,6 +42,7 @@ CONFIG_TPM_CRB=$(CONFIG_TPM)
+ CONFIG_MC146818RTC=y
+ CONFIG_PCI_PIIX=y
+ CONFIG_WDT_IB700=y
++CONFIG_ISA_BUS=y
+ CONFIG_ISA_DEBUG=y
+ CONFIG_ISA_TESTDEV=y
+ CONFIG_VMPORT=y
+@@ -58,11 +60,11 @@ CONFIG_XIO3130=y
+ CONFIG_IOH3420=y
+ CONFIG_I82801B11=y
+ CONFIG_SMBIOS=y
+-CONFIG_HYPERV_TESTDEV=$(CONFIG_KVM)
++#CONFIG_HYPERV_TESTDEV=$(CONFIG_KVM)
+ CONFIG_PXB=y
+ CONFIG_ACPI_VMGENID=y
+ CONFIG_FW_CFG_DMA=y
+ CONFIG_I2C=y
+ CONFIG_SEV=$(CONFIG_KVM)
+ CONFIG_VTD=y
+-CONFIG_AMD_IOMMU=y
++#CONFIG_AMD_IOMMU=y
+diff --git a/hw/acpi/ich9.c b/hw/acpi/ich9.c
+index c5d8646..a4e87b8 100644
+--- a/hw/acpi/ich9.c
++++ b/hw/acpi/ich9.c
+@@ -446,8 +446,8 @@ void ich9_pm_add_properties(Object *obj, ICH9LPCPMRegs *pm, Error **errp)
+     static const uint32_t gpe0_len = ICH9_PMIO_GPE0_LEN;
+     pm->acpi_memory_hotplug.is_enabled = true;
+     pm->cpu_hotplug_legacy = true;
+-    pm->disable_s3 = 0;
+-    pm->disable_s4 = 0;
++    pm->disable_s3 = 1;
++    pm->disable_s4 = 1;
+     pm->s4_val = 2;
+ 
+     object_property_add_uint32_ptr(obj, ACPI_PM_PROP_PM_IO_BASE,
+diff --git a/hw/block/fdc.c b/hw/block/fdc.c
+index cd29e27..3964096 100644
+--- a/hw/block/fdc.c
++++ b/hw/block/fdc.c
+@@ -605,6 +605,7 @@ static void floppy_drive_class_init(ObjectClass *klass, void *data)
+     k->bus_type = TYPE_FLOPPY_BUS;
+     k->props = floppy_drive_properties;
+     k->desc = "virtual floppy drive";
++    k->user_creatable = false; /* RH state preserve */
+ }
+ 
+ static const TypeInfo floppy_drive_info = {
+diff --git a/hw/char/serial-pci.c b/hw/char/serial-pci.c
+index cb0d04c..d426982 100644
+--- a/hw/char/serial-pci.c
++++ b/hw/char/serial-pci.c
+@@ -228,6 +228,8 @@ static void multi_2x_serial_pci_class_initfn(ObjectClass *klass, void *data)
+     dc->vmsd = &vmstate_pci_multi_serial;
+     dc->props = multi_2x_serial_pci_properties;
+     set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static void multi_4x_serial_pci_class_initfn(ObjectClass *klass, void *data)
+@@ -243,6 +245,8 @@ static void multi_4x_serial_pci_class_initfn(ObjectClass *klass, void *data)
+     dc->vmsd = &vmstate_pci_multi_serial;
+     dc->props = multi_4x_serial_pci_properties;
+     set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo serial_pci_info = {
+diff --git a/hw/core/Makefile.objs b/hw/core/Makefile.objs
+index eb88ca9..2b4491f 100644
+--- a/hw/core/Makefile.objs
++++ b/hw/core/Makefile.objs
+@@ -16,10 +16,11 @@ common-obj-$(CONFIG_SOFTMMU) += machine.o
+ common-obj-$(CONFIG_SOFTMMU) += loader.o
+ common-obj-$(CONFIG_FITLOADER) += loader-fit.o
+ common-obj-$(CONFIG_SOFTMMU) += qdev-properties-system.o
+-common-obj-$(CONFIG_SOFTMMU) += register.o
+-common-obj-$(CONFIG_SOFTMMU) += or-irq.o
++# Disabled in Red Hat Enterprise Linux
++# common-obj-$(CONFIG_SOFTMMU) += register.o
++# obj-$(CONFIG_SOFTMMU) += generic-loader.o
++# common-obj-$(CONFIG_SOFTMMU) += or-irq.o
+ common-obj-$(CONFIG_SOFTMMU) += split-irq.o
+ common-obj-$(CONFIG_PLATFORM_BUS) += platform-bus.o
+ 
+-obj-$(CONFIG_SOFTMMU) += generic-loader.o
+ obj-$(CONFIG_SOFTMMU) += null-machine.o
+diff --git a/hw/display/cirrus_vga.c b/hw/display/cirrus_vga.c
+index 138ae96..d116651 100644
+--- a/hw/display/cirrus_vga.c
++++ b/hw/display/cirrus_vga.c
+@@ -3074,6 +3074,8 @@ static void isa_cirrus_vga_class_init(ObjectClass *klass, void *data)
+     dc->realize = isa_cirrus_vga_realizefn;
+     dc->props = isa_cirrus_vga_properties;
+     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo isa_cirrus_vga_info = {
+diff --git a/hw/i386/pc.c b/hw/i386/pc.c
+index d36bac8..ab4323d 100644
+--- a/hw/i386/pc.c
++++ b/hw/i386/pc.c
+@@ -1525,8 +1525,9 @@ static void pc_superio_init(ISABus *isa_bus, bool create_fdctrl, bool no_vmport)
+     ISADevice *i8042, *port92, *vmmouse;
+ 
+     serial_hds_isa_init(isa_bus, 0, MAX_SERIAL_PORTS);
++#if 0 /* Disabled for Red Hat Enterprise Linux */
+     parallel_hds_isa_init(isa_bus, MAX_PARALLEL_PORTS);
+-
++#endif
+     for (i = 0; i < MAX_FD; i++) {
+         fd[i] = drive_get(IF_FLOPPY, 0, i);
+         create_fdctrl |= !!fd[i];
+diff --git a/hw/ide/piix.c b/hw/ide/piix.c
+index a3afe1f..6de12ca 100644
+--- a/hw/ide/piix.c
++++ b/hw/ide/piix.c
+@@ -253,7 +253,8 @@ static void piix3_ide_class_init(ObjectClass *klass, void *data)
+     k->device_id = PCI_DEVICE_ID_INTEL_82371SB_1;
+     k->class_id = PCI_CLASS_STORAGE_IDE;
+     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
+-    dc->hotpluggable = false;
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo piix3_ide_info = {
+@@ -280,6 +281,8 @@ static void piix4_ide_class_init(ObjectClass *klass, void *data)
+     k->class_id = PCI_CLASS_STORAGE_IDE;
+     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
+     dc->hotpluggable = false;
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo piix4_ide_info = {
+diff --git a/hw/ide/via.c b/hw/ide/via.c
+index 117ac4d..b1bafe6 100644
+--- a/hw/ide/via.c
++++ b/hw/ide/via.c
+@@ -217,6 +217,8 @@ static void via_ide_class_init(ObjectClass *klass, void *data)
+     k->revision = 0x06;
+     k->class_id = PCI_CLASS_STORAGE_IDE;
+     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo via_ide_info = {
+diff --git a/hw/input/pckbd.c b/hw/input/pckbd.c
+index f17f18e..66adb83 100644
+--- a/hw/input/pckbd.c
++++ b/hw/input/pckbd.c
+@@ -570,6 +570,8 @@ static void i8042_class_initfn(ObjectClass *klass, void *data)
+ 
+     dc->realize = i8042_realizefn;
+     dc->vmsd = &vmstate_kbd_isa;
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo i8042_info = {
+diff --git a/hw/misc/Makefile.objs b/hw/misc/Makefile.objs
+index 00e834d..d7430cf 100644
+--- a/hw/misc/Makefile.objs
++++ b/hw/misc/Makefile.objs
+@@ -8,7 +8,7 @@ common-obj-$(CONFIG_ISA_TESTDEV) += pc-testdev.o
+ common-obj-$(CONFIG_PCI_TESTDEV) += pci-testdev.o
+ common-obj-$(CONFIG_EDU) += edu.o
+ 
+-common-obj-y += unimp.o
++#common-obj-y += unimp.o
+ common-obj-$(CONFIG_FW_CFG_DMA) += vmcoreinfo.o
+ 
+ # ARM devices
+diff --git a/hw/misc/ivshmem.c b/hw/misc/ivshmem.c
+index 16f0370..bfbfc0e 100644
+--- a/hw/misc/ivshmem.c
++++ b/hw/misc/ivshmem.c
+@@ -892,6 +892,13 @@ static void ivshmem_common_realize(PCIDevice *dev, Error **errp)
+         return;
+     }
+ 
++    /* Migration disabled for Red Hat Enterprise Linux: */
++    if (s->master == ON_OFF_AUTO_ON) {
++        error_setg(errp, "master=on is not supported");
++        return;
++    }
++    s->master = ON_OFF_AUTO_OFF;
++
+     pci_conf = dev->config;
+     pci_conf[PCI_COMMAND] = PCI_COMMAND_IO | PCI_COMMAND_MEMORY;
+ 
+@@ -1183,6 +1190,8 @@ static void ivshmem_doorbell_class_init(ObjectClass *klass, void *data)
+     k->realize = ivshmem_doorbell_realize;
+     dc->props = ivshmem_doorbell_properties;
+     dc->vmsd = &ivshmem_doorbell_vmsd;
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo ivshmem_doorbell_info = {
+@@ -1352,6 +1361,8 @@ static void ivshmem_class_init(ObjectClass *klass, void *data)
+     dc->desc = "Inter-VM shared memory (legacy)";
+     dc->props = ivshmem_properties;
+     dc->vmsd = &ivshmem_vmsd;
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo ivshmem_info = {
+diff --git a/hw/net/e1000.c b/hw/net/e1000.c
+index 13a9494..742cd0a 100644
+--- a/hw/net/e1000.c
++++ b/hw/net/e1000.c
+@@ -1768,6 +1768,7 @@ static const E1000Info e1000_devices[] = {
+         .revision  = 0x03,
+         .phy_id2   = E1000_PHY_ID2_8254xx_DEFAULT,
+     },
++#if 0 /* Disabled for Red Hat Enterprise Linux 7 */
+     {
+         .name      = "e1000-82544gc",
+         .device_id = E1000_DEV_ID_82544GC_COPPER,
+@@ -1780,6 +1781,7 @@ static const E1000Info e1000_devices[] = {
+         .revision  = 0x03,
+         .phy_id2   = E1000_PHY_ID2_8254xx_DEFAULT,
+     },
++#endif
+ };
+ 
+ static void e1000_register_types(void)
+diff --git a/hw/net/e1000e.c b/hw/net/e1000e.c
+index 16a9417..c934c22 100644
+--- a/hw/net/e1000e.c
++++ b/hw/net/e1000e.c
+@@ -673,7 +673,7 @@ static void e1000e_class_init(ObjectClass *class, void *data)
+     c->vendor_id = PCI_VENDOR_ID_INTEL;
+     c->device_id = E1000_DEV_ID_82574L;
+     c->revision = 0;
+-    c->romfile = "efi-e1000e.rom";
++    c->romfile = "pxe-e1000e.rom";
+     c->class_id = PCI_CLASS_NETWORK_ETHERNET;
+ 
+     dc->desc = "Intel 82574L GbE Controller";
+diff --git a/hw/pci-host/piix.c b/hw/pci-host/piix.c
+index 0e60834..3ce4b14 100644
+--- a/hw/pci-host/piix.c
++++ b/hw/pci-host/piix.c
+@@ -787,6 +787,7 @@ static const TypeInfo i440fx_info = {
+     },
+ };
+ 
++#if 0 /*  Disabled in Red Hat Enterprise Linux */
+ /* IGD Passthrough Host Bridge. */
+ typedef struct {
+     uint8_t offset;
+@@ -870,6 +871,7 @@ static const TypeInfo igd_passthrough_i440fx_info = {
+     .instance_size = sizeof(PCII440FXState),
+     .class_init    = igd_passthrough_i440fx_class_init,
+ };
++#endif
+ 
+ static const char *i440fx_pcihost_root_bus_path(PCIHostState *host_bridge,
+                                                 PCIBus *rootbus)
+@@ -915,7 +917,9 @@ static const TypeInfo i440fx_pcihost_info = {
+ static void i440fx_register_types(void)
+ {
+     type_register_static(&i440fx_info);
++#if 0 /*  Disabled in Red Hat Enterprise Linux */
+     type_register_static(&igd_passthrough_i440fx_info);
++#endif
+     type_register_static(&piix3_pci_type_info);
+     type_register_static(&piix3_info);
+     type_register_static(&piix3_xen_info);
+diff --git a/hw/ppc/Makefile.objs b/hw/ppc/Makefile.objs
+index 86d82a6..a46a989 100644
+--- a/hw/ppc/Makefile.objs
++++ b/hw/ppc/Makefile.objs
+@@ -3,7 +3,7 @@ obj-y += ppc.o ppc_booke.o fdt.o
+ # IBM pSeries (sPAPR)
+ obj-$(CONFIG_PSERIES) += spapr.o spapr_caps.o spapr_vio.o spapr_events.o
+ obj-$(CONFIG_PSERIES) += spapr_hcall.o spapr_iommu.o spapr_rtas.o
+-obj-$(CONFIG_PSERIES) += spapr_pci.o spapr_rtc.o spapr_drc.o spapr_rng.o
++obj-$(CONFIG_PSERIES) += spapr_pci.o spapr_rtc.o spapr_drc.o
+ obj-$(CONFIG_PSERIES) += spapr_cpu_core.o spapr_ovec.o
+ # IBM PowerNV
+ obj-$(CONFIG_POWERNV) += pnv.o pnv_xscom.o pnv_core.o pnv_lpc.o pnv_psi.o pnv_occ.o pnv_bmc.o
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index a81570e..6a92b20 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -1153,6 +1153,7 @@ static void *spapr_build_fdt(sPAPRMachineState *spapr,
+     /* /vdevice */
+     spapr_dt_vdevice(spapr->vio_bus, fdt);
+ 
++#if 0 /* Disabled in Red Hat Enterprise Linux */
+     if (object_resolve_path_type("", TYPE_SPAPR_RNG, NULL)) {
+         ret = spapr_rng_populate_dt(fdt);
+         if (ret < 0) {
+@@ -1160,7 +1161,7 @@ static void *spapr_build_fdt(sPAPRMachineState *spapr,
+             exit(1);
+         }
+     }
+-
++#endif
+     QLIST_FOREACH(phb, &spapr->phbs, list) {
+         ret = spapr_populate_pci_dt(phb, PHANDLE_XICP, fdt);
+         if (ret < 0) {
+diff --git a/hw/ppc/spapr_cpu_core.c b/hw/ppc/spapr_cpu_core.c
+index 94afeb3..1eda854 100644
+--- a/hw/ppc/spapr_cpu_core.c
++++ b/hw/ppc/spapr_cpu_core.c
+@@ -240,10 +240,12 @@ static const TypeInfo spapr_cpu_core_type_infos[] = {
+         .instance_size = sizeof(sPAPRCPUCore),
+         .class_size = sizeof(sPAPRCPUCoreClass),
+     },
++#if 0  /* Disabled for Red Hat Enterprise Linux */
+     DEFINE_SPAPR_CPU_CORE_TYPE("970_v2.2"),
+     DEFINE_SPAPR_CPU_CORE_TYPE("970mp_v1.0"),
+     DEFINE_SPAPR_CPU_CORE_TYPE("970mp_v1.1"),
+     DEFINE_SPAPR_CPU_CORE_TYPE("power5+_v2.1"),
++#endif
+     DEFINE_SPAPR_CPU_CORE_TYPE("power7_v2.3"),
+     DEFINE_SPAPR_CPU_CORE_TYPE("power7+_v2.1"),
+     DEFINE_SPAPR_CPU_CORE_TYPE("power8_v2.0"),
+diff --git a/hw/s390x/virtio-ccw.c b/hw/s390x/virtio-ccw.c
+index e51fbef..8720e46 100644
+--- a/hw/s390x/virtio-ccw.c
++++ b/hw/s390x/virtio-ccw.c
+@@ -927,6 +927,8 @@ static void virtio_ccw_rng_realize(VirtioCcwDevice *ccw_dev, Error **errp)
+                              NULL);
+ }
+ 
++#if 0  /* Disabled in Red Hat Enterprise Linux */
++
+ static void virtio_ccw_crypto_realize(VirtioCcwDevice *ccw_dev, Error **errp)
+ {
+     VirtIOCryptoCcw *dev = VIRTIO_CRYPTO_CCW(ccw_dev);
+@@ -944,6 +946,7 @@ static void virtio_ccw_crypto_realize(VirtioCcwDevice *ccw_dev, Error **errp)
+                              OBJECT(dev->vdev.conf.cryptodev), "cryptodev",
+                              NULL);
+ }
++#endif
+ 
+ static void virtio_ccw_gpu_realize(VirtioCcwDevice *ccw_dev, Error **errp)
+ {
+@@ -1534,6 +1537,8 @@ static const TypeInfo virtio_ccw_rng = {
+     .class_init    = virtio_ccw_rng_class_init,
+ };
+ 
++#if 0  /* Disabled in Red Hat Enterprise Linux */
++
+ static Property virtio_ccw_crypto_properties[] = {
+     DEFINE_PROP_BIT("ioeventfd", VirtioCcwDevice, flags,
+                     VIRTIO_CCW_FLAG_USE_IOEVENTFD_BIT, true),
+@@ -1571,6 +1576,7 @@ static const TypeInfo virtio_ccw_crypto = {
+     .instance_init = virtio_ccw_crypto_instance_init,
+     .class_init    = virtio_ccw_crypto_class_init,
+ };
++#endif
+ 
+ static Property virtio_ccw_gpu_properties[] = {
+     DEFINE_PROP_BIT("ioeventfd", VirtioCcwDevice, flags,
+@@ -1895,7 +1901,9 @@ static void virtio_ccw_register(void)
+ #ifdef CONFIG_VHOST_VSOCK
+     type_register_static(&vhost_vsock_ccw_info);
+ #endif
++#if 0  /* Disabled in Red Hat Enterprise Linux */
+     type_register_static(&virtio_ccw_crypto);
++#endif
+     type_register_static(&virtio_ccw_gpu);
+     type_register_static(&virtio_ccw_input);
+     type_register_static(&virtio_ccw_input_hid);
+diff --git a/hw/usb/ccid-card-emulated.c b/hw/usb/ccid-card-emulated.c
+index ea42e46..f2d8b0d 100644
+--- a/hw/usb/ccid-card-emulated.c
++++ b/hw/usb/ccid-card-emulated.c
+@@ -588,6 +588,8 @@ static void emulated_class_initfn(ObjectClass *klass, void *data)
+     set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
+     dc->desc = "emulated smartcard";
+     dc->props = emulated_card_properties;
++    /* Disabled for Red Hat Enterprise Linux: */
++    dc->user_creatable = false;
+ }
+ 
+ static const TypeInfo emulated_card_info = {
+diff --git a/hw/vfio/Makefile.objs b/hw/vfio/Makefile.objs
+index a2e7a0a..b25ca64 100644
+--- a/hw/vfio/Makefile.objs
++++ b/hw/vfio/Makefile.objs
+@@ -2,8 +2,5 @@ ifeq ($(CONFIG_LINUX), y)
+ obj-$(CONFIG_SOFTMMU) += common.o
+ obj-$(CONFIG_PCI) += pci.o pci-quirks.o display.o
+ obj-$(CONFIG_VFIO_CCW) += ccw.o
+-obj-$(CONFIG_SOFTMMU) += platform.o
+-obj-$(CONFIG_VFIO_XGMAC) += calxeda-xgmac.o
+-obj-$(CONFIG_VFIO_AMD_XGBE) += amd-xgbe.o
+ obj-$(CONFIG_SOFTMMU) += spapr.o
+ endif
+diff --git a/hw/vfio/pci-quirks.c b/hw/vfio/pci-quirks.c
+index e5779a7..cb2f79c 100644
+--- a/hw/vfio/pci-quirks.c
++++ b/hw/vfio/pci-quirks.c
+@@ -1193,6 +1193,8 @@ static void vfio_pci_igd_lpc_bridge_class_init(ObjectClass *klass, void *data)
+     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
+     dc->desc = "VFIO dummy ISA/LPC bridge for IGD assignment";
+     dc->hotpluggable = false;
++    /* Disabled in Red Hat Enterprise Linux */
++    dc->user_creatable = false;
+     k->realize = vfio_pci_igd_lpc_bridge_realize;
+     k->class_id = PCI_CLASS_BRIDGE_ISA;
+ }
+@@ -1386,6 +1388,9 @@ static void vfio_probe_igd_bar4_quirk(VFIOPCIDevice *vdev, int nr)
+                                        0, PCI_DEVFN(0x2, 0))) {
+         return;
+     }
++    
++    /* Disabled in Red Hat Enterprise Linux */
++    return;
+ 
+     /*
+      * We need to create an LPC/ISA bridge at PCI bus address 00:1f.0 that we
+diff --git a/hw/virtio/Makefile.objs b/hw/virtio/Makefile.objs
+index 765d363..a5a0936 100644
+--- a/hw/virtio/Makefile.objs
++++ b/hw/virtio/Makefile.objs
+@@ -7,8 +7,9 @@ common-obj-y += virtio-mmio.o
+ obj-y += virtio.o virtio-balloon.o 
+ obj-$(CONFIG_LINUX) += vhost.o vhost-backend.o vhost-user.o
+ obj-$(CONFIG_VHOST_VSOCK) += vhost-vsock.o
+-obj-y += virtio-crypto.o
+-obj-$(CONFIG_VIRTIO_PCI) += virtio-crypto-pci.o
++# Disabled in Red Hat Enterprise Linux
++#obj-y += virtio-crypto.o
++#obj-$(CONFIG_VIRTIO_PCI) += virtio-crypto-pci.o
+ endif
+ 
+ common-obj-$(call lnot,$(CONFIG_LINUX)) += vhost-stub.o
+diff --git a/hw/virtio/virtio-pci.c b/hw/virtio/virtio-pci.c
+index 1e8ab7b..e3e49d6 100644
+--- a/hw/virtio/virtio-pci.c
++++ b/hw/virtio/virtio-pci.c
+@@ -1983,7 +1983,7 @@ static const TypeInfo virtio_blk_pci_info = {
+     .class_init    = virtio_blk_pci_class_init,
+ };
+ 
+-#if defined(CONFIG_VHOST_USER) && defined(CONFIG_LINUX)
++#if defined(CONFIG_VHOST_USER_BLK)
+ /* vhost-user-blk */
+ 
+ static Property vhost_user_blk_pci_properties[] = {
+@@ -2163,7 +2163,7 @@ static const TypeInfo vhost_scsi_pci_info = {
+ };
+ #endif
+ 
+-#if defined(CONFIG_VHOST_USER) && defined(CONFIG_LINUX)
++#if defined(CONFIG_VHOST_USER_SCSI)
+ /* vhost-user-scsi-pci */
+ static Property vhost_user_scsi_pci_properties[] = {
+     DEFINE_PROP_UINT32("vectors", VirtIOPCIProxy, nvectors,
+@@ -2686,7 +2686,7 @@ static void virtio_pci_register_types(void)
+     type_register_static(&virtio_9p_pci_info);
+ #endif
+     type_register_static(&virtio_blk_pci_info);
+-#if defined(CONFIG_VHOST_USER) && defined(CONFIG_LINUX)
++#if defined(CONFIG_VHOST_USER_BLK)
+     type_register_static(&vhost_user_blk_pci_info);
+ #endif
+     type_register_static(&virtio_scsi_pci_info);
+@@ -2696,7 +2696,7 @@ static void virtio_pci_register_types(void)
+ #ifdef CONFIG_VHOST_SCSI
+     type_register_static(&vhost_scsi_pci_info);
+ #endif
+-#if defined(CONFIG_VHOST_USER) && defined(CONFIG_LINUX)
++#if defined(CONFIG_VHOST_USER_SCSI)
+     type_register_static(&vhost_user_scsi_pci_info);
+ #endif
+ #ifdef CONFIG_VHOST_VSOCK
+diff --git a/qemu-options.hx b/qemu-options.hx
+index ca4e412..2042dba 100644
+--- a/qemu-options.hx
++++ b/qemu-options.hx
+@@ -1811,11 +1811,6 @@ ETEXI
+ 
+ DEF("no-hpet", 0, QEMU_OPTION_no_hpet,
+     "-no-hpet        disable HPET\n", QEMU_ARCH_I386)
+-STEXI
+-@item -no-hpet
+-@findex -no-hpet
+-Disable HPET support.
+-ETEXI
+ 
+ DEF("acpitable", HAS_ARG, QEMU_OPTION_acpitable,
+     "-acpitable [sig=str][,rev=n][,oem_id=str][,oem_table_id=str][,oem_rev=n][,asl_compiler_id=str][,asl_compiler_rev=n][,{data|file}=file1[:file2]...]\n"
+diff --git a/stubs/Makefile.objs b/stubs/Makefile.objs
+index 2d59d84..dfdfca7 100644
+--- a/stubs/Makefile.objs
++++ b/stubs/Makefile.objs
+@@ -43,3 +43,4 @@ stub-obj-y += xen-common.o
+ stub-obj-y += xen-hvm.o
+ stub-obj-y += pci-host-piix.o
+ stub-obj-y += ram-block.o
++stub-obj-y += ide-isa.o
+diff --git a/stubs/ide-isa.c b/stubs/ide-isa.c
+new file mode 100644
+index 0000000..9fd50ef
+--- /dev/null
++++ b/stubs/ide-isa.c
+@@ -0,0 +1,13 @@
++#include "qemu/osdep.h"
++#include "hw/ide.h"
++#include <stdlib.h>
++
++ISADevice *isa_ide_init(ISABus *bus, int iobase, int iobase2, int isairq,
++                        DriveInfo *hd0, DriveInfo *hd1)
++{
++    /*
++     * In theory the real isa_ide_init() function can return NULL, but no
++     * caller actually checks for that. Make sure we go out with a clear bang.
++     */
++    abort();
++}
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index 022d8c5..4255e9c 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -1953,7 +1953,9 @@ static void arm_cpu_register_types(void)
+     type_register_static(&idau_interface_type_info);
+ 
+     while (info->name) {
+-        cpu_register(info);
++        /* RHEL specific: Filter out unsupported cpu models */
++        if (!strcmp(info->name, "cortex-a15"))
++            cpu_register(info);
+         info++;
+     }
+ 
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index a20fe26..f483a71 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -825,14 +825,14 @@ static X86CPUDefinition builtin_x86_defs[] = {
+         .family = 6,
+         .model = 6,
+         .stepping = 3,
+-        .features[FEAT_1_EDX] =
+-            PPRO_FEATURES |
+-            CPUID_MTRR | CPUID_CLFLUSH | CPUID_MCA |
+-            CPUID_PSE36,
+-        .features[FEAT_1_ECX] =
+-            CPUID_EXT_SSE3 | CPUID_EXT_CX16,
+-        .features[FEAT_8000_0001_EDX] =
+-            CPUID_EXT2_LM | CPUID_EXT2_SYSCALL | CPUID_EXT2_NX,
++        .features[FEAT_1_EDX] = CPUID_SSE2 | CPUID_SSE | CPUID_FXSR |
++            CPUID_MMX | CPUID_CLFLUSH | CPUID_PSE36 | CPUID_PAT | CPUID_CMOV |
++            CPUID_MCA | CPUID_PGE | CPUID_MTRR | CPUID_SEP | CPUID_APIC |
++            CPUID_CX8 | CPUID_MCE | CPUID_PAE | CPUID_MSR | CPUID_TSC |
++            CPUID_PSE | CPUID_DE | CPUID_FP87,
++        .features[FEAT_1_ECX] = CPUID_EXT_CX16 | CPUID_EXT_SSE3,
++        .features[FEAT_8000_0001_EDX] = CPUID_EXT2_LM | CPUID_EXT2_NX |
++            CPUID_EXT2_SYSCALL,
+         .features[FEAT_8000_0001_ECX] =
+             CPUID_EXT3_LAHF_LM | CPUID_EXT3_SVM,
+         .xlevel = 0x8000000A,
+@@ -1062,6 +1062,25 @@ static X86CPUDefinition builtin_x86_defs[] = {
+         .model_id = "Intel(R) Atom(TM) CPU N270   @ 1.60GHz",
+     },
+     {
++        .name = "cpu64-rhel6",
++        .level = 4,
++        .vendor = CPUID_VENDOR_AMD,
++        .family = 6,
++        .model = 13,
++        .stepping = 3,
++        .features[FEAT_1_EDX] = CPUID_SSE2 | CPUID_SSE | CPUID_FXSR |
++             CPUID_MMX | CPUID_CLFLUSH | CPUID_PSE36 | CPUID_PAT | CPUID_CMOV |
++             CPUID_MCA | CPUID_PGE | CPUID_MTRR | CPUID_SEP | CPUID_APIC |
++             CPUID_CX8 | CPUID_MCE | CPUID_PAE | CPUID_MSR | CPUID_TSC |
++             CPUID_PSE | CPUID_DE | CPUID_FP87,
++        .features[FEAT_1_ECX] = CPUID_EXT_CX16 | CPUID_EXT_SSE3,
++        .features[FEAT_8000_0001_EDX] = CPUID_EXT2_LM | CPUID_EXT2_NX | CPUID_EXT2_SYSCALL,
++        .features[FEAT_8000_0001_ECX] = CPUID_EXT3_SSE4A | CPUID_EXT3_ABM |
++             CPUID_EXT3_SVM | CPUID_EXT3_LAHF_LM,
++        .xlevel = 0x8000000A,
++        .model_id = "QEMU Virtual CPU version (cpu64-rhel6)",
++    },
++    {
+         .name = "Conroe",
+         .level = 10,
+         .vendor = CPUID_VENDOR_INTEL,
+@@ -4764,11 +4783,13 @@ static Property x86_cpu_properties[] = {
+     DEFINE_PROP_BOOL("hv-vapic", X86CPU, hyperv_vapic, false),
+     DEFINE_PROP_BOOL("hv-time", X86CPU, hyperv_time, false),
+     DEFINE_PROP_BOOL("hv-crash", X86CPU, hyperv_crash, false),
++#if 0 /* Disabled for Red Hat Enterprise Linux */
+     DEFINE_PROP_BOOL("hv-reset", X86CPU, hyperv_reset, false),
+     DEFINE_PROP_BOOL("hv-vpindex", X86CPU, hyperv_vpindex, false),
+     DEFINE_PROP_BOOL("hv-runtime", X86CPU, hyperv_runtime, false),
+     DEFINE_PROP_BOOL("hv-synic", X86CPU, hyperv_synic, false),
+     DEFINE_PROP_BOOL("hv-stimer", X86CPU, hyperv_stimer, false),
++#endif
+     DEFINE_PROP_BOOL("hv-frequencies", X86CPU, hyperv_frequencies, false),
+     DEFINE_PROP_BOOL("check", X86CPU, check_cpuid, true),
+     DEFINE_PROP_BOOL("enforce", X86CPU, enforce_cpuid, false),
+diff --git a/target/ppc/cpu-models.c b/target/ppc/cpu-models.c
+index 6c9bfde..77cb298 100644
+--- a/target/ppc/cpu-models.c
++++ b/target/ppc/cpu-models.c
+@@ -65,6 +65,7 @@
+ #define POWERPC_DEF(_name, _pvr, _type, _desc)                              \
+     POWERPC_DEF_SVR(_name, _desc, _pvr, POWERPC_SVR_NONE, _type)
+ 
++#if 0  /* Embedded and 32-bit CPUs disabled for Red Hat Enterprise Linux */
+     /* Embedded PowerPC                                                      */
+     /* PowerPC 401 family                                                    */
+     POWERPC_DEF("401",           CPU_POWERPC_401,                    401,
+@@ -739,10 +740,13 @@
+                 "PowerPC 7447A v1.2 (G4)")
+     POWERPC_DEF("7457a_v1.2",    CPU_POWERPC_74x7A_v12,              7455,
+                 "PowerPC 7457A v1.2 (G4)")
++#endif
+     /* 64 bits PowerPC                                                       */
+ #if defined (TARGET_PPC64)
++#if 0  /* Disabled for Red Hat Enterprise Linux */
+     POWERPC_DEF("power5+_v2.1",  CPU_POWERPC_POWER5P_v21,            POWER5P,
+                 "POWER5+ v2.1")
++#endif
+     POWERPC_DEF("power7_v2.3",   CPU_POWERPC_POWER7_v23,             POWER7,
+                 "POWER7 v2.3")
+     POWERPC_DEF("power7+_v2.1",  CPU_POWERPC_POWER7P_v21,            POWER7,
+@@ -753,14 +757,17 @@
+                 "POWER8 v2.0")
+     POWERPC_DEF("power8nvl_v1.0", CPU_POWERPC_POWER8NVL_v10,         POWER8,
+                 "POWER8NVL v1.0")
++#if 0  /* Disabled for Red Hat Enterprise Linux */
+     POWERPC_DEF("970_v2.2",      CPU_POWERPC_970_v22,                970,
+                 "PowerPC 970 v2.2")
++#endif
+ 
+     POWERPC_DEF("power9_v1.0",   CPU_POWERPC_POWER9_DD1,             POWER9,
+                 "POWER9 v1.0")
+     POWERPC_DEF("power9_v2.0",   CPU_POWERPC_POWER9_DD20,            POWER9,
+                 "POWER9 v2.0")
+ 
++#if 0  /* Disabled for Red Hat Enterprise Linux */
+     POWERPC_DEF("970fx_v1.0",    CPU_POWERPC_970FX_v10,              970,
+                 "PowerPC 970FX v1.0 (G5)")
+     POWERPC_DEF("970fx_v2.0",    CPU_POWERPC_970FX_v20,              970,
+@@ -775,12 +782,14 @@
+                 "PowerPC 970MP v1.0")
+     POWERPC_DEF("970mp_v1.1",    CPU_POWERPC_970MP_v11,              970,
+                 "PowerPC 970MP v1.1")
++#endif
+ #endif /* defined (TARGET_PPC64) */
+ 
+ /***************************************************************************/
+ /* PowerPC CPU aliases                                                     */
+ 
+ PowerPCCPUAlias ppc_cpu_aliases[] = {
++#if 0  /* Embedded and 32-bit CPUs disabled for Red Hat Enterprise Linux */
+     { "403", "403gc" },
+     { "405", "405d4" },
+     { "405cr", "405crc" },
+@@ -939,20 +948,25 @@ PowerPCCPUAlias ppc_cpu_aliases[] = {
+     { "7447a", "7447a_v1.2" },
+     { "7457a", "7457a_v1.2" },
+     { "apollo7pm", "7457a_v1.0" },
++#endif
+ #if defined(TARGET_PPC64)
++#if 0  /* Disabled for Red Hat Enterprise Linux */
+     { "power5+", "power5+_v2.1" },
+     { "power5gs", "power5+_v2.1" },
++#endif
+     { "power7", "power7_v2.3" },
+     { "power7+", "power7+_v2.1" },
+     { "power8e", "power8e_v2.1" },
+     { "power8", "power8_v2.0" },
+     { "power8nvl", "power8nvl_v1.0" },
+     { "power9", "power9_v2.0" },
++#if 0  /* Disabled for Red Hat Enterprise Linux */
+     { "970", "970_v2.2" },
+     { "970fx", "970fx_v3.1" },
+     { "970mp", "970mp_v1.1" },
+ #endif
+-
++#endif
++#if 0  /* Disabled for Red Hat Enterprise Linux */
+     /* Generic PowerPCs */
+ #if defined(TARGET_PPC64)
+     { "ppc64", "970fx_v3.1" },
+@@ -960,5 +974,6 @@ PowerPCCPUAlias ppc_cpu_aliases[] = {
+     { "ppc32", "604" },
+     { "ppc", "604" },
+     { "default", "604" },
++#endif
+     { NULL, NULL }
+ };
+diff --git a/target/s390x/cpu_models.c b/target/s390x/cpu_models.c
+index 2741b68..c4016e0 100644
+--- a/target/s390x/cpu_models.c
++++ b/target/s390x/cpu_models.c
+@@ -372,6 +372,9 @@ static void check_unavailable_features(const S390CPUModel *max_model,
+         (max_model->def->gen == model->def->gen &&
+          max_model->def->ec_ga < model->def->ec_ga)) {
+         list_add_feat("type", unavailable);
++    } else if (model->def->gen < 11 && kvm_enabled()) {
++        /* Older CPU models are not supported on Red Hat Enterprise Linux */
++        list_add_feat("type", unavailable);
+     }
+ 
+     /* detect missing features if any to properly report them */
+diff --git a/target/s390x/kvm.c b/target/s390x/kvm.c
+index fb59d92..fbccceb 100644
+--- a/target/s390x/kvm.c
++++ b/target/s390x/kvm.c
+@@ -2285,6 +2285,14 @@ void kvm_s390_apply_cpu_model(const S390CPUModel *model, Error **errp)
+         error_setg(errp, "KVM doesn't support CPU models");
+         return;
+     }
++
++    /* Older CPU models are not supported on Red Hat Enterprise Linux */
++    if (model->def->gen < 11) {
++        error_setg(errp, "KVM: Unsupported CPU type specified: %s",
++                   MACHINE(qdev_get_machine())->cpu_type);
++        return;
++    }
++
+     prop.cpuid = s390_cpuid_from_cpu_model(model);
+     prop.ibc = s390_ibc_from_cpu_model(model);
+     /* configure cpu features indicated via STFL(e) */
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index 3b9a5e3..e4125a6 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -181,8 +181,6 @@ check-qtest-generic-y += tests/device-introspect-test$(EXESUF)
+ gcov-files-generic-y = qdev-monitor.c qmp.c
+ 
+ gcov-files-ipack-y += hw/ipack/ipack.c
+-check-qtest-ipack-y += tests/ipoctal232-test$(EXESUF)
+-gcov-files-ipack-y += hw/char/ipoctal232.c
+ 
+ check-qtest-virtioserial-y += tests/virtio-console-test$(EXESUF)
+ gcov-files-virtioserial-y += hw/char/virtio-console.c
+@@ -214,23 +212,10 @@ check-qtest-pci-y += tests/e1000e-test$(EXESUF)
+ gcov-files-pci-y += hw/net/e1000e.c hw/net/e1000e_core.c
+ check-qtest-pci-y += tests/rtl8139-test$(EXESUF)
+ gcov-files-pci-y += hw/net/rtl8139.c
+-check-qtest-pci-y += tests/pcnet-test$(EXESUF)
+-gcov-files-pci-y += hw/net/pcnet.c
+-gcov-files-pci-y += hw/net/pcnet-pci.c
+-check-qtest-pci-y += tests/eepro100-test$(EXESUF)
+-gcov-files-pci-y += hw/net/eepro100.c
+-check-qtest-pci-y += tests/ne2000-test$(EXESUF)
+-gcov-files-pci-y += hw/net/ne2000.c
+-check-qtest-pci-y += tests/nvme-test$(EXESUF)
+-gcov-files-pci-y += hw/block/nvme.c
+ check-qtest-pci-y += tests/ac97-test$(EXESUF)
+ gcov-files-pci-y += hw/audio/ac97.c
+-check-qtest-pci-y += tests/es1370-test$(EXESUF)
+-gcov-files-pci-y += hw/audio/es1370.c
+ check-qtest-pci-y += $(check-qtest-virtio-y)
+ gcov-files-pci-y += $(gcov-files-virtio-y) hw/virtio/virtio-pci.c
+-check-qtest-pci-y += tests/tpci200-test$(EXESUF)
+-gcov-files-pci-y += hw/ipack/tpci200.c
+ check-qtest-pci-y += $(check-qtest-ipack-y)
+ gcov-files-pci-y += $(gcov-files-ipack-y)
+ check-qtest-pci-y += tests/display-vga-test$(EXESUF)
+@@ -244,23 +229,21 @@ check-qtest-pci-y += tests/intel-hda-test$(EXESUF)
+ gcov-files-pci-y += hw/audio/intel-hda.c hw/audio/hda-codec.c
+ check-qtest-pci-$(CONFIG_IVSHMEM) += tests/ivshmem-test$(EXESUF)
+ gcov-files-pci-y += hw/misc/ivshmem.c
+-check-qtest-pci-y += tests/megasas-test$(EXESUF)
+-gcov-files-pci-y += hw/scsi/megasas.c
++#check-qtest-pci-y += tests/megasas-test$(EXESUF)
++#gcov-files-pci-y += hw/scsi/megasas.c
+ 
+ check-qtest-i386-y = tests/endianness-test$(EXESUF)
+-check-qtest-i386-y += tests/fdc-test$(EXESUF)
+-gcov-files-i386-y = hw/block/fdc.c
++#check-qtest-i386-y += tests/fdc-test$(EXESUF)
++#gcov-files-i386-y = hw/block/fdc.c
+ check-qtest-i386-y += tests/ide-test$(EXESUF)
+ check-qtest-i386-y += tests/ahci-test$(EXESUF)
+ check-qtest-i386-y += tests/hd-geo-test$(EXESUF)
+ gcov-files-i386-y += hw/block/hd-geometry.c
+ check-qtest-i386-y += tests/boot-order-test$(EXESUF)
+-check-qtest-i386-y += tests/bios-tables-test$(EXESUF)
++#check-qtest-i386-y += tests/bios-tables-test$(EXESUF)
+ check-qtest-i386-y += tests/boot-serial-test$(EXESUF)
+ check-qtest-i386-$(CONFIG_SLIRP) += tests/pxe-test$(EXESUF)
+ check-qtest-i386-y += tests/rtc-test$(EXESUF)
+-check-qtest-i386-y += tests/ipmi-kcs-test$(EXESUF)
+-check-qtest-i386-y += tests/ipmi-bt-test$(EXESUF)
+ check-qtest-i386-y += tests/i440fx-test$(EXESUF)
+ check-qtest-i386-y += tests/fw_cfg-test$(EXESUF)
+ check-qtest-i386-y += tests/drive_del-test$(EXESUF)
+@@ -269,8 +252,6 @@ check-qtest-i386-y += tests/tco-test$(EXESUF)
+ gcov-files-i386-y += hw/watchdog/watchdog.c hw/watchdog/wdt_ib700.c
+ check-qtest-i386-y += $(check-qtest-pci-y)
+ gcov-files-i386-y += $(gcov-files-pci-y)
+-check-qtest-i386-y += tests/vmxnet3-test$(EXESUF)
+-gcov-files-i386-y += hw/net/vmxnet3.c
+ gcov-files-i386-y += hw/net/net_rx_pkt.c
+ gcov-files-i386-y += hw/net/net_tx_pkt.c
+ check-qtest-i386-y += tests/pvpanic-test$(EXESUF)
+@@ -279,8 +260,6 @@ check-qtest-i386-y += tests/i82801b11-test$(EXESUF)
+ gcov-files-i386-y += hw/pci-bridge/i82801b11.c
+ check-qtest-i386-y += tests/ioh3420-test$(EXESUF)
+ gcov-files-i386-y += hw/pci-bridge/ioh3420.c
+-check-qtest-i386-y += tests/usb-hcd-ohci-test$(EXESUF)
+-gcov-files-i386-y += hw/usb/hcd-ohci.c
+ check-qtest-i386-y += tests/usb-hcd-uhci-test$(EXESUF)
+ gcov-files-i386-y += hw/usb/hcd-uhci.c
+ check-qtest-i386-y += tests/usb-hcd-ehci-test$(EXESUF)
+@@ -306,7 +285,7 @@ check-qtest-i386-y += tests/migration-test$(EXESUF)
+ check-qtest-i386-y += tests/test-x86-cpuid-compat$(EXESUF)
+ check-qtest-i386-y += tests/numa-test$(EXESUF)
+ check-qtest-x86_64-y += $(check-qtest-i386-y)
+-check-qtest-x86_64-y += tests/sdhci-test$(EXESUF)
++#check-qtest-x86_64-y += tests/sdhci-test$(EXESUF)
+ gcov-files-i386-y += i386-softmmu/hw/timer/mc146818rtc.c
+ gcov-files-x86_64-y = $(subst i386-softmmu/,x86_64-softmmu/,$(gcov-files-i386-y))
+ 
+@@ -328,7 +307,7 @@ check-qtest-moxie-y = tests/boot-serial-test$(EXESUF)
+ 
+ check-qtest-ppc-y = tests/endianness-test$(EXESUF)
+ check-qtest-ppc-y += tests/boot-order-test$(EXESUF)
+-check-qtest-ppc-y += tests/prom-env-test$(EXESUF)
++#check-qtest-ppc-y += tests/prom-env-test$(EXESUF)
+ check-qtest-ppc-y += tests/drive_del-test$(EXESUF)
+ check-qtest-ppc-y += tests/boot-serial-test$(EXESUF)
+ check-qtest-ppc-y += tests/m48t59-test$(EXESUF)
+@@ -342,19 +321,19 @@ check-qtest-ppc64-y += tests/pnv-xscom-test$(EXESUF)
+ check-qtest-ppc64-y += tests/migration-test$(EXESUF)
+ check-qtest-ppc64-y += tests/rtas-test$(EXESUF)
+ check-qtest-ppc64-$(CONFIG_SLIRP) += tests/pxe-test$(EXESUF)
+-check-qtest-ppc64-y += tests/usb-hcd-ohci-test$(EXESUF)
++#check-qtest-ppc64-y += tests/usb-hcd-ohci-test$(EXESUF)
+ gcov-files-ppc64-y += hw/usb/hcd-ohci.c
+-check-qtest-ppc64-y += tests/usb-hcd-uhci-test$(EXESUF)
++#check-qtest-ppc64-y += tests/usb-hcd-uhci-test$(EXESUF)
+ gcov-files-ppc64-y += hw/usb/hcd-uhci.c
+ check-qtest-ppc64-y += tests/usb-hcd-xhci-test$(EXESUF)
+ gcov-files-ppc64-y += hw/usb/hcd-xhci.c
+ check-qtest-ppc64-y += $(check-qtest-virtio-y)
+-check-qtest-ppc64-$(CONFIG_SLIRP) += tests/test-netfilter$(EXESUF)
+-check-qtest-ppc64-$(CONFIG_POSIX) += tests/test-filter-mirror$(EXESUF)
+-check-qtest-ppc64-$(CONFIG_POSIX) += tests/test-filter-redirector$(EXESUF)
++#check-qtest-ppc64-$(CONFIG_SLIRP) += tests/test-netfilter$(EXESUF)
++#check-qtest-ppc64-$(CONFIG_POSIX) += tests/test-filter-mirror$(EXESUF)
++#check-qtest-ppc64-$(CONFIG_POSIX) += tests/test-filter-redirector$(EXESUF)
+ check-qtest-ppc64-y += tests/display-vga-test$(EXESUF)
+ check-qtest-ppc64-y += tests/numa-test$(EXESUF)
+-check-qtest-ppc64-$(CONFIG_IVSHMEM) += tests/ivshmem-test$(EXESUF)
++#check-qtest-ppc64-$(CONFIG_IVSHMEM) += tests/ivshmem-test$(EXESUF)
+ check-qtest-ppc64-y += tests/cpu-plug-test$(EXESUF)
+ 
+ check-qtest-sh4-y = tests/endianness-test$(EXESUF)
+@@ -379,10 +358,10 @@ gcov-files-arm-y += arm-softmmu/hw/block/virtio-blk.c
+ check-qtest-arm-y += tests/test-arm-mptimer$(EXESUF)
+ gcov-files-arm-y += hw/timer/arm_mptimer.c
+ check-qtest-arm-y += tests/boot-serial-test$(EXESUF)
+-check-qtest-arm-y += tests/sdhci-test$(EXESUF)
++#check-qtest-arm-y += tests/sdhci-test$(EXESUF)
+ 
+-check-qtest-aarch64-y = tests/numa-test$(EXESUF)
+-check-qtest-aarch64-y += tests/sdhci-test$(EXESUF)
++#check-qtest-aarch64-y = tests/numa-test$(EXESUF)
++#check-qtest-aarch64-y += tests/sdhci-test$(EXESUF)
+ check-qtest-aarch64-y += tests/boot-serial-test$(EXESUF)
+ 
+ check-qtest-microblazeel-y = $(check-qtest-microblaze-y)
+@@ -757,17 +736,15 @@ tests/rtc-test$(EXESUF): tests/rtc-test.o
+ tests/m48t59-test$(EXESUF): tests/m48t59-test.o
+ tests/endianness-test$(EXESUF): tests/endianness-test.o
+ tests/spapr-phb-test$(EXESUF): tests/spapr-phb-test.o $(libqos-obj-y)
+-tests/prom-env-test$(EXESUF): tests/prom-env-test.o $(libqos-obj-y)
++#tests/prom-env-test$(EXESUF): tests/prom-env-test.o $(libqos-obj-y)
+ tests/rtas-test$(EXESUF): tests/rtas-test.o $(libqos-spapr-obj-y)
+-tests/fdc-test$(EXESUF): tests/fdc-test.o
++#tests/fdc-test$(EXESUF): tests/fdc-test.o
+ tests/ide-test$(EXESUF): tests/ide-test.o $(libqos-pc-obj-y)
+ tests/ahci-test$(EXESUF): tests/ahci-test.o $(libqos-pc-obj-y)
+-tests/ipmi-kcs-test$(EXESUF): tests/ipmi-kcs-test.o
+-tests/ipmi-bt-test$(EXESUF): tests/ipmi-bt-test.o
+ tests/hd-geo-test$(EXESUF): tests/hd-geo-test.o
+ tests/boot-order-test$(EXESUF): tests/boot-order-test.o $(libqos-obj-y)
+ tests/boot-serial-test$(EXESUF): tests/boot-serial-test.o $(libqos-obj-y)
+-tests/bios-tables-test$(EXESUF): tests/bios-tables-test.o \
++#tests/bios-tables-test$(EXESUF): tests/bios-tables-test.o \
+ 	tests/boot-sector.o tests/acpi-utils.o $(libqos-obj-y)
+ tests/pxe-test$(EXESUF): tests/pxe-test.o tests/boot-sector.o $(libqos-obj-y)
+ tests/tmp105-test$(EXESUF): tests/tmp105-test.o $(libqos-omap-obj-y)
+@@ -779,11 +756,8 @@ tests/fw_cfg-test$(EXESUF): tests/fw_cfg-test.o $(libqos-pc-obj-y)
+ tests/e1000-test$(EXESUF): tests/e1000-test.o
+ tests/e1000e-test$(EXESUF): tests/e1000e-test.o $(libqos-pc-obj-y)
+ tests/rtl8139-test$(EXESUF): tests/rtl8139-test.o $(libqos-pc-obj-y)
+-tests/pcnet-test$(EXESUF): tests/pcnet-test.o
+-tests/pnv-xscom-test$(EXESUF): tests/pnv-xscom-test.o
++#tests/pnv-xscom-test$(EXESUF): tests/pnv-xscom-test.o
+ tests/eepro100-test$(EXESUF): tests/eepro100-test.o
+-tests/vmxnet3-test$(EXESUF): tests/vmxnet3-test.o
+-tests/ne2000-test$(EXESUF): tests/ne2000-test.o
+ tests/wdt_ib700-test$(EXESUF): tests/wdt_ib700-test.o
+ tests/tco-test$(EXESUF): tests/tco-test.o $(libqos-pc-obj-y)
+ tests/virtio-balloon-test$(EXESUF): tests/virtio-balloon-test.o $(libqos-virtio-obj-y)
+@@ -802,14 +776,11 @@ tests/test-hmp$(EXESUF): tests/test-hmp.o
+ tests/machine-none-test$(EXESUF): tests/machine-none-test.o
+ tests/drive_del-test$(EXESUF): tests/drive_del-test.o $(libqos-virtio-obj-y)
+ tests/qdev-monitor-test$(EXESUF): tests/qdev-monitor-test.o $(libqos-pc-obj-y)
+-tests/nvme-test$(EXESUF): tests/nvme-test.o
+ tests/pvpanic-test$(EXESUF): tests/pvpanic-test.o
+ tests/i82801b11-test$(EXESUF): tests/i82801b11-test.o
+ tests/ac97-test$(EXESUF): tests/ac97-test.o
+-tests/es1370-test$(EXESUF): tests/es1370-test.o
+ tests/intel-hda-test$(EXESUF): tests/intel-hda-test.o
+ tests/ioh3420-test$(EXESUF): tests/ioh3420-test.o
+-tests/usb-hcd-ohci-test$(EXESUF): tests/usb-hcd-ohci-test.o $(libqos-usb-obj-y)
+ tests/usb-hcd-uhci-test$(EXESUF): tests/usb-hcd-uhci-test.o $(libqos-usb-obj-y)
+ tests/usb-hcd-ehci-test$(EXESUF): tests/usb-hcd-ehci-test.o $(libqos-usb-obj-y)
+ tests/usb-hcd-xhci-test$(EXESUF): tests/usb-hcd-xhci-test.o $(libqos-usb-obj-y)
+@@ -827,14 +798,14 @@ tests/test-filter-mirror$(EXESUF): tests/test-filter-mirror.o $(qtest-obj-y)
+ tests/test-filter-redirector$(EXESUF): tests/test-filter-redirector.o $(qtest-obj-y)
+ tests/test-x86-cpuid-compat$(EXESUF): tests/test-x86-cpuid-compat.o $(qtest-obj-y)
+ tests/ivshmem-test$(EXESUF): tests/ivshmem-test.o contrib/ivshmem-server/ivshmem-server.o $(libqos-pc-obj-y) $(libqos-spapr-obj-y)
+-tests/megasas-test$(EXESUF): tests/megasas-test.o $(libqos-spapr-obj-y) $(libqos-pc-obj-y)
++#tests/megasas-test$(EXESUF): tests/megasas-test.o $(libqos-spapr-obj-y) $(libqos-pc-obj-y)
+ tests/vhost-user-bridge$(EXESUF): tests/vhost-user-bridge.o $(test-util-obj-y) libvhost-user.a
+ tests/test-uuid$(EXESUF): tests/test-uuid.o $(test-util-obj-y)
+ tests/test-arm-mptimer$(EXESUF): tests/test-arm-mptimer.o
+ tests/test-qapi-util$(EXESUF): tests/test-qapi-util.o $(test-util-obj-y)
+ tests/numa-test$(EXESUF): tests/numa-test.o
+ tests/vmgenid-test$(EXESUF): tests/vmgenid-test.o tests/boot-sector.o tests/acpi-utils.o
+-tests/sdhci-test$(EXESUF): tests/sdhci-test.o $(libqos-pc-obj-y)
++#tests/sdhci-test$(EXESUF): tests/sdhci-test.o $(libqos-pc-obj-y)
+ 
+ tests/migration/stress$(EXESUF): tests/migration/stress.o
+ 	$(call quiet-command, $(LINKPROG) -static -O3 $(PTHREAD_LIB) -o $@ $< ,"LINK","$(TARGET_DIR)$@")
+diff --git a/tests/bios-tables-test.c b/tests/bios-tables-test.c
+index bf3e193..715f90c 100644
+--- a/tests/bios-tables-test.c
++++ b/tests/bios-tables-test.c
+@@ -736,6 +736,7 @@ static void test_acpi_q35_tcg_cphp(void)
+     free_test_data(&data);
+ }
+ 
++#if 0 /* Disabled in Red Hat Enterprise Linux */
+ static uint8_t ipmi_required_struct_types[] = {
+     0, 1, 3, 4, 16, 17, 19, 32, 38, 127
+ };
+@@ -772,6 +773,7 @@ static void test_acpi_piix4_tcg_ipmi(void)
+                   &data);
+     free_test_data(&data);
+ }
++#endif
+ 
+ static void test_acpi_q35_tcg_memhp(void)
+ {
+@@ -875,8 +877,10 @@ int main(int argc, char *argv[])
+         qtest_add_func("acpi/piix4/bridge", test_acpi_piix4_tcg_bridge);
+         qtest_add_func("acpi/q35", test_acpi_q35_tcg);
+         qtest_add_func("acpi/q35/bridge", test_acpi_q35_tcg_bridge);
++#if 0 /* Disabled in Red Hat Enterprise Linux */
+         qtest_add_func("acpi/piix4/ipmi", test_acpi_piix4_tcg_ipmi);
+         qtest_add_func("acpi/q35/ipmi", test_acpi_q35_tcg_ipmi);
++#endif
+         qtest_add_func("acpi/piix4/cpuhp", test_acpi_piix4_tcg_cphp);
+         qtest_add_func("acpi/q35/cpuhp", test_acpi_q35_tcg_cphp);
+         qtest_add_func("acpi/piix4/memhp", test_acpi_piix4_tcg_memhp);
+diff --git a/tests/boot-order-test.c b/tests/boot-order-test.c
+index e70f5de..1be0731 100644
+--- a/tests/boot-order-test.c
++++ b/tests/boot-order-test.c
+@@ -106,6 +106,7 @@ static void test_pc_boot_order(void)
+     test_boot_orders(NULL, read_boot_order_pc, test_cases_pc);
+ }
+ 
++#if 0 /* Disabled for RHEL, since CONFIG_MAC and CONFIG_PREP are not enabled */
+ static uint8_t read_m48t59(uint64_t addr, uint16_t reg)
+ {
+     writeb(addr, reg & 0xff);
+@@ -136,6 +137,7 @@ static uint64_t read_boot_order_pmac(void)
+ 
+     return qfw_cfg_get_u16(fw_cfg, FW_CFG_BOOT_DEVICE);
+ }
++#endif /* Disabled for RHEL, since CONFIG_MAC and CONFIG_PREP are not enabled */
+ 
+ static const boot_order_test test_cases_fw_cfg[] = {
+     { "", 'c', 'c' },
+@@ -145,6 +147,7 @@ static const boot_order_test test_cases_fw_cfg[] = {
+     {}
+ };
+ 
++#if 0 /* Disabled for RHEL, since CONFIG_MAC and CONFIG_PREP are not enabled */
+ static void test_pmac_oldworld_boot_order(void)
+ {
+     test_boot_orders("g3beige", read_boot_order_pmac, test_cases_fw_cfg);
+@@ -153,7 +156,9 @@ static void test_pmac_oldworld_boot_order(void)
+ static void test_pmac_newworld_boot_order(void)
+ {
+     test_boot_orders("mac99", read_boot_order_pmac, test_cases_fw_cfg);
++
+ }
++#endif /* Disabled for RHEL, since CONFIG_MAC and CONFIG_PREP are not enabled */
+ 
+ static uint64_t read_boot_order_sun4m(void)
+ {
+@@ -188,11 +193,13 @@ int main(int argc, char *argv[])
+     if (strcmp(arch, "i386") == 0 || strcmp(arch, "x86_64") == 0) {
+         qtest_add_func("boot-order/pc", test_pc_boot_order);
+     } else if (strcmp(arch, "ppc") == 0 || strcmp(arch, "ppc64") == 0) {
++#if 0 /* Disabled for RHEL, since CONFIG_MAC and CONFIG_PREP are not enabled */
+         qtest_add_func("boot-order/prep", test_prep_boot_order);
+         qtest_add_func("boot-order/pmac_oldworld",
+                        test_pmac_oldworld_boot_order);
+         qtest_add_func("boot-order/pmac_newworld",
+                        test_pmac_newworld_boot_order);
++#endif /* Disabled for RHEL, since CONFIG_MAC and CONFIG_PREP are not enabled */
+     } else if (strcmp(arch, "sparc") == 0) {
+         qtest_add_func("boot-order/sun4m", test_sun4m_boot_order);
+     } else if (strcmp(arch, "sparc64") == 0) {
+diff --git a/tests/boot-serial-test.c b/tests/boot-serial-test.c
+index 011525d..dc682c1 100644
+--- a/tests/boot-serial-test.c
++++ b/tests/boot-serial-test.c
+@@ -73,7 +73,7 @@ typedef struct testdef {
+ } testdef_t;
+ 
+ static testdef_t tests[] = {
+-    { "alpha", "clipper", "", "PCI:" },
++/*    { "alpha", "clipper", "", "PCI:" },
+     { "ppc", "ppce500", "", "U-Boot" },
+     { "ppc", "prep", "-m 96", "Memory size: 96 MB" },
+     { "ppc", "40p", "-boot d", "Booting from device d" },
+@@ -83,14 +83,14 @@ static testdef_t tests[] = {
+     { "ppc64", "ppce500", "", "U-Boot" },
+     { "ppc64", "prep", "-boot e", "Booting from device e" },
+     { "ppc64", "40p", "-m 192", "Memory size: 192 MB" },
+-    { "ppc64", "mac99", "", "PowerPC,970FX" },
++    { "ppc64", "mac99", "", "PowerPC,970FX" },*/
+     { "ppc64", "pseries", "", "Open Firmware" },
+-    { "ppc64", "powernv", "-cpu POWER8", "OPAL" },
+-    { "ppc64", "sam460ex", "-device e1000", "8086  100e" },
++/*    { "ppc64", "powernv", "-cpu POWER8", "OPAL" },
++    { "ppc64", "sam460ex", "-device e1000", "8086  100e" },*/
+     { "i386", "isapc", "-cpu qemu32 -device sga", "SGABIOS" },
+     { "i386", "pc", "-device sga", "SGABIOS" },
+     { "i386", "q35", "-device sga", "SGABIOS" },
+-    { "x86_64", "isapc", "-cpu qemu32 -device sga", "SGABIOS" },
++    { "x86_64", "pc", "-cpu qemu32 -device sga", "SGABIOS" },
+     { "x86_64", "q35", "-device sga", "SGABIOS" },
+     { "sparc", "LX", "", "TMS390S10" },
+     { "sparc", "SS-4", "", "MB86904" },
+diff --git a/tests/e1000-test.c b/tests/e1000-test.c
+index 0c5fcdc..0504d33 100644
+--- a/tests/e1000-test.c
++++ b/tests/e1000-test.c
+@@ -29,8 +29,10 @@ static void test_device(gconstpointer data)
+ static const char *models[] = {
+     "e1000",
+     "e1000-82540em",
++#if 0 /* Disabled in Red Hat Enterprise Linux 7 */
+     "e1000-82544gc",
+     "e1000-82545em",
++#endif
+ };
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/endianness-test.c b/tests/endianness-test.c
+index 546e096..1bd87db 100644
+--- a/tests/endianness-test.c
++++ b/tests/endianness-test.c
+@@ -34,6 +34,7 @@ static const TestCase test_cases[] = {
+     { "mips64", "mips", 0x14000000, .bswap = true },
+     { "mips64", "malta", 0x10000000, .bswap = true },
+     { "mips64el", "fulong2e", 0x1fd00000 },
++#if 0 /* Disabled for RHEL, since ISA is not enabled */
+     { "ppc", "g3beige", 0xfe000000, .bswap = true, .superio = "i82378" },
+     { "ppc", "prep", 0x80000000, .bswap = true },
+     { "ppc", "bamboo", 0xe8000000, .bswap = true, .superio = "i82378" },
+@@ -41,6 +42,7 @@ static const TestCase test_cases[] = {
+     { "ppc64", "pseries", (1ULL << 45), .bswap = true, .superio = "i82378" },
+     { "ppc64", "pseries-2.7", 0x10080000000ULL,
+       .bswap = true, .superio = "i82378" },
++#endif /* Disabled for RHEL, since ISA is not enabled */
+     { "sh4", "r2d", 0xfe240000, .superio = "i82378" },
+     { "sh4eb", "r2d", 0xfe240000, .bswap = true, .superio = "i82378" },
+     { "sparc64", "sun4u", 0x1fe02000000LL, .bswap = true },
+diff --git a/tests/ivshmem-test.c b/tests/ivshmem-test.c
+index 8af16ee..df2eb50 100644
+--- a/tests/ivshmem-test.c
++++ b/tests/ivshmem-test.c
+@@ -257,6 +257,7 @@ static void test_ivshmem_pair(void)
+     g_free(data);
+ }
+ 
++#if 0 /* Disabled for Red Hat Enterprise Linux: */
+ typedef struct ServerThread {
+     GThread *thread;
+     IvshmemServer *server;
+@@ -414,9 +415,11 @@ static void test_ivshmem_server_irq(void)
+ {
+     test_ivshmem_server(false);
+ }
++#endif
+ 
+ #define PCI_SLOT_HP             0x06
+ 
++#if 0 /* Test uses legacy ivshmem, which is disabled for Red Hat Enterprise Linux: */
+ static void test_ivshmem_hotplug(void)
+ {
+     const char *arch = qtest_get_arch();
+@@ -434,6 +437,7 @@ static void test_ivshmem_hotplug(void)
+     qtest_end();
+     g_free(opts);
+ }
++#endif
+ 
+ static void test_ivshmem_memdev(void)
+ {
+@@ -501,7 +505,7 @@ static gchar *mktempshm(int size, int *fd)
+ int main(int argc, char **argv)
+ {
+     int ret, fd;
+-    const char *arch = qtest_get_arch();
++/*    const char *arch = qtest_get_arch(); */
+     gchar dir[] = "/tmp/ivshmem-test.XXXXXX";
+ 
+ #if !GLIB_CHECK_VERSION(2, 31, 0)
+@@ -528,14 +532,18 @@ int main(int argc, char **argv)
+     tmpserver = g_strconcat(tmpdir, "/server", NULL);
+ 
+     qtest_add_func("/ivshmem/single", test_ivshmem_single);
++#if 0 /* Test uses legacy ivshmem, which is disabled for Red Hat Enterprise Linux: */
+     qtest_add_func("/ivshmem/hotplug", test_ivshmem_hotplug);
++#endif
+     qtest_add_func("/ivshmem/memdev", test_ivshmem_memdev);
+     if (g_test_slow()) {
+         qtest_add_func("/ivshmem/pair", test_ivshmem_pair);
++#if 0 /* Disabled for Red Hat Enterprise Linux: */
+         if (strcmp(arch, "ppc64") != 0) {
+             qtest_add_func("/ivshmem/server-msi", test_ivshmem_server_msi);
+             qtest_add_func("/ivshmem/server-irq", test_ivshmem_server_irq);
+         }
++#endif
+     }
+ 
+     ret = g_test_run();
+diff --git a/tests/qemu-iotests/051 b/tests/qemu-iotests/051
+index f617e25..69d34eb 100755
+--- a/tests/qemu-iotests/051
++++ b/tests/qemu-iotests/051
+@@ -168,11 +168,11 @@ run_qemu -drive if=virtio
+ case "$QEMU_DEFAULT_MACHINE" in
+     pc)
+         run_qemu -drive if=none,id=disk -device ide-cd,drive=disk
+-        run_qemu -drive if=none,id=disk -device lsi53c895a -device scsi-cd,drive=disk
++#        run_qemu -drive if=none,id=disk -device lsi53c895a -device scsi-cd,drive=disk
+         run_qemu -drive if=none,id=disk -device ide-drive,drive=disk
+         run_qemu -drive if=none,id=disk -device ide-hd,drive=disk
+-        run_qemu -drive if=none,id=disk -device lsi53c895a -device scsi-disk,drive=disk
+-        run_qemu -drive if=none,id=disk -device lsi53c895a -device scsi-hd,drive=disk
++#        run_qemu -drive if=none,id=disk -device lsi53c895a -device scsi-disk,drive=disk
++#        run_qemu -drive if=none,id=disk -device lsi53c895a -device scsi-hd,drive=disk
+         ;;
+      *)
+         ;;
+@@ -197,11 +197,11 @@ run_qemu -drive file="$TEST_IMG",if=virtio,readonly=on
+ case "$QEMU_DEFAULT_MACHINE" in
+     pc)
+         run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device ide-cd,drive=disk
+-        run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device lsi53c895a -device scsi-cd,drive=disk
++#        run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device lsi53c895a -device scsi-cd,drive=disk
+         run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device ide-drive,drive=disk
+         run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device ide-hd,drive=disk
+-        run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device lsi53c895a -device scsi-disk,drive=disk
+-        run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device lsi53c895a -device scsi-hd,drive=disk
++#        run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device lsi53c895a -device scsi-disk,drive=disk
++#        run_qemu -drive file="$TEST_IMG",if=none,id=disk,readonly=on -device lsi53c895a -device scsi-hd,drive=disk
+         ;;
+      *)
+         ;;
+diff --git a/tests/qemu-iotests/group b/tests/qemu-iotests/group
+index 52a80f3..99777ec 100644
+--- a/tests/qemu-iotests/group
++++ b/tests/qemu-iotests/group
+@@ -77,7 +77,7 @@
+ 068 rw auto quick
+ 069 rw auto quick
+ 070 rw auto quick
+-071 rw auto quick
++# 071 rw auto quick -- requires whitelisted blkverify
+ 072 rw auto quick
+ 073 rw auto quick
+ 074 rw auto quick
+@@ -105,7 +105,7 @@
+ 096 rw auto quick
+ 097 rw auto backing
+ 098 rw auto backing quick
+-099 rw auto quick
++# 099 rw auto quick  -- requires whitelisted blkverify
+ # 100 was removed, do not reuse
+ 101 rw auto quick
+ 102 rw auto quick
+diff --git a/tests/qom-test.c b/tests/qom-test.c
+index a34ff6b..db0d3ab 100644
+--- a/tests/qom-test.c
++++ b/tests/qom-test.c
+@@ -16,7 +16,9 @@
+ #include "libqtest.h"
+ 
+ static const char *blacklist_x86[] = {
+-    "xenfv", "xenpv", NULL
++    "xenfv", "xenpv", "isapc",
++    "rhel6.6.0", "rhel6.5.0", "rhel6.4.0", "rhel6.3.0",
++    "rhel6.2.0", "rhel6.1.0", "rhel6.0.0", NULL
+ };
+ 
+ static const struct {
+diff --git a/tests/test-hmp.c b/tests/test-hmp.c
+index 5352c9c..674dd64 100644
+--- a/tests/test-hmp.c
++++ b/tests/test-hmp.c
+@@ -139,7 +139,7 @@ static void add_machine_test_case(const char *mname)
+     char *path;
+ 
+     /* Ignore blacklisted machines that have known problems */
+-    if (!strcmp("xenfv", mname) || !strcmp("xenpv", mname)) {
++    if (!strcmp("xenfv", mname) || !strcmp("xenpv", mname) || !strcmp("isapc", mname)) {
+         return;
+     }
+ 
+diff --git a/tests/test-x86-cpuid-compat.c b/tests/test-x86-cpuid-compat.c
+index 02e4184..9e4a508 100644
+--- a/tests/test-x86-cpuid-compat.c
++++ b/tests/test-x86-cpuid-compat.c
+@@ -306,6 +306,7 @@ int main(int argc, char **argv)
+                    "-cpu 486,xlevel2=0xC0000002,+xstore",
+                    "xlevel2", 0xC0000002);
+ 
++#if 0 /* Disabled in Red Hat Enterprise Linux */
+     /* Check compatibility of old machine-types that didn't
+      * auto-increase level/xlevel/xlevel2: */
+ 
+@@ -356,6 +357,7 @@ int main(int argc, char **argv)
+     add_cpuid_test("x86/cpuid/xlevel-compat/pc-i440fx-2.4/npt-on",
+                    "-machine pc-i440fx-2.4 -cpu SandyBridge,+npt",
+                    "xlevel", 0x80000008);
++#endif
+ 
+     /* Test feature parsing */
+     add_feature_test("x86/cpuid/features/plus",
+diff --git a/tests/usb-hcd-xhci-test.c b/tests/usb-hcd-xhci-test.c
+index 9c14e30..192b7f7 100644
+--- a/tests/usb-hcd-xhci-test.c
++++ b/tests/usb-hcd-xhci-test.c
+@@ -21,6 +21,7 @@ static void test_xhci_hotplug(void)
+     usb_test_hotplug("xhci", 1, NULL);
+ }
+ 
++#if 0 /* Disabled for Red Hat Enterprise Linux 7 */
+ static void test_usb_uas_hotplug(void)
+ {
+     qtest_qmp_device_add("usb-uas", "uas", NULL);
+@@ -34,6 +35,7 @@ static void test_usb_uas_hotplug(void)
+     qtest_qmp_device_del("scsihd");
+     qtest_qmp_device_del("uas");
+ }
++#endif
+ 
+ int main(int argc, char **argv)
+ {
+@@ -43,8 +45,9 @@ int main(int argc, char **argv)
+ 
+     qtest_add_func("/xhci/pci/init", test_xhci_init);
+     qtest_add_func("/xhci/pci/hotplug", test_xhci_hotplug);
++#if 0 /* Disabled for Red Hat Enterprise Linux 7 */
+     qtest_add_func("/xhci/pci/hotplug/usb-uas", test_usb_uas_hotplug);
+-
++#endif
+     qtest_start("-device nec-usb-xhci,id=xhci"
+                 " -drive id=drive0,if=none,file=null-co://,format=raw");
+     ret = g_test_run();
+diff --git a/vl.c b/vl.c
+index fce1fd1..03950fc 100644
+--- a/vl.c
++++ b/vl.c
+@@ -165,7 +165,7 @@ unsigned int max_cpus;
+ int smp_cores = 1;
+ int smp_threads = 1;
+ int acpi_enabled = 1;
+-int no_hpet = 0;
++int no_hpet = 1; /* Always disabled for Red Hat Enterprise Linux */
+ int fd_bootchk = 1;
+ static int no_reboot;
+ int no_shutdown = 0;
+-- 
+1.8.3.1
+

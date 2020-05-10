@@ -1,0 +1,81 @@
+From 3d60cee570db578cc7589cac9844129e9ac9d460 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Fri, 31 Aug 2018 16:25:59 +0200
+Subject: [PATCH 17/29] migration/ram: ensure write persistence on loading all
+ data to PMEM.
+
+RH-Author: plai@redhat.com
+Message-id: <1535732759-22481-10-git-send-email-plai@redhat.com>
+Patchwork-id: 82008
+O-Subject: [RHEL7.6 PATCH BZ 1539280 9/9] migration/ram: ensure write persistence on loading all data to PMEM.
+Bugzilla: 1539280
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Junyan He <junyan.he@intel.com>
+
+Because we need to make sure the pmem kind memory data is synced
+after migration, we choose to call pmem_persist() when the migration
+finish. This will make sure the data of pmem is safe and will not
+lose if power is off.
+
+Signed-off-by: Junyan He <junyan.he@intel.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 56eb90af39abf66c0e80588a9f50c31e7df7320b)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/pmem.h | 6 ++++++
+ migration/ram.c     | 8 ++++++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/include/qemu/pmem.h b/include/qemu/pmem.h
+index ebdb070..dfb6d0d 100644
+--- a/include/qemu/pmem.h
++++ b/include/qemu/pmem.h
+@@ -25,6 +25,12 @@ pmem_memcpy_persist(void *pmemdest, const void *src, size_t len)
+     return NULL;
+ }
+ 
++static inline void
++pmem_persist(const void *addr, size_t len)
++{
++    g_assert_not_reached();
++}
++
+ #endif /* CONFIG_LIBPMEM */
+ 
+ #endif /* !QEMU_PMEM_H */
+diff --git a/migration/ram.c b/migration/ram.c
+index f850fd0..aba0f70 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -33,6 +33,7 @@
+ #include "qemu/bitops.h"
+ #include "qemu/bitmap.h"
+ #include "qemu/main-loop.h"
++#include "qemu/pmem.h"
+ #include "xbzrle.h"
+ #include "ram.h"
+ #include "migration.h"
+@@ -2766,6 +2767,13 @@ static int ram_load_setup(QEMUFile *f, void *opaque)
+ static int ram_load_cleanup(void *opaque)
+ {
+     RAMBlock *rb;
++
++    RAMBLOCK_FOREACH_MIGRATABLE(rb) {
++        if (ramblock_is_pmem(rb)) {
++            pmem_persist(rb->host, rb->used_length);
++        }
++    }
++
+     xbzrle_load_cleanup();
+     compress_threads_load_cleanup();
+ 
+-- 
+1.8.3.1
+

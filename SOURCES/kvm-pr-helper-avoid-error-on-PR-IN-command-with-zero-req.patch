@@ -1,0 +1,139 @@
+From 502aa0cb17507c7af0cca61aeb5ff17b65c7afc7 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 6 Jul 2018 17:56:57 +0200
+Subject: [PATCH 23/89] pr-helper: avoid error on PR IN command with zero
+ request size
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20180706175659.30615-8-pbonzini@redhat.com>
+Patchwork-id: 81250
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 7/9] pr-helper: avoid error on PR IN command with zero request size
+Bugzilla: 1533158
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Michal Privoznik <mprivozn@redhat.com>
+
+After reading a PR IN command with zero request size in prh_read_request,
+the resp->result field will be uninitialized and the resp.sz field will
+be also uninitialized when returning to prh_co_entry.
+
+If resp->result == GOOD (from a previous successful reply or just luck),
+then the assert in prh_write_response might not be triggered and
+uninitialized response will be sent.
+
+The fix is to remove the whole handling of sz == 0 in prh_co_entry.
+Those errors apply only to PR OUT commands and it's perfectly okay to
+catch them later in do_pr_out and multipath_pr_out; the check for
+too-short parameters in fact doesn't apply in the easy SG_IO case, as
+it can be left to the target firmware even.
+
+The result is that prh_read_request does not fail requests anymore and
+prh_co_entry becomes simpler.
+
+Reported-by: Dima Stepanov <dimastep@yandex-team.ru>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit ee8c13b81474e002db083e9692b11c0e106a9c7f)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ scsi/qemu-pr-helper.c | 63 ++++++++++++++++++++++++---------------------------
+ 1 file changed, 30 insertions(+), 33 deletions(-)
+
+diff --git a/scsi/qemu-pr-helper.c b/scsi/qemu-pr-helper.c
+index 3961023..4d843bd 100644
+--- a/scsi/qemu-pr-helper.c
++++ b/scsi/qemu-pr-helper.c
+@@ -444,6 +444,14 @@ static int multipath_pr_out(int fd, const uint8_t *cdb, uint8_t *sense,
+     char transportids[PR_HELPER_DATA_SIZE];
+     int r;
+ 
++    if (sz < PR_OUT_FIXED_PARAM_SIZE) {
++        /* Illegal request, Parameter list length error.  This isn't fatal;
++         * we have read the data, send an error without closing the socket.
++         */
++        scsi_build_sense(sense, SENSE_CODE(INVALID_PARAM_LEN));
++        return CHECK_CONDITION;
++    }
++
+     switch (rq_servact) {
+     case MPATH_PROUT_REG_SA:
+     case MPATH_PROUT_RES_SA:
+@@ -563,6 +571,12 @@ static int do_pr_out(int fd, const uint8_t *cdb, uint8_t *sense,
+                      const uint8_t *param, int sz)
+ {
+     int resp_sz;
++
++    if ((fcntl(fd, F_GETFL) & O_ACCMODE) == O_RDONLY) {
++        scsi_build_sense(sense, SENSE_CODE(INVALID_OPCODE));
++        return CHECK_CONDITION;
++    }
++
+ #ifdef CONFIG_MPATH
+     if (is_mpath(fd)) {
+         return multipath_pr_out(fd, cdb, sense, param, sz);
+@@ -679,21 +693,6 @@ static int coroutine_fn prh_read_request(PRHelperClient *client,
+                                  errp) < 0) {
+             goto out_close;
+         }
+-        if ((fcntl(client->fd, F_GETFL) & O_ACCMODE) == O_RDONLY) {
+-            scsi_build_sense(resp->sense, SENSE_CODE(INVALID_OPCODE));
+-            sz = 0;
+-        } else if (sz < PR_OUT_FIXED_PARAM_SIZE) {
+-            /* Illegal request, Parameter list length error.  This isn't fatal;
+-             * we have read the data, send an error without closing the socket.
+-             */
+-            scsi_build_sense(resp->sense, SENSE_CODE(INVALID_PARAM_LEN));
+-            sz = 0;
+-        }
+-        if (sz == 0) {
+-            resp->result = CHECK_CONDITION;
+-            close(client->fd);
+-            client->fd = -1;
+-        }
+     }
+ 
+     req->fd = client->fd;
+@@ -774,25 +773,23 @@ static void coroutine_fn prh_co_entry(void *opaque)
+             break;
+         }
+ 
+-        if (sz > 0) {
+-            num_active_sockets++;
+-            if (req.cdb[0] == PERSISTENT_RESERVE_OUT) {
+-                r = do_pr_out(req.fd, req.cdb, resp.sense,
+-                              client->data, sz);
+-                resp.sz = 0;
+-            } else {
+-                resp.sz = sizeof(client->data);
+-                r = do_pr_in(req.fd, req.cdb, resp.sense,
+-                             client->data, &resp.sz);
+-                resp.sz = MIN(resp.sz, sz);
+-            }
+-            num_active_sockets--;
+-            close(req.fd);
+-            if (r == -1) {
+-                break;
+-            }
+-            resp.result = r;
++        num_active_sockets++;
++        if (req.cdb[0] == PERSISTENT_RESERVE_OUT) {
++            r = do_pr_out(req.fd, req.cdb, resp.sense,
++                          client->data, sz);
++            resp.sz = 0;
++        } else {
++            resp.sz = sizeof(client->data);
++            r = do_pr_in(req.fd, req.cdb, resp.sense,
++                         client->data, &resp.sz);
++            resp.sz = MIN(resp.sz, sz);
++        }
++        num_active_sockets--;
++        close(req.fd);
++        if (r == -1) {
++            break;
+         }
++        resp.result = r;
+ 
+         if (prh_write_response(client, &req, &resp, &local_err) < 0) {
+             break;
+-- 
+1.8.3.1
+

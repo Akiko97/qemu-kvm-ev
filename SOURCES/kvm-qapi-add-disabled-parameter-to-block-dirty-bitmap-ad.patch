@@ -1,0 +1,100 @@
+From ecbd9793ceb09c1dbbe2e37fd132aa428eb2b4fb Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:41 +0200
+Subject: [PATCH 56/89] qapi: add disabled parameter to block-dirty-bitmap-add
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-6-jsnow@redhat.com>
+Patchwork-id: 81404
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 05/35] qapi: add disabled parameter to block-dirty-bitmap-add
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+This is needed, for example, to create a new bitmap and merge several
+disabled bitmaps into a new one. Without this flag we will have to
+put block-dirty-bitmap-add and block-dirty-bitmap-disable into one
+transaction.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Message-id: 20180606182449.1607-6-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit a6e2ca5f6521553681ae136578ec1cb67e1a7973)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c           | 10 ++++++++++
+ qapi/block-core.json |  6 +++++-
+ 2 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index 3728082..9beef10 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -2115,6 +2115,7 @@ static void block_dirty_bitmap_add_prepare(BlkActionState *common,
+                                action->has_granularity, action->granularity,
+                                action->has_persistent, action->persistent,
+                                action->has_autoload, action->autoload,
++                               action->has_x_disabled, action->x_disabled,
+                                &local_err);
+ 
+     if (!local_err) {
+@@ -2922,6 +2923,7 @@ void qmp_block_dirty_bitmap_add(const char *node, const char *name,
+                                 bool has_granularity, uint32_t granularity,
+                                 bool has_persistent, bool persistent,
+                                 bool has_autoload, bool autoload,
++                                bool has_disabled, bool disabled,
+                                 Error **errp)
+ {
+     BlockDriverState *bs;
+@@ -2956,6 +2958,10 @@ void qmp_block_dirty_bitmap_add(const char *node, const char *name,
+         warn_report("Autoload option is deprecated and its value is ignored");
+     }
+ 
++    if (!has_disabled) {
++        disabled = false;
++    }
++
+     if (persistent &&
+         !bdrv_can_store_new_dirty_bitmap(bs, name, granularity, errp))
+     {
+@@ -2967,6 +2973,10 @@ void qmp_block_dirty_bitmap_add(const char *node, const char *name,
+         return;
+     }
+ 
++    if (disabled) {
++        bdrv_disable_dirty_bitmap(bitmap);
++    }
++
+     bdrv_dirty_bitmap_set_persistance(bitmap, persistent);
+ }
+ 
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 4e1fda3..27ed91b 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1734,11 +1734,15 @@
+ #            Currently, all dirty tracking bitmaps are loaded from Qcow2 on
+ #            open.
+ #
++# @x-disabled: the bitmap is created in the disabled state, which means that
++#              it will not track drive changes. The bitmap may be enabled with
++#              x-block-dirty-bitmap-enable. Default is false. (Since: 3.0)
++#
+ # Since: 2.4
+ ##
+ { 'struct': 'BlockDirtyBitmapAdd',
+   'data': { 'node': 'str', 'name': 'str', '*granularity': 'uint32',
+-            '*persistent': 'bool', '*autoload': 'bool' } }
++            '*persistent': 'bool', '*autoload': 'bool', '*x-disabled': 'bool' } }
+ 
+ ##
+ # @BlockDirtyBitmapMerge:
+-- 
+1.8.3.1
+

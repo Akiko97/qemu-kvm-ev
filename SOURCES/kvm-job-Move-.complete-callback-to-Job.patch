@@ -1,0 +1,298 @@
+From dcfc2f6514b672e68b62effbbc04c88ca16ac89a Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:19 +0200
+Subject: [PATCH 50/89] job: Move .complete callback to Job
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-37-kwolf@redhat.com>
+Patchwork-id: 81084
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 36/73] job: Move .complete callback to Job
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This moves the .complete callback that tells a READY job to complete
+from BlockJobDriver to JobDriver. The wrapper function job_complete()
+doesn't require anything block job specific any more and can be moved
+to Job.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 3453d97243c72988c89a0105fa9546890eae7bd4)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/mirror.c               | 10 +++++-----
+ blockdev.c                   |  2 +-
+ blockjob.c                   | 23 +++++------------------
+ include/block/blockjob.h     | 10 ----------
+ include/block/blockjob_int.h |  6 ------
+ include/qemu/job.h           |  8 ++++++++
+ job.c                        | 16 ++++++++++++++++
+ tests/test-bdrv-drain.c      |  6 +++---
+ tests/test-blockjob.c        | 10 +++++-----
+ 9 files changed, 43 insertions(+), 48 deletions(-)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index a579bd8..656237a 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -905,16 +905,16 @@ immediate_exit:
+     job_defer_to_main_loop(&s->common.job, mirror_exit, data);
+ }
+ 
+-static void mirror_complete(BlockJob *job, Error **errp)
++static void mirror_complete(Job *job, Error **errp)
+ {
+-    MirrorBlockJob *s = container_of(job, MirrorBlockJob, common);
++    MirrorBlockJob *s = container_of(job, MirrorBlockJob, common.job);
+     BlockDriverState *target;
+ 
+     target = blk_bs(s->target);
+ 
+     if (!s->synced) {
+         error_setg(errp, "The active block job '%s' cannot be completed",
+-                   job->job.id);
++                   job->id);
+         return;
+     }
+ 
+@@ -995,8 +995,8 @@ static const BlockJobDriver mirror_job_driver = {
+         .drain                  = block_job_drain,
+         .start                  = mirror_run,
+         .pause                  = mirror_pause,
++        .complete               = mirror_complete,
+     },
+-    .complete               = mirror_complete,
+     .attached_aio_context   = mirror_attached_aio_context,
+     .drain                  = mirror_drain,
+ };
+@@ -1010,8 +1010,8 @@ static const BlockJobDriver commit_active_job_driver = {
+         .drain                  = block_job_drain,
+         .start                  = mirror_run,
+         .pause                  = mirror_pause,
++        .complete               = mirror_complete,
+     },
+-    .complete               = mirror_complete,
+     .attached_aio_context   = mirror_attached_aio_context,
+     .drain                  = mirror_drain,
+ };
+diff --git a/blockdev.c b/blockdev.c
+index 89df7d9..c2b2be1 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3941,7 +3941,7 @@ void qmp_block_job_complete(const char *device, Error **errp)
+     }
+ 
+     trace_qmp_block_job_complete(job);
+-    block_job_complete(job, errp);
++    job_complete(&job->job, errp);
+     aio_context_release(aio_context);
+ }
+ 
+diff --git a/blockjob.c b/blockjob.c
+index 63e1669..0ca7672 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -481,24 +481,6 @@ int64_t block_job_ratelimit_get_delay(BlockJob *job, uint64_t n)
+     return ratelimit_calculate_delay(&job->limit, n);
+ }
+ 
+-void block_job_complete(BlockJob *job, Error **errp)
+-{
+-    /* Should not be reachable via external interface for internal jobs */
+-    assert(job->job.id);
+-    if (job_apply_verb(&job->job, JOB_VERB_COMPLETE, errp)) {
+-        return;
+-    }
+-    if (job->job.pause_count || job_is_cancelled(&job->job) ||
+-        !job->driver->complete)
+-    {
+-        error_setg(errp, "The active block job '%s' cannot be completed",
+-                   job->job.id);
+-        return;
+-    }
+-
+-    job->driver->complete(job, errp);
+-}
+-
+ void block_job_finalize(BlockJob *job, Error **errp)
+ {
+     assert(job && job->job.id);
+@@ -571,6 +553,11 @@ void block_job_cancel_sync_all(void)
+     }
+ }
+ 
++static void block_job_complete(BlockJob *job, Error **errp)
++{
++    job_complete(&job->job, errp);
++}
++
+ int block_job_complete_sync(BlockJob *job, Error **errp)
+ {
+     return block_job_finish_sync(job, &block_job_complete, errp);
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index d975efe..85ce18a 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -154,16 +154,6 @@ void block_job_set_speed(BlockJob *job, int64_t speed, Error **errp);
+ void block_job_cancel(BlockJob *job, bool force);
+ 
+ /**
+- * block_job_complete:
+- * @job: The job to be completed.
+- * @errp: Error object.
+- *
+- * Asynchronously complete the specified job.
+- */
+-void block_job_complete(BlockJob *job, Error **errp);
+-
+-
+-/**
+  * block_job_finalize:
+  * @job: The job to fully commit and finish.
+  * @errp: Error object.
+diff --git a/include/block/blockjob_int.h b/include/block/blockjob_int.h
+index 38fe22d..b8ca7bb 100644
+--- a/include/block/blockjob_int.h
++++ b/include/block/blockjob_int.h
+@@ -39,12 +39,6 @@ struct BlockJobDriver {
+     JobDriver job_driver;
+ 
+     /**
+-     * Optional callback for job types whose completion must be triggered
+-     * manually.
+-     */
+-    void (*complete)(BlockJob *job, Error **errp);
+-
+-    /**
+      * If the callback is not NULL, prepare will be invoked when all the jobs
+      * belonging to the same transaction complete; or upon this job's completion
+      * if it is not in a transaction.
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index aebc195..8f7f71a 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -167,6 +167,12 @@ struct JobDriver {
+      */
+     void (*user_resume)(Job *job);
+ 
++    /**
++     * Optional callback for job types whose completion must be triggered
++     * manually.
++     */
++    void (*complete)(Job *job, Error **errp);
++
+     /*
+      * If the callback is not NULL, it will be invoked when the job has to be
+      * synchronously cancelled or completed; it should drain any activities
+@@ -363,6 +369,8 @@ int job_apply_verb(Job *job, JobVerb verb, Error **errp);
+ /** The @job could not be started, free it. */
+ void job_early_fail(Job *job);
+ 
++/** Asynchronously complete the specified @job. */
++void job_complete(Job *job, Error **errp);;
+ 
+ typedef void JobDeferToMainLoopFn(Job *job, void *opaque);
+ 
+diff --git a/job.c b/job.c
+index 3772a35..8ceac0b 100644
+--- a/job.c
++++ b/job.c
+@@ -556,6 +556,22 @@ int job_finalize_single(Job *job)
+     return 0;
+ }
+ 
++void job_complete(Job *job, Error **errp)
++{
++    /* Should not be reachable via external interface for internal jobs */
++    assert(job->id);
++    if (job_apply_verb(job, JOB_VERB_COMPLETE, errp)) {
++        return;
++    }
++    if (job->pause_count || job_is_cancelled(job) || !job->driver->complete) {
++        error_setg(errp, "The active block job '%s' cannot be completed",
++                   job->id);
++        return;
++    }
++
++    job->driver->complete(job, errp);
++}
++
+ 
+ typedef struct {
+     Job *job;
+diff --git a/tests/test-bdrv-drain.c b/tests/test-bdrv-drain.c
+index 58ea566..b428aac 100644
+--- a/tests/test-bdrv-drain.c
++++ b/tests/test-bdrv-drain.c
+@@ -514,9 +514,9 @@ static void coroutine_fn test_job_start(void *opaque)
+     job_defer_to_main_loop(&s->common.job, test_job_completed, NULL);
+ }
+ 
+-static void test_job_complete(BlockJob *job, Error **errp)
++static void test_job_complete(Job *job, Error **errp)
+ {
+-    TestBlockJob *s = container_of(job, TestBlockJob, common);
++    TestBlockJob *s = container_of(job, TestBlockJob, common.job);
+     s->should_complete = true;
+ }
+ 
+@@ -527,8 +527,8 @@ BlockJobDriver test_job_driver = {
+         .user_resume    = block_job_user_resume,
+         .drain          = block_job_drain,
+         .start          = test_job_start,
++        .complete       = test_job_complete,
+     },
+-    .complete       = test_job_complete,
+ };
+ 
+ static void test_blockjob_common(enum drain_type drain_type)
+diff --git a/tests/test-blockjob.c b/tests/test-blockjob.c
+index 592a136..e44c608 100644
+--- a/tests/test-blockjob.c
++++ b/tests/test-blockjob.c
+@@ -171,9 +171,9 @@ static void cancel_job_completed(Job *job, void *opaque)
+     block_job_completed(bjob, 0);
+ }
+ 
+-static void cancel_job_complete(BlockJob *job, Error **errp)
++static void cancel_job_complete(Job *job, Error **errp)
+ {
+-    CancelJob *s = container_of(job, CancelJob, common);
++    CancelJob *s = container_of(job, CancelJob, common.job);
+     s->should_complete = true;
+ }
+ 
+@@ -204,8 +204,8 @@ static const BlockJobDriver test_cancel_driver = {
+         .user_resume   = block_job_user_resume,
+         .drain         = block_job_drain,
+         .start         = cancel_job_start,
++        .complete      = cancel_job_complete,
+     },
+-    .complete      = cancel_job_complete,
+ };
+ 
+ static CancelJob *create_common(BlockJob **pjob)
+@@ -333,7 +333,7 @@ static void test_cancel_pending(void)
+     block_job_enter(job);
+     assert(job->job.status == JOB_STATUS_READY);
+ 
+-    block_job_complete(job, &error_abort);
++    job_complete(&job->job, &error_abort);
+     block_job_enter(job);
+     while (!s->completed) {
+         aio_poll(qemu_get_aio_context(), true);
+@@ -357,7 +357,7 @@ static void test_cancel_concluded(void)
+     block_job_enter(job);
+     assert(job->job.status == JOB_STATUS_READY);
+ 
+-    block_job_complete(job, &error_abort);
++    job_complete(&job->job, &error_abort);
+     block_job_enter(job);
+     while (!s->completed) {
+         aio_poll(qemu_get_aio_context(), true);
+-- 
+1.8.3.1
+

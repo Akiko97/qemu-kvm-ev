@@ -1,0 +1,73 @@
+From 4967a91c66070002024af212794ddff2acaa0ad1 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 7 Nov 2018 18:00:04 +0100
+Subject: [PATCH 30/34] scsi-generic: keep VPD page list sorted
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20181107180007.22954-7-pbonzini@redhat.com>
+Patchwork-id: 82944
+O-Subject: [RHEL7.6.z qemu-kvm-rhev PATCH 6/9] scsi-generic: keep VPD page list sorted
+Bugzilla: 1566195
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+Block limits emulation is just placing 0xb0 as the final byte of the
+VPD pages list.  However, VPD page numbers must be sorted, so change
+that to an in-place insert.  Since I couldn't find any disk that triggered
+the loop more than once, this was tested by adding manually 0xb1
+at the end of the list and checking that 0xb0 was added before.
+
+Reported-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 6c219fc8a112fc69b29f59ea2c7865717ff6e3e0)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/scsi-generic.c | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/hw/scsi/scsi-generic.c b/hw/scsi/scsi-generic.c
+index 4266003..98c6a34 100644
+--- a/hw/scsi/scsi-generic.c
++++ b/hw/scsi/scsi-generic.c
+@@ -145,7 +145,7 @@ static int execute_command(BlockBackend *blk,
+ 
+ static void scsi_handle_inquiry_reply(SCSIGenericReq *r, SCSIDevice *s)
+ {
+-    uint8_t page, page_len;
++    uint8_t page, page_idx;
+ 
+     /*
+      *  EVPD set to zero returns the standard INQUIRY data.
+@@ -191,10 +191,21 @@ static void scsi_handle_inquiry_reply(SCSIGenericReq *r, SCSIDevice *s)
+              *
+              * This way, the guest kernel will be aware of the support
+              * and will use it to proper setup the SCSI device.
++             *
++             * VPD page numbers must be sorted, so insert 0xb0 at the
++             * right place with an in-place insert.  After the initialization
++             * part of the for loop is executed, the device response is
++             * at r[0] to r[page_idx - 1].
+              */
+-            page_len = r->buf[3];
+-            r->buf[page_len + 4] = 0xb0;
+-            r->buf[3] = ++page_len;
++            for (page_idx = lduw_be_p(r->buf + 2) + 4;
++                 page_idx > 4 && r->buf[page_idx - 1] >= 0xb0;
++                 page_idx--) {
++                if (page_idx < r->buflen) {
++                    r->buf[page_idx] = r->buf[page_idx - 1];
++                }
++            }
++            r->buf[page_idx] = 0xb0;
++            stw_be_p(r->buf + 2, lduw_be_p(r->buf + 2) + 1);
+         }
+     }
+ }
+-- 
+1.8.3.1
+

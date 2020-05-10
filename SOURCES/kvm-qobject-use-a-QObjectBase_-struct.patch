@@ -1,0 +1,254 @@
+From a05d912ac29700014b1d6a894240a62f883e4409 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:10 +0200
+Subject: [PATCH 03/54] qobject: use a QObjectBase_ struct
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-4-armbru@redhat.com>
+Patchwork-id: 80742
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 03/23] qobject: use a QObjectBase_ struct
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+From: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+By moving the base fields to a QObjectBase_, QObject can be a type
+which also has a 'base' field. This allows writing a generic QOBJECT()
+macro that will work with any QObject type, including QObject
+itself. The container_of() macro ensures that the object to cast has a
+QObjectBase_ base field, giving some type safety guarantees. QObject
+must have no members but QObjectBase_ base, or else QOBJECT() breaks.
+
+QObjectBase_ is not a typedef and uses a trailing underscore to make
+it obvious it is not for normal use and to avoid potential abuse.
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180419150145.24795-3-marcandre.lureau@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit 3d3eacaeccaab718ea0e2ddaa578bfae9e311c59)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qapi/qmp/qbool.h   |  2 +-
+ include/qapi/qmp/qdict.h   |  2 +-
+ include/qapi/qmp/qlist.h   |  2 +-
+ include/qapi/qmp/qnull.h   |  2 +-
+ include/qapi/qmp/qnum.h    |  2 +-
+ include/qapi/qmp/qobject.h | 31 ++++++++++++++++++++-----------
+ include/qapi/qmp/qstring.h |  2 +-
+ qobject/qobject.c          | 12 ++++++------
+ tests/check-qdict.c        |  6 +++---
+ 9 files changed, 35 insertions(+), 26 deletions(-)
+
+diff --git a/include/qapi/qmp/qbool.h b/include/qapi/qmp/qbool.h
+index b9a44a1..5f61e38 100644
+--- a/include/qapi/qmp/qbool.h
++++ b/include/qapi/qmp/qbool.h
+@@ -17,7 +17,7 @@
+ #include "qapi/qmp/qobject.h"
+ 
+ struct QBool {
+-    QObject base;
++    struct QObjectBase_ base;
+     bool value;
+ };
+ 
+diff --git a/include/qapi/qmp/qdict.h b/include/qapi/qmp/qdict.h
+index 2cc3e90..921a28d 100644
+--- a/include/qapi/qmp/qdict.h
++++ b/include/qapi/qmp/qdict.h
+@@ -25,7 +25,7 @@ typedef struct QDictEntry {
+ } QDictEntry;
+ 
+ struct QDict {
+-    QObject base;
++    struct QObjectBase_ base;
+     size_t size;
+     QLIST_HEAD(,QDictEntry) table[QDICT_BUCKET_MAX];
+ };
+diff --git a/include/qapi/qmp/qlist.h b/include/qapi/qmp/qlist.h
+index 5c673ac..8d2c32c 100644
+--- a/include/qapi/qmp/qlist.h
++++ b/include/qapi/qmp/qlist.h
+@@ -22,7 +22,7 @@ typedef struct QListEntry {
+ } QListEntry;
+ 
+ struct QList {
+-    QObject base;
++    struct QObjectBase_ base;
+     QTAILQ_HEAD(,QListEntry) head;
+ };
+ 
+diff --git a/include/qapi/qmp/qnull.h b/include/qapi/qmp/qnull.h
+index c992ee2..e8ea2c3 100644
+--- a/include/qapi/qmp/qnull.h
++++ b/include/qapi/qmp/qnull.h
+@@ -16,7 +16,7 @@
+ #include "qapi/qmp/qobject.h"
+ 
+ struct QNull {
+-    QObject base;
++    struct QObjectBase_ base;
+ };
+ 
+ extern QNull qnull_;
+diff --git a/include/qapi/qmp/qnum.h b/include/qapi/qmp/qnum.h
+index 3e47475..45bf02a 100644
+--- a/include/qapi/qmp/qnum.h
++++ b/include/qapi/qmp/qnum.h
+@@ -45,7 +45,7 @@ typedef enum {
+  * convert under the hood.
+  */
+ struct QNum {
+-    QObject base;
++    struct QObjectBase_ base;
+     QNumKind kind;
+     union {
+         int64_t i64;
+diff --git a/include/qapi/qmp/qobject.h b/include/qapi/qmp/qobject.h
+index 5206ff9..a713c01 100644
+--- a/include/qapi/qmp/qobject.h
++++ b/include/qapi/qmp/qobject.h
+@@ -34,13 +34,21 @@
+ 
+ #include "qapi/qapi-builtin-types.h"
+ 
+-struct QObject {
++/* Not for use outside include/qapi/qmp/ */
++struct QObjectBase_ {
+     QType type;
+     size_t refcnt;
+ };
+ 
+-/* Get the 'base' part of an object */
+-#define QOBJECT(obj) (&(obj)->base)
++/* this struct must have no other members than base */
++struct QObject {
++    struct QObjectBase_ base;
++};
++
++#define QOBJECT(obj) ({                                         \
++    typeof(obj) _obj = (obj);                                   \
++    _obj ? container_of(&(_obj)->base, QObject, base) : NULL;   \
++})
+ 
+ /* High-level interface for qobject_incref() */
+ #define QINCREF(obj)      \
+@@ -68,8 +76,8 @@ QEMU_BUILD_BUG_MSG(QTYPE__MAX != 7,
+ static inline void qobject_init(QObject *obj, QType type)
+ {
+     assert(QTYPE_NONE < type && type < QTYPE__MAX);
+-    obj->refcnt = 1;
+-    obj->type = type;
++    obj->base.refcnt = 1;
++    obj->base.type = type;
+ }
+ 
+ /**
+@@ -77,8 +85,9 @@ static inline void qobject_init(QObject *obj, QType type)
+  */
+ static inline void qobject_incref(QObject *obj)
+ {
+-    if (obj)
+-        obj->refcnt++;
++    if (obj) {
++        obj->base.refcnt++;
++    }
+ }
+ 
+ /**
+@@ -101,8 +110,8 @@ void qobject_destroy(QObject *obj);
+  */
+ static inline void qobject_decref(QObject *obj)
+ {
+-    assert(!obj || obj->refcnt);
+-    if (obj && --obj->refcnt == 0) {
++    assert(!obj || obj->base.refcnt);
++    if (obj && --obj->base.refcnt == 0) {
+         qobject_destroy(obj);
+     }
+ }
+@@ -112,8 +121,8 @@ static inline void qobject_decref(QObject *obj)
+  */
+ static inline QType qobject_type(const QObject *obj)
+ {
+-    assert(QTYPE_NONE < obj->type && obj->type < QTYPE__MAX);
+-    return obj->type;
++    assert(QTYPE_NONE < obj->base.type && obj->base.type < QTYPE__MAX);
++    return obj->base.type;
+ }
+ 
+ /**
+diff --git a/include/qapi/qmp/qstring.h b/include/qapi/qmp/qstring.h
+index 30ae260..b3b3d44 100644
+--- a/include/qapi/qmp/qstring.h
++++ b/include/qapi/qmp/qstring.h
+@@ -16,7 +16,7 @@
+ #include "qapi/qmp/qobject.h"
+ 
+ struct QString {
+-    QObject base;
++    struct QObjectBase_ base;
+     char *string;
+     size_t length;
+     size_t capacity;
+diff --git a/qobject/qobject.c b/qobject/qobject.c
+index 87649c5..cf4b7e2 100644
+--- a/qobject/qobject.c
++++ b/qobject/qobject.c
+@@ -37,9 +37,9 @@ static void (*qdestroy[QTYPE__MAX])(QObject *) = {
+ 
+ void qobject_destroy(QObject *obj)
+ {
+-    assert(!obj->refcnt);
+-    assert(QTYPE_QNULL < obj->type && obj->type < QTYPE__MAX);
+-    qdestroy[obj->type](obj);
++    assert(!obj->base.refcnt);
++    assert(QTYPE_QNULL < obj->base.type && obj->base.type < QTYPE__MAX);
++    qdestroy[obj->base.type](obj);
+ }
+ 
+ 
+@@ -62,11 +62,11 @@ bool qobject_is_equal(const QObject *x, const QObject *y)
+         return true;
+     }
+ 
+-    if (!x || !y || x->type != y->type) {
++    if (!x || !y || x->base.type != y->base.type) {
+         return false;
+     }
+ 
+-    assert(QTYPE_NONE < x->type && x->type < QTYPE__MAX);
++    assert(QTYPE_NONE < x->base.type && x->base.type < QTYPE__MAX);
+ 
+-    return qis_equal[x->type](x, y);
++    return qis_equal[x->base.type](x, y);
+ }
+diff --git a/tests/check-qdict.c b/tests/check-qdict.c
+index 08d4303..07bb8f4 100644
+--- a/tests/check-qdict.c
++++ b/tests/check-qdict.c
+@@ -570,11 +570,11 @@ static void qdict_join_test(void)
+         }
+ 
+         /* Check the references */
+-        g_assert(qdict_get(dict1, "foo")->refcnt == 1);
+-        g_assert(qdict_get(dict1, "bar")->refcnt == 1);
++        g_assert(qdict_get(dict1, "foo")->base.refcnt == 1);
++        g_assert(qdict_get(dict1, "bar")->base.refcnt == 1);
+ 
+         if (!overwrite) {
+-            g_assert(qdict_get(dict2, "foo")->refcnt == 1);
++            g_assert(qdict_get(dict2, "foo")->base.refcnt == 1);
+         }
+ 
+         /* Clean up */
+-- 
+1.8.3.1
+

@@ -1,0 +1,60 @@
+From e25487ca5ac49460e5a0dcb802866f156485f188 Mon Sep 17 00:00:00 2001
+From: Thomas Huth <thuth@redhat.com>
+Date: Mon, 7 May 2018 07:58:04 +0200
+Subject: [PATCH 08/13] pc-bios/s390-ccw: size_t should be unsigned
+
+RH-Author: Thomas Huth <thuth@redhat.com>
+Message-id: <1525679888-9234-3-git-send-email-thuth@redhat.com>
+Patchwork-id: 80050
+O-Subject: [RHEL-7.6 qemu-kvm-ma PATCH 2/6] pc-bios/s390-ccw: size_t should be unsigned
+Bugzilla: 1523857
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+"size_t" should be an unsigned type according to the C standard.
+Thus we should also use this convention in the s390-ccw firmware to avoid
+confusion. I checked the sources, and apart from one spot in libc.c, the
+code should all be fine with this change.
+
+Buglink: https://bugs.launchpad.net/qemu/+bug/1753437
+Reviewed-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Reviewed-by: Halil Pasic <pasic@linux.vnet.ibm.com>
+Reviewed-by: Collin Walling <walling@linux.ibm.com>
+Signed-off-by: Thomas Huth <thuth@redhat.com>
+(cherry picked from commit e4f869621203955761cf274c87d5595e9facd319)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ pc-bios/s390-ccw/libc.c | 2 +-
+ pc-bios/s390-ccw/libc.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/pc-bios/s390-ccw/libc.c b/pc-bios/s390-ccw/libc.c
+index 38ea77d..a786566 100644
+--- a/pc-bios/s390-ccw/libc.c
++++ b/pc-bios/s390-ccw/libc.c
+@@ -63,7 +63,7 @@ uint64_t atoui(const char *str)
+  */
+ char *uitoa(uint64_t num, char *str, size_t len)
+ {
+-    size_t num_idx = 1; /* account for NUL */
++    long num_idx = 1; /* account for NUL */
+     uint64_t tmp = num;
+ 
+     IPL_assert(str != NULL, "uitoa: no space allocated to store string");
+diff --git a/pc-bios/s390-ccw/libc.h b/pc-bios/s390-ccw/libc.h
+index 63ece70..818517f 100644
+--- a/pc-bios/s390-ccw/libc.h
++++ b/pc-bios/s390-ccw/libc.h
+@@ -12,7 +12,7 @@
+ #ifndef S390_CCW_LIBC_H
+ #define S390_CCW_LIBC_H
+ 
+-typedef long               size_t;
++typedef unsigned long      size_t;
+ typedef int                bool;
+ typedef unsigned char      uint8_t;
+ typedef unsigned short     uint16_t;
+-- 
+1.8.3.1
+

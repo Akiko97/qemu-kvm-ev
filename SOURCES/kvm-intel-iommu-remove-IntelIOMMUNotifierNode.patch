@@ -1,0 +1,182 @@
+From fd9f21135b1317ddfdf70d5d749e9c2ef51e4c22 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Mon, 3 Sep 2018 04:52:34 +0200
+Subject: [PATCH 19/29] intel-iommu: remove IntelIOMMUNotifierNode
+
+RH-Author: Peter Xu <peterx@redhat.com>
+Message-id: <20180903045241.6456-3-peterx@redhat.com>
+Patchwork-id: 82023
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/9] intel-iommu: remove IntelIOMMUNotifierNode
+Bugzilla: 1623859
+RH-Acked-by: Xiao Wang <jasowang@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+
+That is not really necessary.  Removing that node struct and put the
+list entry directly into VTDAddressSpace.  It simplfies the code a lot.
+Since at it, rename the old notifiers_list into vtd_as_with_notifiers.
+
+CC: QEMU Stable <qemu-stable@nongnu.org>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit b4a4ba0d68f50f218ee3957b6638dbee32a5eeef)
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/intel_iommu.c         | 41 +++++++++++------------------------------
+ include/hw/i386/intel_iommu.h |  9 ++-------
+ 2 files changed, 13 insertions(+), 37 deletions(-)
+
+diff --git a/hw/i386/intel_iommu.c b/hw/i386/intel_iommu.c
+index b359efd..3df9045 100644
+--- a/hw/i386/intel_iommu.c
++++ b/hw/i386/intel_iommu.c
+@@ -1248,10 +1248,10 @@ static void vtd_interrupt_remap_table_setup(IntelIOMMUState *s)
+ 
+ static void vtd_iommu_replay_all(IntelIOMMUState *s)
+ {
+-    IntelIOMMUNotifierNode *node;
++    VTDAddressSpace *vtd_as;
+ 
+-    QLIST_FOREACH(node, &s->notifiers_list, next) {
+-        memory_region_iommu_replay_all(&node->vtd_as->iommu);
++    QLIST_FOREACH(vtd_as, &s->vtd_as_with_notifiers, next) {
++        memory_region_iommu_replay_all(&vtd_as->iommu);
+     }
+ }
+ 
+@@ -1372,7 +1372,6 @@ static void vtd_iotlb_global_invalidate(IntelIOMMUState *s)
+ 
+ static void vtd_iotlb_domain_invalidate(IntelIOMMUState *s, uint16_t domain_id)
+ {
+-    IntelIOMMUNotifierNode *node;
+     VTDContextEntry ce;
+     VTDAddressSpace *vtd_as;
+ 
+@@ -1381,8 +1380,7 @@ static void vtd_iotlb_domain_invalidate(IntelIOMMUState *s, uint16_t domain_id)
+     g_hash_table_foreach_remove(s->iotlb, vtd_hash_remove_by_domain,
+                                 &domain_id);
+ 
+-    QLIST_FOREACH(node, &s->notifiers_list, next) {
+-        vtd_as = node->vtd_as;
++    QLIST_FOREACH(vtd_as, &s->vtd_as_with_notifiers, next) {
+         if (!vtd_dev_to_context_entry(s, pci_bus_num(vtd_as->bus),
+                                       vtd_as->devfn, &ce) &&
+             domain_id == VTD_CONTEXT_ENTRY_DID(ce.hi)) {
+@@ -1402,12 +1400,11 @@ static void vtd_iotlb_page_invalidate_notify(IntelIOMMUState *s,
+                                            uint16_t domain_id, hwaddr addr,
+                                            uint8_t am)
+ {
+-    IntelIOMMUNotifierNode *node;
++    VTDAddressSpace *vtd_as;
+     VTDContextEntry ce;
+     int ret;
+ 
+-    QLIST_FOREACH(node, &(s->notifiers_list), next) {
+-        VTDAddressSpace *vtd_as = node->vtd_as;
++    QLIST_FOREACH(vtd_as, &(s->vtd_as_with_notifiers), next) {
+         ret = vtd_dev_to_context_entry(s, pci_bus_num(vtd_as->bus),
+                                        vtd_as->devfn, &ce);
+         if (!ret && domain_id == VTD_CONTEXT_ENTRY_DID(ce.hi)) {
+@@ -2344,8 +2341,6 @@ static void vtd_iommu_notify_flag_changed(IOMMUMemoryRegion *iommu,
+ {
+     VTDAddressSpace *vtd_as = container_of(iommu, VTDAddressSpace, iommu);
+     IntelIOMMUState *s = vtd_as->iommu_state;
+-    IntelIOMMUNotifierNode *node = NULL;
+-    IntelIOMMUNotifierNode *next_node = NULL;
+ 
+     if (!s->caching_mode && new & IOMMU_NOTIFIER_MAP) {
+         error_report("We need to set caching-mode=1 for intel-iommu to enable "
+@@ -2354,21 +2349,9 @@ static void vtd_iommu_notify_flag_changed(IOMMUMemoryRegion *iommu,
+     }
+ 
+     if (old == IOMMU_NOTIFIER_NONE) {
+-        node = g_malloc0(sizeof(*node));
+-        node->vtd_as = vtd_as;
+-        QLIST_INSERT_HEAD(&s->notifiers_list, node, next);
+-        return;
+-    }
+-
+-    /* update notifier node with new flags */
+-    QLIST_FOREACH_SAFE(node, &s->notifiers_list, next, next_node) {
+-        if (node->vtd_as == vtd_as) {
+-            if (new == IOMMU_NOTIFIER_NONE) {
+-                QLIST_REMOVE(node, next);
+-                g_free(node);
+-            }
+-            return;
+-        }
++        QLIST_INSERT_HEAD(&s->vtd_as_with_notifiers, vtd_as, next);
++    } else if (new == IOMMU_NOTIFIER_NONE) {
++        QLIST_REMOVE(vtd_as, next);
+     }
+ }
+ 
+@@ -2838,12 +2821,10 @@ static void vtd_address_space_unmap(VTDAddressSpace *as, IOMMUNotifier *n)
+ 
+ static void vtd_address_space_unmap_all(IntelIOMMUState *s)
+ {
+-    IntelIOMMUNotifierNode *node;
+     VTDAddressSpace *vtd_as;
+     IOMMUNotifier *n;
+ 
+-    QLIST_FOREACH(node, &s->notifiers_list, next) {
+-        vtd_as = node->vtd_as;
++    QLIST_FOREACH(vtd_as, &s->vtd_as_with_notifiers, next) {
+         IOMMU_NOTIFIER_FOREACH(n, &vtd_as->iommu) {
+             vtd_address_space_unmap(vtd_as, n);
+         }
+@@ -3088,7 +3069,7 @@ static void vtd_realize(DeviceState *dev, Error **errp)
+         return;
+     }
+ 
+-    QLIST_INIT(&s->notifiers_list);
++    QLIST_INIT(&s->vtd_as_with_notifiers);
+     memset(s->vtd_as_by_bus_num, 0, sizeof(s->vtd_as_by_bus_num));
+     memory_region_init_io(&s->csrmem, OBJECT(s), &vtd_mem_ops, s,
+                           "intel_iommu", DMAR_REG_SIZE);
+diff --git a/include/hw/i386/intel_iommu.h b/include/hw/i386/intel_iommu.h
+index 45ec891..032e33b 100644
+--- a/include/hw/i386/intel_iommu.h
++++ b/include/hw/i386/intel_iommu.h
+@@ -67,7 +67,6 @@ typedef union VTD_IR_TableEntry VTD_IR_TableEntry;
+ typedef union VTD_IR_MSIAddress VTD_IR_MSIAddress;
+ typedef struct VTDIrq VTDIrq;
+ typedef struct VTD_MSIMessage VTD_MSIMessage;
+-typedef struct IntelIOMMUNotifierNode IntelIOMMUNotifierNode;
+ 
+ /* Context-Entry */
+ struct VTDContextEntry {
+@@ -93,6 +92,7 @@ struct VTDAddressSpace {
+     MemoryRegion iommu_ir;      /* Interrupt region: 0xfeeXXXXX */
+     IntelIOMMUState *iommu_state;
+     VTDContextCacheEntry context_cache_entry;
++    QLIST_ENTRY(VTDAddressSpace) next;
+ };
+ 
+ struct VTDBus {
+@@ -253,11 +253,6 @@ struct VTD_MSIMessage {
+ /* When IR is enabled, all MSI/MSI-X data bits should be zero */
+ #define VTD_IR_MSI_DATA          (0)
+ 
+-struct IntelIOMMUNotifierNode {
+-    VTDAddressSpace *vtd_as;
+-    QLIST_ENTRY(IntelIOMMUNotifierNode) next;
+-};
+-
+ /* The iommu (DMAR) device state struct */
+ struct IntelIOMMUState {
+     X86IOMMUState x86_iommu;
+@@ -295,7 +290,7 @@ struct IntelIOMMUState {
+     GHashTable *vtd_as_by_busptr;   /* VTDBus objects indexed by PCIBus* reference */
+     VTDBus *vtd_as_by_bus_num[VTD_PCI_BUS_MAX]; /* VTDBus objects indexed by bus number */
+     /* list of registered notifiers */
+-    QLIST_HEAD(, IntelIOMMUNotifierNode) notifiers_list;
++    QLIST_HEAD(, VTDAddressSpace) vtd_as_with_notifiers;
+ 
+     /* interrupt remapping */
+     bool intr_enabled;              /* Whether guest enabled IR */
+-- 
+1.8.3.1
+

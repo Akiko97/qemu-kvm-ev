@@ -1,0 +1,61 @@
+From bd6ce734563c0308b021c013f1e622ff185be60b Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 6 Aug 2018 16:35:52 +0200
+Subject: [PATCH 03/13] qemu-img: Fix assert when mapping unaligned raw file
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180806163553.13344-2-mreitz@redhat.com>
+Patchwork-id: 81647
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/2] qemu-img: Fix assert when mapping unaligned raw file
+Bugzilla: 1601310
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Commit a290f085 exposed a latent bug in qemu-img map introduced
+during the conversion of block status to be byte-based.  Earlier in
+commit 5e344dd8, the internal interface get_block_status() switched
+to take byte-based parameters, but still called a sector-based
+block layer function; as such, rounding was added in the lone
+caller to obey the contract.  However, commit 237d78f8 changed
+get_block_status() to truly be byte-based, at which point rounding
+to sector boundaries can result in calling bdrv_block_status() with
+'bytes == 0' (a coding error) when the boundary between data and a
+hole falls mid-sector (true for the past-EOF implicit hole present
+in POSIX files).  Fix things by removing the rounding that is now
+no longer necessary.
+
+See also https://bugzilla.redhat.com/1589738
+
+Fixes: 237d78f8
+Reported-by: Dan Kenigsberg <danken@redhat.com>
+Reported-by: Nir Soffer <nsoffer@redhat.com>
+Reported-by: Maor Lipchuk <mlipchuk@redhat.com>
+CC: qemu-stable@nongnu.org
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit e0b371ed5e2db079051139136fd0478728b6a58f)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index c9ccc1e..f42750a 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -2925,7 +2925,7 @@ static int img_map(int argc, char **argv)
+         int64_t n;
+ 
+         /* Probe up to 1 GiB at a time.  */
+-        n = QEMU_ALIGN_DOWN(MIN(1 << 30, length - offset), BDRV_SECTOR_SIZE);
++        n = MIN(1 << 30, length - offset);
+         ret = get_block_status(bs, offset, n, &next);
+ 
+         if (ret < 0) {
+-- 
+1.8.3.1
+

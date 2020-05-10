@@ -1,0 +1,67 @@
+From afdf8a5ba72ac761081edba383699bd45968349e Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 21 Sep 2018 12:46:28 +0200
+Subject: [PATCH 1/3] test-bdrv-drain: Fix outdated comments
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180921124630.29036-2-kwolf@redhat.com>
+Patchwork-id: 82232
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/3] test-bdrv-drain: Fix outdated comments
+Bugzilla: 1618584
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+Commit 89bd030533e changed the test case from using job_sleep_ns() to
+using qemu_co_sleep_ns() instead. Also, block_job_sleep_ns() became
+job_sleep_ns() in commit 5d43e86e11f.
+
+In both cases, some comments in the test case were not updated. Do that
+now.
+
+Reported-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/test-bdrv-drain.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/tests/test-bdrv-drain.c b/tests/test-bdrv-drain.c
+index d6202b2..7e7ba9b 100644
+--- a/tests/test-bdrv-drain.c
++++ b/tests/test-bdrv-drain.c
+@@ -820,9 +820,9 @@ static int coroutine_fn test_job_run(Job *job, Error **errp)
+ 
+     job_transition_to_ready(&s->common.job);
+     while (!s->should_complete) {
+-        /* Avoid block_job_sleep_ns() because it marks the job as !busy. We
+-         * want to emulate some actual activity (probably some I/O) here so
+-         * that drain has to wait for this acitivity to stop. */
++        /* Avoid job_sleep_ns() because it marks the job as !busy. We want to
++         * emulate some actual activity (probably some I/O) here so that drain
++         * has to wait for this activity to stop. */
+         qemu_co_sleep_ns(QEMU_CLOCK_REALTIME, 100000);
+         job_pause_point(&s->common.job);
+     }
+@@ -908,7 +908,7 @@ static void test_blockjob_common(enum drain_type drain_type, bool use_iothread,
+ 
+     g_assert_cmpint(job->job.pause_count, ==, 0);
+     g_assert_false(job->job.paused);
+-    g_assert_true(job->job.busy); /* We're in job_sleep_ns() */
++    g_assert_true(job->job.busy); /* We're in qemu_co_sleep_ns() */
+ 
+     do_drain_begin_unlocked(drain_type, src);
+ 
+@@ -956,7 +956,7 @@ static void test_blockjob_common(enum drain_type drain_type, bool use_iothread,
+ 
+     g_assert_cmpint(job->job.pause_count, ==, 0);
+     g_assert_false(job->job.paused);
+-    g_assert_true(job->job.busy); /* We're in job_sleep_ns() */
++    g_assert_true(job->job.busy); /* We're in qemu_co_sleep_ns() */
+ 
+     aio_context_acquire(ctx);
+     ret = job_complete_sync(&job->job, &error_abort);
+-- 
+1.8.3.1
+

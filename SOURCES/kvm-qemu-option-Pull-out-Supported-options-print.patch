@@ -1,0 +1,56 @@
+From 1f1faf92011618b0d32dc6a4a7e5b5119c38c2ac Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 14:59:39 +0200
+Subject: [PATCH 05/89] qemu-option: Pull out "Supported options" print
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618145943.4489-4-mreitz@redhat.com>
+Patchwork-id: 80756
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 3/7] qemu-option: Pull out "Supported options" print
+Bugzilla: 1537956
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+It really is up to the caller to decide what this list of options means.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-id: 20180509210023.20283-4-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 7f3fb00136aaec74df8132492d1f48b8e9840258)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c         | 1 +
+ util/qemu-option.c | 1 -
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index e40d6ff..cdeb01b 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -261,6 +261,7 @@ static int print_block_option_help(const char *filename, const char *fmt)
+         create_opts = qemu_opts_append(create_opts, proto_drv->create_opts);
+     }
+ 
++    printf("Supported options:\n");
+     qemu_opts_print_help(create_opts);
+     qemu_opts_free(create_opts);
+     return 0;
+diff --git a/util/qemu-option.c b/util/qemu-option.c
+index d0756fd..95e6cf4 100644
+--- a/util/qemu-option.c
++++ b/util/qemu-option.c
+@@ -218,7 +218,6 @@ void qemu_opts_print_help(QemuOptsList *list)
+ 
+     assert(list);
+     desc = list->desc;
+-    printf("Supported options:\n");
+     while (desc && desc->name) {
+         printf("%-16s %s\n", desc->name,
+                desc->help ? desc->help : "No description available");
+-- 
+1.8.3.1
+

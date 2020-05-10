@@ -1,0 +1,51 @@
+From 91c5845da64dbe85892770609c1b04dee3718506 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 19:00:05 +0200
+Subject: [PATCH 26/57] migration/block-dirty-bitmap: fix dirty_bitmap_load
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-19-dgilbert@redhat.com>
+Patchwork-id: 81012
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 18/18] migration/block-dirty-bitmap: fix dirty_bitmap_load
+Bugzilla: 1584139
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+dirty_bitmap_load_header return code is obtained but not handled. Fix
+this.
+
+Bug was introduced in b35ebdf076d697bc
+"migration: add postcopy migration of dirty bitmaps" with the whole
+function.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20180530112424.204835-1-vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit a36f6ff46f115672cf86d0e1e7cdb1c2fa4d304b)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/block-dirty-bitmap.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/migration/block-dirty-bitmap.c b/migration/block-dirty-bitmap.c
+index 8819aab..2c541c9 100644
+--- a/migration/block-dirty-bitmap.c
++++ b/migration/block-dirty-bitmap.c
+@@ -672,6 +672,9 @@ static int dirty_bitmap_load(QEMUFile *f, void *opaque, int version_id)
+ 
+     do {
+         ret = dirty_bitmap_load_header(f, &s);
++        if (ret < 0) {
++            return ret;
++        }
+ 
+         if (s.flags & DIRTY_BITMAP_MIG_FLAG_START) {
+             ret = dirty_bitmap_load_start(f, &s);
+-- 
+1.8.3.1
+

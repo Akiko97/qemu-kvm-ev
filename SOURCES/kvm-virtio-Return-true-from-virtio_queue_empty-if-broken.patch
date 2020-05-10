@@ -1,0 +1,108 @@
+From 6b1bea7682e1f321225e29cc6ee934a32f7b09d5 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 25 Jan 2019 22:50:07 +0100
+Subject: [PATCH 07/23] virtio: Return true from virtio_queue_empty if broken
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190125225007.8197-8-jsnow@redhat.com>
+Patchwork-id: 84122
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 7/7] virtio: Return true from virtio_queue_empty if broken
+Bugzilla: 1597482
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+Both virtio-blk and virtio-scsi use virtio_queue_empty() as the
+loop condition in VQ handlers (virtio_blk_handle_vq,
+virtio_scsi_handle_cmd_vq). When a device is marked broken in
+virtqueue_pop, for example if a vIOMMU address translation failed, we
+want to break out of the loop.
+
+This fixes a hanging problem when booting a CentOS 3.10.0-862.el7.x86_64
+kernel with ATS enabled:
+
+  $ qemu-system-x86_64 \
+    ... \
+    -device intel-iommu,intremap=on,caching-mode=on,eim=on,device-iotlb=on \
+    -device virtio-scsi-pci,iommu_platform=on,ats=on,id=scsi0,bus=pci.4,addr=0x0
+
+The dead loop happens immediately when the kernel boots and initializes
+the device, where virtio_scsi_data_plane_handle_cmd will not return:
+
+    > ...
+    > #13 0x00005586602b7793 in virtio_scsi_handle_cmd_vq
+    > #14 0x00005586602b8d66 in virtio_scsi_data_plane_handle_cmd
+    > #15 0x00005586602ddab7 in virtio_queue_notify_aio_vq
+    > #16 0x00005586602dfc9f in virtio_queue_host_notifier_aio_poll
+    > #17 0x00005586607885da in run_poll_handlers_once
+    > #18 0x000055866078880e in try_poll_mode
+    > #19 0x00005586607888eb in aio_poll
+    > #20 0x0000558660784561 in aio_wait_bh_oneshot
+    > #21 0x00005586602b9582 in virtio_scsi_dataplane_stop
+    > #22 0x00005586605a7110 in virtio_bus_stop_ioeventfd
+    > #23 0x00005586605a9426 in virtio_pci_stop_ioeventfd
+    > #24 0x00005586605ab808 in virtio_pci_common_write
+    > #25 0x0000558660242396 in memory_region_write_accessor
+    > #26 0x00005586602425ab in access_with_adjusted_size
+    > #27 0x0000558660245281 in memory_region_dispatch_write
+    > #28 0x00005586601e008e in flatview_write_continue
+    > #29 0x00005586601e01d8 in flatview_write
+    > #30 0x00005586601e04de in address_space_write
+    > #31 0x00005586601e052f in address_space_rw
+    > #32 0x00005586602607f2 in kvm_cpu_exec
+    > #33 0x0000558660227148 in qemu_kvm_cpu_thread_fn
+    > #34 0x000055866078bde7 in qemu_thread_start
+    > #35 0x00007f5784906594 in start_thread
+    > #36 0x00007f5784639e6f in clone
+
+With this patch, virtio_queue_empty will now return 1 as soon as the
+vdev is marked as broken, after a "virtio: zero sized buffers are not
+allowed" error.
+
+To be consistent, update virtio_queue_empty_rcu as well.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Message-Id: <20180910145616.8598-2-famz@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 2d1df8591022737b8ef19d681ff74eda389f5198)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/virtio/virtio.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/hw/virtio/virtio.c b/hw/virtio/virtio.c
+index 77eadaa..1c936ad 100644
+--- a/hw/virtio/virtio.c
++++ b/hw/virtio/virtio.c
+@@ -345,6 +345,10 @@ int virtio_queue_ready(VirtQueue *vq)
+  * Called within rcu_read_lock().  */
+ static int virtio_queue_empty_rcu(VirtQueue *vq)
+ {
++    if (unlikely(vq->vdev->broken)) {
++        return 1;
++    }
++
+     if (unlikely(!vq->vring.avail)) {
+         return 1;
+     }
+@@ -360,6 +364,10 @@ int virtio_queue_empty(VirtQueue *vq)
+ {
+     bool empty;
+ 
++    if (unlikely(vq->vdev->broken)) {
++        return 1;
++    }
++
+     if (unlikely(!vq->vring.avail)) {
+         return 1;
+     }
+-- 
+1.8.3.1
+

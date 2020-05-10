@@ -1,0 +1,59 @@
+From 39f21fd9c1bcd7f085193e5310efa79c3c759acd Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Thu, 21 Jun 2018 18:54:39 +0200
+Subject: [PATCH 30/57] osdep: add wait.h compat macros
+
+RH-Author: plai@redhat.com
+Message-id: <1529607285-9942-5-git-send-email-plai@redhat.com>
+Patchwork-id: 80938
+O-Subject: [RHEL7.6 PATCH BZ 1526645 04/10] osdep: add wait.h compat macros
+Bugzilla: 1526645
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Maxime Coquelin <maxime.coquelin@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: "Michael S. Tsirkin" <mst@redhat.com>
+
+Man page for WCOREDUMP says:
+
+  WCOREDUMP(wstatus) returns true if the child produced a core dump.
+  This macro should be employed only if WIFSIGNALED returned true.
+
+  This  macro  is  not  specified  in POSIX.1-2001 and is not
+  available on some UNIX implementations (e.g., AIX, SunOS).  Therefore,
+  enclose its use inside #ifdef WCOREDUMP ... #endif.
+
+Let's do exactly this.
+
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 28012e190e6897cfc2a98364240909d08e90ffc0)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/osdep.h | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/include/qemu/osdep.h b/include/qemu/osdep.h
+index 4165806..afc28e5 100644
+--- a/include/qemu/osdep.h
++++ b/include/qemu/osdep.h
+@@ -108,6 +108,16 @@ extern int daemon(int, int);
+ #include "qemu/typedefs.h"
+ 
+ /*
++ * According to waitpid man page:
++ * WCOREDUMP
++ *  This  macro  is  not  specified  in POSIX.1-2001 and is not
++ *  available on some UNIX implementations (e.g., AIX, SunOS).
++ *  Therefore, enclose its use inside #ifdef WCOREDUMP ... #endif.
++ */
++#ifndef WCOREDUMP
++#define WCOREDUMP(status) 0
++#endif
++/*
+  * We have a lot of unaudited code that may fail in strange ways, or
+  * even be a security risk during migration, if you disable assertions
+  * at compile-time.  You may comment out these safety checks if you
+-- 
+1.8.3.1
+

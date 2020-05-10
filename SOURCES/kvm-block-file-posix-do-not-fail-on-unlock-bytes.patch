@@ -1,0 +1,58 @@
+From 82d4a912b8b197d9d2f56ffc54ca89c535a0f47c Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Wed, 3 Apr 2019 18:43:30 +0200
+Subject: [PATCH 153/163] block/file-posix: do not fail on unlock bytes
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20190403184330.1210-2-mreitz@redhat.com>
+Patchwork-id: 85432
+O-Subject: [RHV-7.7 qemu-kvm-rhev PATCH 1/1] block/file-posix: do not fail on unlock bytes
+Bugzilla: 1603104
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+bdrv_replace_child() calls bdrv_check_perm() with error_abort on
+loosening permissions. However file-locking operations may fail even
+in this case, for example on NFS. And this leads to Qemu crash.
+
+Let's avoid such errors. Note, that we ignore such things anyway on
+permission update commit and abort.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 696aaaed579ac5bf5fa336216909b46d3d8f07a8)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 0cf7261..518f16b 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -795,6 +795,18 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+ 
+     switch (op) {
+     case RAW_PL_PREPARE:
++        if ((s->perm | new_perm) == s->perm &&
++            (s->shared_perm & new_shared) == s->shared_perm)
++        {
++            /*
++             * We are going to unlock bytes, it should not fail. If it fail due
++             * to some fs-dependent permission-unrelated reasons (which occurs
++             * sometimes on NFS and leads to abort in bdrv_replace_child) we
++             * can't prevent such errors by any check here. And we ignore them
++             * anyway in ABORT and COMMIT.
++             */
++            return 0;
++        }
+         ret = raw_apply_lock_bytes(s, s->fd, s->perm | new_perm,
+                                    ~s->shared_perm | ~new_shared,
+                                    false, errp);
+-- 
+1.8.3.1
+

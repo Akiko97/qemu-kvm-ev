@@ -1,0 +1,101 @@
+From e37408d4eee39e39d653ac2ce35155bed6db9a9e Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 14:53:37 +0200
+Subject: [PATCH 08/57] iotests: Add creation test to 153
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618145337.633-4-mreitz@redhat.com>
+Patchwork-id: 80752
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 3/3] iotests: Add creation test to 153
+Bugzilla: 1519144
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+This patch adds a test case to 153 which tries to overwrite an image
+(using qemu-img create) while it is in use.  Without the original user
+explicitly sharing the necessary permissions (writing and truncation),
+this should not be allowed.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Message-id: 20180509215336.31304-4-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit f45b638f9f967cdbea4e24704bd16a858ddcde03)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/153     | 18 ++++++++++++++++++
+ tests/qemu-iotests/153.out | 13 +++++++++++++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/tests/qemu-iotests/153 b/tests/qemu-iotests/153
+index ec508c7..673813c 100755
+--- a/tests/qemu-iotests/153
++++ b/tests/qemu-iotests/153
+@@ -137,6 +137,24 @@ for opts1 in "" "read-only=on" "read-only=on,force-share=on"; do
+         _run_cmd $QEMU_IMG dd          $L if="${TEST_IMG}" of="${TEST_IMG}.convert" bs=512 count=1
+         _run_cmd $QEMU_IMG bench       $L -c 1 "${TEST_IMG}"
+         _run_cmd $QEMU_IMG bench       $L -w -c 1 "${TEST_IMG}"
++
++        # qemu-img create does not support -U
++        if [ -z "$L" ]; then
++            _run_cmd $QEMU_IMG create -f $IMGFMT "${TEST_IMG}" \
++                                      -b ${TEST_IMG}.base
++            # Read the file format.  It used to be the case that
++            # file-posix simply truncated the file, but the qcow2
++            # driver then failed to format it because it was unable
++            # to acquire the necessary WRITE permission.  However, the
++            # truncation was already wrong, and the whole process
++            # resulted in the file being completely empty and thus its
++            # format would be detected to be raw.
++            # So we read it here to see that creation either completed
++            # successfully (thus the format is qcow2) or it aborted
++            # before the file was changed at all (thus the format stays
++            # qcow2).
++            _img_info -U | grep 'file format'
++        fi
+     done
+     _send_qemu_cmd $h "{ 'execute': 'quit', }" ""
+     echo
+diff --git a/tests/qemu-iotests/153.out b/tests/qemu-iotests/153.out
+index 2510762..3492ba7 100644
+--- a/tests/qemu-iotests/153.out
++++ b/tests/qemu-iotests/153.out
+@@ -92,6 +92,11 @@ _qemu_img_wrapper bench -w -c 1 TEST_DIR/t.qcow2
+ qemu-img: Could not open 'TEST_DIR/t.qcow2': Failed to get "write" lock
+ Is another process using the image?
+ 
++_qemu_img_wrapper create -f qcow2 TEST_DIR/t.qcow2 -b TEST_DIR/t.qcow2.base
++qemu-img: TEST_DIR/t.qcow2: Failed to get "write" lock
++Is another process using the image?
++file format: IMGFMT
++
+ == Running utility commands -U ==
+ 
+ _qemu_io_wrapper -U -c read 0 512 TEST_DIR/t.qcow2
+@@ -209,6 +214,11 @@ _qemu_img_wrapper bench -w -c 1 TEST_DIR/t.qcow2
+ qemu-img: Could not open 'TEST_DIR/t.qcow2': Failed to get "write" lock
+ Is another process using the image?
+ 
++_qemu_img_wrapper create -f qcow2 TEST_DIR/t.qcow2 -b TEST_DIR/t.qcow2.base
++qemu-img: TEST_DIR/t.qcow2: Failed to get "write" lock
++Is another process using the image?
++file format: IMGFMT
++
+ == Running utility commands -U ==
+ 
+ _qemu_io_wrapper -U -c read 0 512 TEST_DIR/t.qcow2
+@@ -309,6 +319,9 @@ _qemu_img_wrapper bench -c 1 TEST_DIR/t.qcow2
+ 
+ _qemu_img_wrapper bench -w -c 1 TEST_DIR/t.qcow2
+ 
++_qemu_img_wrapper create -f qcow2 TEST_DIR/t.qcow2 -b TEST_DIR/t.qcow2.base
++file format: IMGFMT
++
+ == Running utility commands -U ==
+ 
+ _qemu_io_wrapper -U -c read 0 512 TEST_DIR/t.qcow2
+-- 
+1.8.3.1
+

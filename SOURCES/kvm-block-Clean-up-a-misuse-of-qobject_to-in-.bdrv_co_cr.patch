@@ -1,0 +1,241 @@
+From 48749c03c412fa59ca643bbd4defd341903c33c1 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:19 +0200
+Subject: [PATCH 12/54] block: Clean up a misuse of qobject_to() in
+ .bdrv_co_create_opts()
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-13-armbru@redhat.com>
+Patchwork-id: 80733
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 12/23] block: Clean up a misuse of qobject_to() in .bdrv_co_create_opts()
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+The following pattern occurs in the .bdrv_co_create_opts() methods of
+parallels, qcow, qcow2, qed, vhdx and vpc:
+
+    qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+    qobject_unref(qdict);
+    qdict = qobject_to(QDict, qobj);
+    if (qdict == NULL) {
+         ret = -EINVAL;
+         goto done;
+    }
+
+    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+    [...]
+    ret = 0;
+done:
+    qobject_unref(qdict);
+    [...]
+    return ret;
+
+If qobject_to() fails, we return failure without setting errp.  That's
+wrong.  As far as I can tell, it cannot fail here.  Clean it up
+anyway, by removing the useless conversion.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 92adf9dbcd3cf9cedddae995b04a99f5c42ae08c)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/parallels.c | 9 ++++-----
+ block/qcow.c      | 9 ++++-----
+ block/qcow2.c     | 9 ++++-----
+ block/qed.c       | 9 ++++-----
+ block/vhdx.c      | 9 ++++-----
+ block/vpc.c       | 9 ++++-----
+ 6 files changed, 24 insertions(+), 30 deletions(-)
+
+diff --git a/block/parallels.c b/block/parallels.c
+index aa58955..1c96c39 100644
+--- a/block/parallels.c
++++ b/block/parallels.c
+@@ -614,7 +614,7 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
+     BlockdevCreateOptions *create_options = NULL;
+     Error *local_err = NULL;
+     BlockDriverState *bs = NULL;
+-    QDict *qdict = NULL;
++    QDict *qdict;
+     QObject *qobj;
+     Visitor *v;
+     int ret;
+@@ -652,14 +652,13 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    qobject_unref(qdict);
+-    qdict = qobject_to(QDict, qobj);
+-    if (qdict == NULL) {
++    if (!qobj) {
+         ret = -EINVAL;
+         goto done;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
++    v = qobject_input_visitor_new_keyval(qobj);
++    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/qcow.c b/block/qcow.c
+index 14b7296..43a595a 100644
+--- a/block/qcow.c
++++ b/block/qcow.c
+@@ -944,7 +944,7 @@ static int coroutine_fn qcow_co_create_opts(const char *filename,
+ {
+     BlockdevCreateOptions *create_options = NULL;
+     BlockDriverState *bs = NULL;
+-    QDict *qdict = NULL;
++    QDict *qdict;
+     QObject *qobj;
+     Visitor *v;
+     const char *val;
+@@ -996,14 +996,13 @@ static int coroutine_fn qcow_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    qobject_unref(qdict);
+-    qdict = qobject_to(QDict, qobj);
+-    if (qdict == NULL) {
++    if (!qobj) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
++    v = qobject_input_visitor_new_keyval(qobj);
++    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/qcow2.c b/block/qcow2.c
+index fa06b41..ede52a8 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -3067,7 +3067,7 @@ static int coroutine_fn qcow2_co_create_opts(const char *filename, QemuOpts *opt
+                                              Error **errp)
+ {
+     BlockdevCreateOptions *create_options = NULL;
+-    QDict *qdict = NULL;
++    QDict *qdict;
+     QObject *qobj;
+     Visitor *v;
+     BlockDriverState *bs = NULL;
+@@ -3140,14 +3140,13 @@ static int coroutine_fn qcow2_co_create_opts(const char *filename, QemuOpts *opt
+ 
+     /* Now get the QAPI type BlockdevCreateOptions */
+     qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    qobject_unref(qdict);
+-    qdict = qobject_to(QDict, qobj);
+-    if (qdict == NULL) {
++    if (!qobj) {
+         ret = -EINVAL;
+         goto finish;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
++    v = qobject_input_visitor_new_keyval(qobj);
++    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/qed.c b/block/qed.c
+index d8810f5..3818888 100644
+--- a/block/qed.c
++++ b/block/qed.c
+@@ -722,7 +722,7 @@ static int coroutine_fn bdrv_qed_co_create_opts(const char *filename,
+                                                 Error **errp)
+ {
+     BlockdevCreateOptions *create_options = NULL;
+-    QDict *qdict = NULL;
++    QDict *qdict;
+     QObject *qobj;
+     Visitor *v;
+     BlockDriverState *bs = NULL;
+@@ -764,14 +764,13 @@ static int coroutine_fn bdrv_qed_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    qobject_unref(qdict);
+-    qdict = qobject_to(QDict, qobj);
+-    if (qdict == NULL) {
++    if (!qobj) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
++    v = qobject_input_visitor_new_keyval(qobj);
++    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/vhdx.c b/block/vhdx.c
+index 32939c4..728d8b3 100644
+--- a/block/vhdx.c
++++ b/block/vhdx.c
+@@ -1963,7 +1963,7 @@ static int coroutine_fn vhdx_co_create_opts(const char *filename,
+                                             Error **errp)
+ {
+     BlockdevCreateOptions *create_options = NULL;
+-    QDict *qdict = NULL;
++    QDict *qdict;
+     QObject *qobj;
+     Visitor *v;
+     BlockDriverState *bs = NULL;
+@@ -2004,14 +2004,13 @@ static int coroutine_fn vhdx_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    qobject_unref(qdict);
+-    qdict = qobject_to(QDict, qobj);
+-    if (qdict == NULL) {
++    if (!qobj) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
++    v = qobject_input_visitor_new_keyval(qobj);
++    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+diff --git a/block/vpc.c b/block/vpc.c
+index 16178e5..a9bb041 100644
+--- a/block/vpc.c
++++ b/block/vpc.c
+@@ -1081,7 +1081,7 @@ static int coroutine_fn vpc_co_create_opts(const char *filename,
+                                            QemuOpts *opts, Error **errp)
+ {
+     BlockdevCreateOptions *create_options = NULL;
+-    QDict *qdict = NULL;
++    QDict *qdict;
+     QObject *qobj;
+     Visitor *v;
+     BlockDriverState *bs = NULL;
+@@ -1120,14 +1120,13 @@ static int coroutine_fn vpc_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple_for_keyval_qiv(qdict, errp);
+-    qobject_unref(qdict);
+-    qdict = qobject_to(QDict, qobj);
+-    if (qdict == NULL) {
++    if (!qobj) {
+         ret = -EINVAL;
+         goto fail;
+     }
+ 
+-    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
++    v = qobject_input_visitor_new_keyval(qobj);
++    qobject_unref(qobj);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+-- 
+1.8.3.1
+

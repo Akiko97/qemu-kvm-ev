@@ -1,0 +1,68 @@
+From cd17af9ea6c8ef48387770a2fd65c93b93f0de65 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:25 +0200
+Subject: [PATCH 15/53] nbd/server: Fix blockstatus trace
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-16-jsnow@redhat.com>
+Patchwork-id: 87197
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 15/19] nbd/server: Fix blockstatus trace
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Don't increment remaining_bytes until we know that we will actually be
+including the current block status extent in the reply; otherwise, the
+value traced will include a bytes value that is oversized by the
+length of the next block status extent which did not get sent because
+it instead ended the loop.
+
+Fixes: fb7afc79
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190403030526.12258-2-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit 2178a569be16b18f04ed854d24fd2281b6a429c5)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 706f95a..6ae2154 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1880,17 +1880,12 @@ static int blockstatus_to_extents(BlockDriverState *bs, uint64_t offset,
+ 
+         flags = (ret & BDRV_BLOCK_ALLOCATED ? 0 : NBD_STATE_HOLE) |
+                 (ret & BDRV_BLOCK_ZERO      ? NBD_STATE_ZERO : 0);
+-        offset += num;
+-        remaining_bytes -= num;
+ 
+         if (first_extent) {
+             extent->flags = flags;
+             extent->length = num;
+             first_extent = false;
+-            continue;
+-        }
+-
+-        if (flags == extent->flags) {
++        } else if (flags == extent->flags) {
+             /* extend current extent */
+             extent->length += num;
+         } else {
+@@ -1903,6 +1898,8 @@ static int blockstatus_to_extents(BlockDriverState *bs, uint64_t offset,
+             extent->flags = flags;
+             extent->length = num;
+         }
++        offset += num;
++        remaining_bytes -= num;
+     }
+ 
+     extents_end = extent + 1;
+-- 
+1.8.3.1
+

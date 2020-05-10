@@ -1,0 +1,187 @@
+From ebfeb40743756dfa7087b43ce4e9afe3e85f9710 Mon Sep 17 00:00:00 2001
+From: Marcelo Tosatti <mtosatti@redhat.com>
+Date: Wed, 28 Aug 2019 01:00:55 +0200
+Subject: [PATCH 1/4] kvm: i386: halt poll control MSR support
+
+RH-Author: Marcelo Tosatti <mtosatti@redhat.com>
+Message-id: <20190828010051.GA30252@amt.cnet>
+Patchwork-id: 90171
+O-Subject: [RHEL-7.8 qemu-kvm PATCH] kvm: i386: halt poll control MSR support
+Bugzilla: 1734502
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+This is the qemu part of the haltpoll driver: allows migrating
+the MSR which the guest uses to disable host side polling.
+
+Add support for halt poll control MSR: save/restore, migration
+and new feature name.
+
+The purpose of this MSR is to allow the guest to disable
+host halt poll.
+
+(cherry picked from commit d645e1328726b38b3c79525eb57842ce29c1df7c)
+Signed-off-by: Marcelo Tosatti <mtosatti@redhat.com>
+Message-Id: <20190603230408.GA7938@amt.cnet>
+[Do not enable by default, as pointed out by Mark Kanda. - Paolo]
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ linux-headers/asm-x86/kvm_para.h |  2 ++
+ target/i386/cpu.c                |  4 +++-
+ target/i386/cpu.h                |  1 +
+ target/i386/kvm.c                | 15 +++++++++++++++
+ target/i386/machine.c            | 20 ++++++++++++++++++++
+ 5 files changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/linux-headers/asm-x86/kvm_para.h b/linux-headers/asm-x86/kvm_para.h
+index 4c58184..38ab00d 100644
+--- a/linux-headers/asm-x86/kvm_para.h
++++ b/linux-headers/asm-x86/kvm_para.h
+@@ -27,6 +27,7 @@
+ #define KVM_FEATURE_PV_UNHALT		7
+ #define KVM_FEATURE_PV_TLB_FLUSH	9
+ #define KVM_FEATURE_ASYNC_PF_VMEXIT	10
++#define KVM_FEATURE_POLL_CONTROL	12
+ 
+ /* The last 8 bits are used to indicate how to interpret the flags field
+  * in pvclock structure. If no bits are set, all flags are ignored.
+@@ -43,6 +44,7 @@
+ #define MSR_KVM_ASYNC_PF_EN 0x4b564d02
+ #define MSR_KVM_STEAL_TIME  0x4b564d03
+ #define MSR_KVM_PV_EOI_EN      0x4b564d04
++#define MSR_KVM_POLL_CONTROL	0x4b564d05
+ 
+ struct kvm_steal_time {
+ 	__u64 steal;
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 1f2f286..928e53c 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -903,7 +903,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+             "kvmclock", "kvm-nopiodelay", "kvm-mmu", "kvmclock",
+             "kvm-asyncpf", "kvm-steal-time", "kvm-pv-eoi", "kvm-pv-unhalt",
+             NULL, "kvm-pv-tlb-flush", NULL, NULL,
+-            NULL, NULL, NULL, NULL,
++            "kvm-poll-control", NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             "kvmclock-stable-bit", NULL, NULL, NULL,
+@@ -5342,6 +5342,8 @@ static void x86_cpu_initfn(Object *obj)
+     object_property_add_alias(obj, "kvm_steal_time", obj, "kvm-steal-time", &error_abort);
+     object_property_add_alias(obj, "kvm_pv_eoi", obj, "kvm-pv-eoi", &error_abort);
+     object_property_add_alias(obj, "kvm_pv_unhalt", obj, "kvm-pv-unhalt", &error_abort);
++    object_property_add_alias(obj, "kvm_poll_control", obj, "kvm-poll-control",
++                              &error_abort);
+     object_property_add_alias(obj, "svm_lock", obj, "svm-lock", &error_abort);
+     object_property_add_alias(obj, "nrip_save", obj, "nrip-save", &error_abort);
+     object_property_add_alias(obj, "tsc_scale", obj, "tsc-scale", &error_abort);
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 8ab313e..095e695 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -1233,6 +1233,7 @@ typedef struct CPUX86State {
+     uint64_t steal_time_msr;
+     uint64_t async_pf_en_msr;
+     uint64_t pv_eoi_en_msr;
++    uint64_t poll_control_msr;
+ 
+     /* Partition-wide HV MSRs, will be updated only on the first vcpu */
+     uint64_t msr_hv_hypercall;
+diff --git a/target/i386/kvm.c b/target/i386/kvm.c
+index 7afad93..72901e1 100644
+--- a/target/i386/kvm.c
++++ b/target/i386/kvm.c
+@@ -1199,6 +1199,9 @@ void kvm_arch_reset_vcpu(X86CPU *cpu)
+             env->msr_hv_synic_sint[i] = HV_SINT_MASKED;
+         }
+     }
++
++    /* enabled by default */
++    env->poll_control_msr = 1;
+ }
+ 
+ void kvm_arch_do_init_vcpu(X86CPU *cpu)
+@@ -1869,6 +1872,11 @@ static int kvm_put_msrs(X86CPU *cpu, int level)
+         if (env->features[FEAT_KVM] & (1 << KVM_FEATURE_STEAL_TIME)) {
+             kvm_msr_entry_add(cpu, MSR_KVM_STEAL_TIME, env->steal_time_msr);
+         }
++
++        if (env->features[FEAT_KVM] & (1 << KVM_FEATURE_POLL_CONTROL)) {
++            kvm_msr_entry_add(cpu, MSR_KVM_POLL_CONTROL, env->poll_control_msr);
++        }
++
+         if (has_architectural_pmu_version > 0) {
+             if (has_architectural_pmu_version > 1) {
+                 /* Stop the counter.  */
+@@ -2241,6 +2249,9 @@ static int kvm_get_msrs(X86CPU *cpu)
+     if (env->features[FEAT_KVM] & (1 << KVM_FEATURE_STEAL_TIME)) {
+         kvm_msr_entry_add(cpu, MSR_KVM_STEAL_TIME, 0);
+     }
++    if (env->features[FEAT_KVM] & (1 << KVM_FEATURE_POLL_CONTROL)) {
++        kvm_msr_entry_add(cpu, MSR_KVM_POLL_CONTROL, 1);
++    }
+     if (has_architectural_pmu_version > 0) {
+         if (has_architectural_pmu_version > 1) {
+             kvm_msr_entry_add(cpu, MSR_CORE_PERF_FIXED_CTR_CTRL, 0);
+@@ -2470,6 +2481,10 @@ static int kvm_get_msrs(X86CPU *cpu)
+         case MSR_KVM_STEAL_TIME:
+             env->steal_time_msr = msrs[i].data;
+             break;
++        case MSR_KVM_POLL_CONTROL: {
++            env->poll_control_msr = msrs[i].data;
++            break;
++        }
+         case MSR_CORE_PERF_FIXED_CTR_CTRL:
+             env->msr_fixed_ctr_ctrl = msrs[i].data;
+             break;
+diff --git a/target/i386/machine.c b/target/i386/machine.c
+index 9e7256a..52b1eae 100644
+--- a/target/i386/machine.c
++++ b/target/i386/machine.c
+@@ -325,6 +325,14 @@ static bool steal_time_msr_needed(void *opaque)
+     return cpu->env.steal_time_msr != 0;
+ }
+ 
++/* Poll control MSR enabled by default */
++static bool poll_control_msr_needed(void *opaque)
++{
++    X86CPU *cpu = opaque;
++
++    return cpu->env.poll_control_msr != 1;
++}
++
+ static const VMStateDescription vmstate_steal_time_msr = {
+     .name = "cpu/steal_time_msr",
+     .version_id = 1,
+@@ -358,6 +366,17 @@ static const VMStateDescription vmstate_pv_eoi_msr = {
+     }
+ };
+ 
++static const VMStateDescription vmstate_poll_control_msr = {
++    .name = "cpu/poll_control_msr",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .needed = poll_control_msr_needed,
++    .fields = (VMStateField[]) {
++        VMSTATE_UINT64(env.poll_control_msr, X86CPU),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
+ static bool fpop_ip_dp_needed(void *opaque)
+ {
+     X86CPU *cpu = opaque;
+@@ -1033,6 +1052,7 @@ VMStateDescription vmstate_x86_cpu = {
+         &vmstate_async_pf_msr,
+         &vmstate_pv_eoi_msr,
+         &vmstate_steal_time_msr,
++        &vmstate_poll_control_msr,
+         &vmstate_fpop_ip_dp,
+         &vmstate_msr_tsc_adjust,
+         &vmstate_msr_tscdeadline,
+-- 
+1.8.3.1
+

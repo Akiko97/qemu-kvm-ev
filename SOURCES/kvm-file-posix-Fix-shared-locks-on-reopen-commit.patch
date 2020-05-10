@@ -1,0 +1,45 @@
+From ef27c0164bee4e910d0f2e20928688f873d924a3 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 4 Feb 2019 20:42:06 +0100
+Subject: [PATCH 06/33] file-posix: Fix shared locks on reopen commit
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20190204204207.18079-7-mreitz@redhat.com>
+Patchwork-id: 84225
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 6/7] file-posix: Fix shared locks on reopen commit
+Bugzilla: 1551486
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+s->locked_shared_perm is the set of bits locked in the file, which is
+the inverse of the permissions actually shared.  So we need to pass them
+as they are to raw_apply_lock_bytes() instead of inverting them again.
+
+Reported-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 577a133988c76e4ebf01d050d0d758d207a1baf7)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 97e7ff2..deecf58 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -929,7 +929,7 @@ static void raw_reopen_commit(BDRVReopenState *state)
+ 
+     /* Copy locks to the new fd before closing the old one. */
+     raw_apply_lock_bytes(NULL, rs->fd, s->locked_perm,
+-                         ~s->locked_shared_perm, false, &local_err);
++                         s->locked_shared_perm, false, &local_err);
+     if (local_err) {
+         /* shouldn't fail in a sane host, but report it just in case. */
+         error_report_err(local_err);
+-- 
+1.8.3.1
+

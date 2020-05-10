@@ -1,0 +1,42 @@
+From e4a86a6c362d1c962c23241ebcbb090d71ea554f Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:37 +0200
+Subject: [PATCH 68/89] vdi: Fix vdi_co_do_create() return value
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-55-kwolf@redhat.com>
+Patchwork-id: 81126
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 54/73] vdi: Fix vdi_co_do_create() return value
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+.bdrv_co_create() is supposed to return 0 on success, but vdi could
+return a positive value instead. Fix this.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit 53618dd83885cc551a3833e228cf714494602142)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/vdi.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block/vdi.c b/block/vdi.c
+index 41859a8..1d8ed67 100644
+--- a/block/vdi.c
++++ b/block/vdi.c
+@@ -865,6 +865,7 @@ static int coroutine_fn vdi_co_do_create(BlockdevCreateOptions *create_options,
+         }
+     }
+ 
++    ret = 0;
+ exit:
+     blk_unref(blk);
+     bdrv_unref(bs_file);
+-- 
+1.8.3.1
+

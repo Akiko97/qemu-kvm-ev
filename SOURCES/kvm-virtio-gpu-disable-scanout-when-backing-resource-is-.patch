@@ -1,0 +1,51 @@
+From 3354ddad8488034064ae85e8414a77514a90b259 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Wed, 4 Jul 2018 09:54:09 +0200
+Subject: [PATCH 15/89] virtio-gpu: disable scanout when backing resource is
+ destroyed
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20180704095409.14514-4-kraxel@redhat.com>
+Patchwork-id: 81225
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 3/3] virtio-gpu: disable scanout when backing resource is destroyed
+Bugzilla: 1589634
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: 20180702162443.16796-4-kraxel@redhat.com
+(cherry picked from commit 1fccd7c5a9a722a9cbf1bc91693f4618034f01ac)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/display/virtio-gpu.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/hw/display/virtio-gpu.c b/hw/display/virtio-gpu.c
+index 336dc59..08cd567 100644
+--- a/hw/display/virtio-gpu.c
++++ b/hw/display/virtio-gpu.c
+@@ -430,6 +430,16 @@ static void virtio_gpu_disable_scanout(VirtIOGPU *g, int scanout_id)
+ static void virtio_gpu_resource_destroy(VirtIOGPU *g,
+                                         struct virtio_gpu_simple_resource *res)
+ {
++    int i;
++
++    if (res->scanout_bitmask) {
++        for (i = 0; i < g->conf.max_outputs; i++) {
++            if (res->scanout_bitmask & (1 << i)) {
++                virtio_gpu_disable_scanout(g, i);
++            }
++        }
++    }
++
+     pixman_image_unref(res->image);
+     virtio_gpu_cleanup_mapping(res);
+     QTAILQ_REMOVE(&g->reslist, res, next);
+-- 
+1.8.3.1
+

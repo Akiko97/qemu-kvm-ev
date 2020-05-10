@@ -1,0 +1,60 @@
+From 695c0b884eb5e6f35023b0e32928741c044b0498 Mon Sep 17 00:00:00 2001
+From: Igor Mammedov <imammedo@redhat.com>
+Date: Thu, 19 Oct 2017 15:28:13 +0200
+Subject: spapr: disable cpu hot-remove
+
+RH-Author: Igor Mammedov <imammedo@redhat.com>
+Message-id: <1508426893-172020-1-git-send-email-imammedo@redhat.com>
+Patchwork-id: 77378
+O-Subject: [RHV7.5 qemu-kvm-ma PATCH v2] spapr: disable cpu hot-remove
+Bugzilla: 1499320
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1499320
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=14301295
+Upstream: RHEL-only
+
+Rebase to 2.10 brought in cpu hot-remove with it, disable it
+for qemu-kvm-ma variant of QEMU where it hasn't been supported.
+Use CONFIG_RHV to switch unplug off only for qemu-kvm-ma and
+not to affect RHEV variant built from the same source code.
+
+Signed-off-by: Igor Mammedov <imammedo@redhat.com>
+
+Conflicts:
+	hw/ppc/spapr.c
+
+(cherry picked from commit 56c058f25caa085fb22a92d89976afb529a391d8)
+(cherry picked from commit c5448e8e407c2275d5b74e93fbf67eafb93b5a56)
+(cherry picked from commit 7556463d8bfe3f357960962c6da2f6dc692b289f)
+---
+ hw/ppc/spapr.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index 3ea94de..f71a62e 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -3315,6 +3315,7 @@ static
+ void spapr_core_unplug_request(HotplugHandler *hotplug_dev, DeviceState *dev,
+                                Error **errp)
+ {
++#if defined(CONFIG_RHV)
+     sPAPRMachineState *spapr = SPAPR_MACHINE(OBJECT(hotplug_dev));
+     int index;
+     sPAPRDRConnector *drc;
+@@ -3337,6 +3338,9 @@ void spapr_core_unplug_request(HotplugHandler *hotplug_dev, DeviceState *dev,
+     spapr_drc_detach(drc);
+ 
+     spapr_hotplug_req_remove_by_index(drc);
++#else
++    error_setg(errp, "this feature or command is not currently supported");
++#endif /* CONFIG_RHV */
+ }
+ 
+ static void spapr_core_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
+-- 
+1.8.3.1
+

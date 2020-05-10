@@ -1,0 +1,66 @@
+From b8a78d2f99bb481e78686ef2e0beb369b5563d87 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 3 Sep 2019 15:28:28 +0200
+Subject: [PATCH 23/23] block: Drain source node in bdrv_replace_node()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190903152828.15668-2-kwolf@redhat.com>
+Patchwork-id: 90257
+O-Subject: [RHEL-7.7.z qemu-kvm PATCH 1/1] block: Drain source node in bdrv_replace_node()
+Bugzilla: 1711643
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+
+Instead of just asserting that no requests are in flight in
+bdrv_replace_node(), which is a requirement that most callers ignore, we
+can just drain the source node right there. This fixes at least starting
+a commit job while I/O is active on the backing chain, but probably
+other callers, too.
+
+Having requests in flight on the target node isn't a problem because the
+target just gets new parents, but the call path of running requests
+isn't modified. So we can just drop this assertion without a replacement.
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1711643
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit f871abd60f4b67547e62c57c9bec19420052be39)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/block.c b/block.c
+index 7061f9b..4986516 100644
+--- a/block.c
++++ b/block.c
+@@ -3505,13 +3505,13 @@ void bdrv_replace_node(BlockDriverState *from, BlockDriverState *to,
+     uint64_t perm = 0, shared = BLK_PERM_ALL;
+     int ret;
+ 
+-    assert(!atomic_read(&from->in_flight));
+-    assert(!atomic_read(&to->in_flight));
+-
+     /* Make sure that @from doesn't go away until we have successfully attached
+      * all of its parents to @to. */
+     bdrv_ref(from);
+ 
++    assert(qemu_get_current_aio_context() == qemu_get_aio_context());
++    bdrv_drained_begin(from);
++
+     /* Put all parents into @list and calculate their cumulative permissions */
+     QLIST_FOREACH_SAFE(c, &from->parents, next_parent, next) {
+         if (!should_update_child(c, to)) {
+@@ -3546,6 +3546,7 @@ void bdrv_replace_node(BlockDriverState *from, BlockDriverState *to,
+ 
+ out:
+     g_slist_free(list);
++    bdrv_drained_end(from);
+     bdrv_unref(from);
+ }
+ 
+-- 
+1.8.3.1
+

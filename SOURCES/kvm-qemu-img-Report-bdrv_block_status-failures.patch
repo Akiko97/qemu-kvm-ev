@@ -1,0 +1,57 @@
+From 1df02b6de7da262eb8349560f27f6c41d85953cd Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:11 +0200
+Subject: [PATCH 01/53] qemu-img: Report bdrv_block_status failures
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-2-jsnow@redhat.com>
+Patchwork-id: 87181
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 01/19] qemu-img: Report bdrv_block_status failures
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+If bdrv_block_status_above() fails, we are aborting the convert
+process but failing to print an error message.  Broken in commit
+690c7301 (v2.4) when rewriting convert's logic.
+
+Discovered when teaching nbdkit to support NBD_CMD_BLOCK_STATUS, and
+accidentally violating the protocol by returning more than one extent
+in spite of qemu asking for NBD_CMD_FLAG_REQ_ONE.  The qemu NBD code
+should probably handle the server's non-compliance more gracefully
+than failing with EINVAL, but qemu-img shouldn't be silently
+squelching any block status failures. It doesn't help that qemu 3.1
+masks the qemu-img bug with extra noise that the nbd code is dumping
+to stderr (that noise was cleaned up in d8b4bad8).
+
+Reported-by: Richard W.M. Jones <rjones@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190323212639.579-2-eblake@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit 2058c2ad261de7f58fae01d63d3d0efa484caf2a)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index 3b147ca..096e844 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -1607,6 +1607,8 @@ static int convert_iteration_sectors(ImgConvertState *s, int64_t sector_num)
+                                           count, &count, NULL, NULL);
+         }
+         if (ret < 0) {
++            error_report("error while reading block status of sector %" PRId64
++                         ": %s", sector_num, strerror(-ret));
+             return ret;
+         }
+         n = DIV_ROUND_UP(count, BDRV_SECTOR_SIZE);
+-- 
+1.8.3.1
+

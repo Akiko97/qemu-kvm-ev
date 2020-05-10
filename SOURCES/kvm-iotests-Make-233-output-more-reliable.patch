@@ -1,0 +1,115 @@
+From 0269fa2be355b2885e90bd676f63ae5fe4e8de08 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:35 +0100
+Subject: [PATCH 097/163] iotests: Make 233 output more reliable
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-23-jsnow@redhat.com>
+Patchwork-id: 85189
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 22/55] iotests: Make 233 output more reliable
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+We have a race between the nbd server and the client both trying
+to report errors at once which can make the test sometimes fail
+if the output lines swap order under load.  Break the race by
+collecting server messages into a file and then replaying that
+at the end of the test.
+
+We may yet want to fix the server to not output ANYTHING for a
+client action except when -v was used (to avoid malicious clients
+from being able to DoS a server by filling up its logs), but that
+is saved for a future patch.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+CC: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <20190117193658.16413-2-eblake@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+(cherry picked from commit d08980511d78480ffbbd9897b7fd050bd03d518d)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/233     | 11 ++++++++---
+ tests/qemu-iotests/233.out |  4 +++-
+ 2 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/tests/qemu-iotests/233 b/tests/qemu-iotests/233
+index 1814efe..ab15c77 100755
+--- a/tests/qemu-iotests/233
++++ b/tests/qemu-iotests/233
+@@ -2,7 +2,7 @@
+ #
+ # Test NBD TLS certificate / authorization integration
+ #
+-# Copyright (C) 2018 Red Hat, Inc.
++# Copyright (C) 2018-2019 Red Hat, Inc.
+ #
+ # This program is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+@@ -30,6 +30,7 @@ _cleanup()
+ {
+     nbd_server_stop
+     _cleanup_test_img
++    rm -f "$TEST_DIR/server.log"
+     tls_x509_cleanup
+ }
+ trap "_cleanup; exit \$status" 0 1 2 3 15
+@@ -66,7 +67,7 @@ $QEMU_IO -c 'w -P 0x11 1m 1m' "$TEST_IMG" | _filter_qemu_io
+ 
+ echo
+ echo "== check TLS client to plain server fails =="
+-nbd_server_start_tcp_socket -f $IMGFMT "$TEST_IMG"
++nbd_server_start_tcp_socket -f $IMGFMT "$TEST_IMG" 2> "$TEST_DIR/server.log"
+ 
+ $QEMU_IMG info --image-opts \
+     --object tls-creds-x509,dir=${tls_dir}/client1,endpoint=client,id=tls0 \
+@@ -81,7 +82,7 @@ echo "== check plain client to TLS server fails =="
+ nbd_server_start_tcp_socket \
+     --object tls-creds-x509,dir=${tls_dir}/server1,endpoint=server,id=tls0,verify-peer=yes \
+     --tls-creds tls0 \
+-    -f $IMGFMT "$TEST_IMG"
++    -f $IMGFMT "$TEST_IMG" 2>> "$TEST_DIR/server.log"
+ 
+ $QEMU_IMG info nbd://localhost:$nbd_tcp_port 2>&1 | sed "s/$nbd_tcp_port/PORT/g"
+ 
+@@ -109,6 +110,10 @@ $QEMU_IO -c 'r -P 0x11 1m 1m' -c 'w -P 0x22 1m 1m' --image-opts \
+ 
+ $QEMU_IO -f $IMGFMT -r -U -c 'r -P 0x22 1m 1m' "$TEST_IMG" | _filter_qemu_io
+ 
++echo
++echo "== final server log =="
++cat "$TEST_DIR/server.log"
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/233.out b/tests/qemu-iotests/233.out
+index 5f41672..2199d8a 100644
+--- a/tests/qemu-iotests/233.out
++++ b/tests/qemu-iotests/233.out
+@@ -27,7 +27,6 @@ virtual size: 64M (67108864 bytes)
+ disk size: unavailable
+ 
+ == check TLS with different CA fails ==
+-qemu-nbd: option negotiation failed: Verify failed: No certificate was found.
+ qemu-img: Could not open 'driver=nbd,host=127.0.0.1,port=PORT,tls-creds=tls0': The certificate hasn't got a known issuer
+ 
+ == perform I/O over TLS ==
+@@ -37,4 +36,7 @@ wrote 1048576/1048576 bytes at offset 1048576
+ 1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+ read 1048576/1048576 bytes at offset 1048576
+ 1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++
++== final server log ==
++qemu-nbd: option negotiation failed: Verify failed: No certificate was found.
+ *** done
+-- 
+1.8.3.1
+

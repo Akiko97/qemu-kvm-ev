@@ -1,0 +1,40 @@
+From 2cb498c245b670f98ee4d05c16766d95811ff2f3 Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 7 Jun 2018 07:43:11 +0200
+Subject: [PATCH 03/15] Disable AT24Cx i2c eeprom
+
+RH-Author: Miroslav Rezanina <mrezanin@redhat.com>
+Message-id: <fc4088a0a805b32f545c561a76d20115da8de85d.1528355911.git.mrezanin@redhat.com>
+Patchwork-id: 80598
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 3/7] Disable AT24Cx i2c eeprom
+Bugzilla: 1586357
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+From: Miroslav Rezanina <mrezanin@redhat.com>
+
+We do not want to support new eeprom_at24c device. It is protected
+by CONFIG_I2C option but we can't remove it as it cover other supported
+devices. Manually remove module with the device.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/nvram/Makefile.objs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/nvram/Makefile.objs b/hw/nvram/Makefile.objs
+index a912d25..cbc8bba 100644
+--- a/hw/nvram/Makefile.objs
++++ b/hw/nvram/Makefile.objs
+@@ -1,6 +1,6 @@
+ common-obj-$(CONFIG_DS1225Y) += ds1225y.o
+ common-obj-y += eeprom93xx.o
+-common-obj-$(CONFIG_I2C) += eeprom_at24c.o
++#common-obj-$(CONFIG_I2C) += eeprom_at24c.o
+ common-obj-y += fw_cfg.o
+ common-obj-y += chrp_nvram.o
+ common-obj-$(CONFIG_MAC_NVRAM) += mac_nvram.o
+-- 
+1.8.3.1
+

@@ -1,0 +1,69 @@
+From 65165d3130b3f1d85cfb3078f96f9b0b29e8f42e Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 3 Jul 2018 17:23:56 +0200
+Subject: [PATCH 11/89] i386: Remove generic SMT thread check
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180703172356.21038-11-ehabkost@redhat.com>
+Patchwork-id: 81220
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v3 10/10] i386: Remove generic SMT thread check
+Bugzilla: 1481253
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Babu Moger <babu.moger@amd.com>
+
+Remove generic non-intel check while validating hyperthreading support.
+Certain AMD CPUs can support hyperthreading now.
+
+CPU family with TOPOEXT feature can support hyperthreading now.
+
+Signed-off-by: Babu Moger <babu.moger@amd.com>
+Tested-by: Geoffrey McRae <geoff@hostfission.com>
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <1529443919-67509-4-git-send-email-babu.moger@amd.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 6b2942f966d5e54c37d305c80f5f98d504c2bc55)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 5d5d7e6..eabe4ea 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -4952,17 +4952,22 @@ static void x86_cpu_realizefn(DeviceState *dev, Error **errp)
+ 
+     qemu_init_vcpu(cs);
+ 
+-    /* Only Intel CPUs support hyperthreading. Even though QEMU fixes this
+-     * issue by adjusting CPUID_0000_0001_EBX and CPUID_8000_0008_ECX
+-     * based on inputs (sockets,cores,threads), it is still better to gives
++    /*
++     * Most Intel and certain AMD CPUs support hyperthreading. Even though QEMU
++     * fixes this issue by adjusting CPUID_0000_0001_EBX and CPUID_8000_0008_ECX
++     * based on inputs (sockets,cores,threads), it is still better to give
+      * users a warning.
+      *
+      * NOTE: the following code has to follow qemu_init_vcpu(). Otherwise
+      * cs->nr_threads hasn't be populated yet and the checking is incorrect.
+      */
+-    if (!IS_INTEL_CPU(env) && cs->nr_threads > 1 && !ht_warned) {
+-        error_report("AMD CPU doesn't support hyperthreading. Please configure"
+-                     " -smp options properly.");
++     if (IS_AMD_CPU(env) &&
++         !(env->features[FEAT_8000_0001_ECX] & CPUID_EXT3_TOPOEXT) &&
++         cs->nr_threads > 1 && !ht_warned) {
++            error_report("This family of AMD CPU doesn't support "
++                         "hyperthreading(%d). Please configure -smp "
++                         "options properly or try enabling topoext feature.",
++                         cs->nr_threads);
+         ht_warned = true;
+     }
+ 
+-- 
+1.8.3.1
+

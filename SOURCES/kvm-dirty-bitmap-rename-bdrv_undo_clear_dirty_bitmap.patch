@@ -1,0 +1,77 @@
+From 3cccc41aae7526469ca941d12857ed3d6195b782 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:27 +0100
+Subject: [PATCH 17/33] dirty-bitmap: rename bdrv_undo_clear_dirty_bitmap
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-8-jsnow@redhat.com>
+Patchwork-id: 84271
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 07/23] dirty-bitmap: rename bdrv_undo_clear_dirty_bitmap
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Use more generic names to reuse the function for bitmap merge in the
+following commit.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 56bd662497259400b7c9f155aaebaddde4450028)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c      | 4 ++--
+ blockdev.c                | 2 +-
+ include/block/block_int.h | 2 +-
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index 999a40c..cadde5c 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -633,11 +633,11 @@ void bdrv_clear_dirty_bitmap(BdrvDirtyBitmap *bitmap, HBitmap **out)
+     bdrv_dirty_bitmap_unlock(bitmap);
+ }
+ 
+-void bdrv_undo_clear_dirty_bitmap(BdrvDirtyBitmap *bitmap, HBitmap *in)
++void bdrv_restore_dirty_bitmap(BdrvDirtyBitmap *bitmap, HBitmap *backup)
+ {
+     HBitmap *tmp = bitmap->bitmap;
+     assert(!bdrv_dirty_bitmap_readonly(bitmap));
+-    bitmap->bitmap = in;
++    bitmap->bitmap = backup;
+     hbitmap_free(tmp);
+ }
+ 
+diff --git a/blockdev.c b/blockdev.c
+index cef1bfe..5d9508c 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -2184,7 +2184,7 @@ static void block_dirty_bitmap_clear_abort(BlkActionState *common)
+                                              common, common);
+ 
+     if (state->backup) {
+-        bdrv_undo_clear_dirty_bitmap(state->bitmap, state->backup);
++        bdrv_restore_dirty_bitmap(state->bitmap, state->backup);
+     }
+ }
+ 
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index ff923b7..f457acb 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -1141,7 +1141,7 @@ bool blk_dev_is_medium_locked(BlockBackend *blk);
+ void bdrv_set_dirty(BlockDriverState *bs, int64_t offset, int64_t bytes);
+ 
+ void bdrv_clear_dirty_bitmap(BdrvDirtyBitmap *bitmap, HBitmap **out);
+-void bdrv_undo_clear_dirty_bitmap(BdrvDirtyBitmap *bitmap, HBitmap *in);
++void bdrv_restore_dirty_bitmap(BdrvDirtyBitmap *bitmap, HBitmap *backup);
+ 
+ void bdrv_inc_in_flight(BlockDriverState *bs);
+ void bdrv_dec_in_flight(BlockDriverState *bs);
+-- 
+1.8.3.1
+

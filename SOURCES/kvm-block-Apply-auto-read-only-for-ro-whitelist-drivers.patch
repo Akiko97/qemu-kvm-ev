@@ -1,0 +1,66 @@
+From c13468845efde058e464deeaf8b58508f33dc948 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 16:29:56 +0100
+Subject: [PATCH 09/23] block: Apply auto-read-only for ro-whitelist drivers
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219162956.16183-2-kwolf@redhat.com>
+Patchwork-id: 84539
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/1] block: Apply auto-read-only for ro-whitelist drivers
+Bugzilla: 1667320
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+If QEMU was configured with a driver in --block-drv-ro-whitelist, trying
+to use that driver read-write resulted in an error message even if
+auto-read-only=on was set.
+
+Consider auto-read-only=on for the whitelist checking and use it to
+automatically degrade to read-only for block drivers on the read-only
+whitelist.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 8be25de64315ef768353eb61f2b2bf6cddc34230)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 20 +++++++++++++-------
+ 1 file changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/block.c b/block.c
+index 82b16df..a69d0a2 100644
+--- a/block.c
++++ b/block.c
+@@ -1418,13 +1418,19 @@ static int bdrv_open_common(BlockDriverState *bs, BlockBackend *file,
+     bs->read_only = !(bs->open_flags & BDRV_O_RDWR);
+ 
+     if (use_bdrv_whitelist && !bdrv_is_whitelisted(drv, bs->read_only)) {
+-        error_setg(errp,
+-                   !bs->read_only && bdrv_is_whitelisted(drv, true)
+-                        ? "Driver '%s' can only be used for read-only devices"
+-                        : "Driver '%s' is not whitelisted",
+-                   drv->format_name);
+-        ret = -ENOTSUP;
+-        goto fail_opts;
++        if (!bs->read_only && bdrv_is_whitelisted(drv, true)) {
++            ret = bdrv_apply_auto_read_only(bs, NULL, NULL);
++        } else {
++            ret = -ENOTSUP;
++        }
++        if (ret < 0) {
++            error_setg(errp,
++                       !bs->read_only && bdrv_is_whitelisted(drv, true)
++                       ? "Driver '%s' can only be used for read-only devices"
++                       : "Driver '%s' is not whitelisted",
++                       drv->format_name);
++            goto fail_opts;
++        }
+     }
+ 
+     /* bdrv_new() and bdrv_close() make it so */
+-- 
+1.8.3.1
+

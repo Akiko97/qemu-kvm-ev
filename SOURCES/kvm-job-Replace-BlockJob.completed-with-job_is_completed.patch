@@ -1,0 +1,185 @@
+From bafcb1e3ffe5b9af344a7891f6a62eb296687a43 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:12 +0200
+Subject: [PATCH 43/89] job: Replace BlockJob.completed with job_is_completed()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-30-kwolf@redhat.com>
+Patchwork-id: 81094
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 29/73] job: Replace BlockJob.completed with job_is_completed()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Since we introduced an explicit status to block job, BlockJob.completed
+is redundant because it can be derived from the status. Remove the field
+from BlockJob and add a function to derive it from the status at the Job
+level.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit dbe5e6c1f73b41282624b78a2375a5c3ee59e905)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c               | 16 +++++++---------
+ include/block/blockjob.h |  3 ---
+ include/qemu/job.h       |  3 +++
+ job.c                    | 22 ++++++++++++++++++++++
+ qemu-img.c               |  4 ++--
+ 5 files changed, 34 insertions(+), 14 deletions(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index 6334a54..a1d1f48 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -193,7 +193,7 @@ static void block_job_detach_aio_context(void *opaque)
+ 
+     job_pause(&job->job);
+ 
+-    while (!job->job.paused && !job->completed) {
++    while (!job->job.paused && !job_is_completed(&job->job)) {
+         block_job_drain(job);
+     }
+ 
+@@ -269,7 +269,6 @@ const BlockJobDriver *block_job_driver(BlockJob *job)
+ static void block_job_decommission(BlockJob *job)
+ {
+     assert(job);
+-    job->completed = true;
+     job->job.busy = false;
+     job->job.paused = false;
+     job->job.deferred_to_main_loop = true;
+@@ -334,7 +333,7 @@ static void block_job_clean(BlockJob *job)
+ 
+ static int block_job_finalize_single(BlockJob *job)
+ {
+-    assert(job->completed);
++    assert(job_is_completed(&job->job));
+ 
+     /* Ensure abort is called for late-transactional failures */
+     block_job_update_rc(job);
+@@ -427,10 +426,10 @@ static int block_job_finish_sync(BlockJob *job,
+     /* block_job_drain calls block_job_enter, and it should be enough to
+      * induce progress until the job completes or moves to the main thread.
+     */
+-    while (!job->job.deferred_to_main_loop && !job->completed) {
++    while (!job->job.deferred_to_main_loop && !job_is_completed(&job->job)) {
+         block_job_drain(job);
+     }
+-    while (!job->completed) {
++    while (!job_is_completed(&job->job)) {
+         aio_poll(qemu_get_aio_context(), true);
+     }
+     ret = (job_is_cancelled(&job->job) && job->ret == 0)
+@@ -471,7 +470,7 @@ static void block_job_completed_txn_abort(BlockJob *job)
+     while (!QLIST_EMPTY(&txn->jobs)) {
+         other_job = QLIST_FIRST(&txn->jobs);
+         ctx = blk_get_aio_context(other_job->blk);
+-        if (!other_job->completed) {
++        if (!job_is_completed(&other_job->job)) {
+             assert(job_is_cancelled(&other_job->job));
+             block_job_finish_sync(other_job, NULL, NULL);
+         }
+@@ -513,7 +512,7 @@ static void block_job_completed_txn_success(BlockJob *job)
+      * txn.
+      */
+     QLIST_FOREACH(other_job, &txn->jobs, txn_list) {
+-        if (!other_job->completed) {
++        if (!job_is_completed(&other_job->job)) {
+             return;
+         }
+         assert(other_job->ret == 0);
+@@ -847,9 +846,8 @@ void block_job_early_fail(BlockJob *job)
+ 
+ void block_job_completed(BlockJob *job, int ret)
+ {
+-    assert(job && job->txn && !job->completed);
++    assert(job && job->txn && !job_is_completed(&job->job));
+     assert(blk_bs(job->blk)->job == job);
+-    job->completed = true;
+     job->ret = ret;
+     block_job_update_rc(job);
+     trace_block_job_completed(job, ret, job->ret);
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index 556a8f6..3e94e18 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -88,9 +88,6 @@ typedef struct BlockJob {
+     /** The opaque value that is passed to the completion function.  */
+     void *opaque;
+ 
+-    /** True when job has reported completion by calling block_job_completed. */
+-    bool completed;
+-
+     /** ret code passed to block_job_completed. */
+     int ret;
+ 
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index bc63985..858f3be 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -214,6 +214,9 @@ const char *job_type_str(const Job *job);
+ /** Returns whether the job is scheduled for cancellation. */
+ bool job_is_cancelled(Job *job);
+ 
++/** Returns whether the job is in a completed state. */
++bool job_is_completed(Job *job);
++
+ /**
+  * Request @job to pause at the next pause point. Must be paired with
+  * job_resume(). If the job is supposed to be resumed by user action, call
+diff --git a/job.c b/job.c
+index fd10b1d..aaacfcc 100644
+--- a/job.c
++++ b/job.c
+@@ -121,6 +121,28 @@ bool job_is_cancelled(Job *job)
+     return job->cancelled;
+ }
+ 
++bool job_is_completed(Job *job)
++{
++    switch (job->status) {
++    case JOB_STATUS_UNDEFINED:
++    case JOB_STATUS_CREATED:
++    case JOB_STATUS_RUNNING:
++    case JOB_STATUS_PAUSED:
++    case JOB_STATUS_READY:
++    case JOB_STATUS_STANDBY:
++        return false;
++    case JOB_STATUS_WAITING:
++    case JOB_STATUS_PENDING:
++    case JOB_STATUS_ABORTING:
++    case JOB_STATUS_CONCLUDED:
++    case JOB_STATUS_NULL:
++        return true;
++    default:
++        g_assert_not_reached();
++    }
++    return false;
++}
++
+ bool job_started(Job *job)
+ {
+     return job->co;
+diff --git a/qemu-img.c b/qemu-img.c
+index f745919..f5bb0ef 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -878,9 +878,9 @@ static void run_block_job(BlockJob *job, Error **errp)
+         aio_poll(aio_context, true);
+         qemu_progress_print(job->len ?
+                             ((float)job->offset / job->len * 100.f) : 0.0f, 0);
+-    } while (!job->ready && !job->completed);
++    } while (!job->ready && !job_is_completed(&job->job));
+ 
+-    if (!job->completed) {
++    if (!job_is_completed(&job->job)) {
+         ret = block_job_complete_sync(job, errp);
+     } else {
+         ret = job->ret;
+-- 
+1.8.3.1
+

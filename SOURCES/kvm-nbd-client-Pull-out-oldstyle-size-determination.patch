@@ -1,0 +1,116 @@
+From 4b3d650918d54c4034e0162421410c1a076a057b Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:49 +0100
+Subject: [PATCH 111/163] nbd/client: Pull out oldstyle size determination
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-37-jsnow@redhat.com>
+Patchwork-id: 85197
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 36/55] nbd/client: Pull out oldstyle size determination
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Another refactoring creating nbd_negotiate_finish_oldstyle()
+for further reuse during 'qemu-nbd --list'.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Richard W.M. Jones <rjones@redhat.com>
+Message-Id: <20190117193658.16413-16-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit b3c9d33bc4e7c2ab2828b16ebc96f0414b0f1acf)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/client.c | 49 ++++++++++++++++++++++++++++++++-----------------
+ 1 file changed, 32 insertions(+), 17 deletions(-)
+
+diff --git a/nbd/client.c b/nbd/client.c
+index 77cc123..6829c68 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -814,7 +814,7 @@ static int nbd_negotiate_simple_meta_context(QIOChannel *ioc,
+  * Start the handshake to the server.  After a positive return, the server
+  * is ready to accept additional NBD_OPT requests.
+  * Returns: negative errno: failure talking to server
+- *          0: server is oldstyle, client must still parse export size
++ *          0: server is oldstyle, must call nbd_negotiate_finish_oldstyle
+  *          1: server is newstyle, but can only accept EXPORT_NAME
+  *          2: server is newstyle, but lacks structured replies
+  *          3: server is newstyle and set up for structured replies
+@@ -921,6 +921,36 @@ static int nbd_start_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
+ }
+ 
+ /*
++ * nbd_negotiate_finish_oldstyle:
++ * Populate @info with the size and export flags from an oldstyle server,
++ * but does not consume 124 bytes of reserved zero padding.
++ * Returns 0 on success, -1 with @errp set on failure
++ */
++static int nbd_negotiate_finish_oldstyle(QIOChannel *ioc, NBDExportInfo *info,
++                                         Error **errp)
++{
++    uint32_t oldflags;
++
++    if (nbd_read(ioc, &info->size, sizeof(info->size), errp) < 0) {
++        error_prepend(errp, "Failed to read export length: ");
++        return -EINVAL;
++    }
++    info->size = be64_to_cpu(info->size);
++
++    if (nbd_read(ioc, &oldflags, sizeof(oldflags), errp) < 0) {
++        error_prepend(errp, "Failed to read export flags: ");
++        return -EINVAL;
++    }
++    oldflags = be32_to_cpu(oldflags);
++    if (oldflags & ~0xffff) {
++        error_setg(errp, "Unexpected export flags %0x" PRIx32, oldflags);
++        return -EINVAL;
++    }
++    info->flags = oldflags;
++    return 0;
++}
++
++/*
+  * nbd_receive_negotiate:
+  * Connect to server, complete negotiation, and move into transmission phase.
+  * Returns: negative errno: failure talking to server
+@@ -933,7 +963,6 @@ int nbd_receive_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
+     int result;
+     bool zeroes;
+     bool base_allocation = info->base_allocation;
+-    uint32_t oldflags;
+ 
+     assert(info->name);
+     trace_nbd_receive_negotiate_name(info->name);
+@@ -1006,23 +1035,9 @@ int nbd_receive_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
+             error_setg(errp, "Server does not support non-empty export names");
+             return -EINVAL;
+         }
+-
+-        if (nbd_read(ioc, &info->size, sizeof(info->size), errp) < 0) {
+-            error_prepend(errp, "Failed to read export length: ");
+-            return -EINVAL;
+-        }
+-        info->size = be64_to_cpu(info->size);
+-
+-        if (nbd_read(ioc, &oldflags, sizeof(oldflags), errp) < 0) {
+-            error_prepend(errp, "Failed to read export flags: ");
+-            return -EINVAL;
+-        }
+-        oldflags = be32_to_cpu(oldflags);
+-        if (oldflags & ~0xffff) {
+-            error_setg(errp, "Unexpected export flags %0x" PRIx32, oldflags);
++        if (nbd_negotiate_finish_oldstyle(ioc, info, errp) < 0) {
+             return -EINVAL;
+         }
+-        info->flags = oldflags;
+         break;
+     default:
+         return result;
+-- 
+1.8.3.1
+

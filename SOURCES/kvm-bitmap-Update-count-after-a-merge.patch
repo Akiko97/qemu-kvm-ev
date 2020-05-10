@@ -1,0 +1,56 @@
+From 56152f8d7cb931e6172a9e44bec7fe274716a240 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:37 +0100
+Subject: [PATCH 27/33] bitmap: Update count after a merge
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-18-jsnow@redhat.com>
+Patchwork-id: 84282
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 17/23] bitmap: Update count after a merge
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+We need an accurate count of the number of bits set in a bitmap
+after a merge. In particular, since the merge operation short-circuits
+a merge from an empty source, if you have bitmaps A, B, and C where
+B started empty, then merge C into B, and B into A, an inaccurate
+count meant that A did not get the contents of C.
+
+In the worst case, we may falsely regard the bitmap as empty when
+it has had new writes merged into it.
+
+Fixes: be58721db
+CC: qemu-stable@nongnu.org
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20181002233314.30159-1-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit d1dde7149e376d72b422a529ec4bf3ed47f3ba30)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ util/hbitmap.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/util/hbitmap.c b/util/hbitmap.c
+index d5aca51..8d402c5 100644
+--- a/util/hbitmap.c
++++ b/util/hbitmap.c
+@@ -759,6 +759,9 @@ bool hbitmap_merge(const HBitmap *a, const HBitmap *b, HBitmap *result)
+         }
+     }
+ 
++    /* Recompute the dirty count */
++    result->count = hb_count_between(result, 0, result->size - 1);
++
+     return true;
+ }
+ 
+-- 
+1.8.3.1
+

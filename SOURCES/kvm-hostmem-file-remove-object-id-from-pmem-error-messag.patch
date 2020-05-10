@@ -1,0 +1,78 @@
+From 111769e4a152fdb52f2b10fb957cdfec2fe7d4d2 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Tue, 8 Jan 2019 21:33:09 +0100
+Subject: [PATCH 3/8] hostmem-file: remove object id from pmem error message
+
+RH-Author: plai@redhat.com
+Message-id: <1546983189-26340-1-git-send-email-plai@redhat.com>
+Patchwork-id: 83911
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH v2] hostmem-file: remove object id from pmem error message
+Bugzilla: 1628098
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+
+From: Zhang Yi <yi.z.zhang@linux.intel.com>
+
+BZ: https://bugzilla.redhat.com/show_bug.cgi?id=1628098
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=19688087
+Branch: rhv7/master-2.12.0
+
+Tested by Intel OTC virtualization.
+
+---
+v2
+  fixing subject line to use qemu-kvm-rhev instead of qemu-kvm
+---
+We will never get the canonical path from the object
+before object_property_add_child.
+
+Signed-off-by: Zhang Yi <yi.z.zhang@linux.intel.com>
+Message-Id: <a6491f996827f4039c1a52198ed5dcc7727cb0f9.1540389255.git.yi.z.zhang@linux.intel.com>
+[ehabkost: reword commit message]
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+
+(cherry picked from commit 87dc3ce60a8a16b47aeb6c5f4dbc14ee975563df)
+Signed-off-by: Paul Lai <plai@redhat.com>
+
+Resolved Conflicts:
+	backends/hostmem-file.c
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ backends/hostmem-file.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/backends/hostmem-file.c b/backends/hostmem-file.c
+index 2476dcb..5b519c2 100644
+--- a/backends/hostmem-file.c
++++ b/backends/hostmem-file.c
+@@ -145,20 +145,19 @@ static void file_memory_backend_set_pmem(Object *o, bool value, Error **errp)
+     HostMemoryBackendFile *fb = MEMORY_BACKEND_FILE(o);
+ 
+     if (host_memory_backend_mr_inited(backend)) {
+-        error_setg(errp, "cannot change property 'pmem' of %s '%s'",
+-                   object_get_typename(o),
+-                   object_get_canonical_path_component(o));
++        error_setg(errp, "cannot change property 'pmem' of %s.",
++                   object_get_typename(o));
+         return;
+     }
+ 
+ #ifndef CONFIG_LIBPMEM
+     if (value) {
+         Error *local_err = NULL;
++
+         error_setg(&local_err,
+                    "Lack of libpmem support while setting the 'pmem=on'"
+-                   " of %s '%s'. We can't ensure data persistence.",
+-                   object_get_typename(o),
+-                   object_get_canonical_path_component(o));
++                   " of %s. We can't ensure data persistence.",
++                   object_get_typename(o));
+         error_propagate(errp, local_err);
+         return;
+     }
+-- 
+1.8.3.1
+

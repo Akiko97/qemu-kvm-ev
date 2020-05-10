@@ -1,0 +1,219 @@
+From 206d8696a89a1b4076f7afd46b6ae0dcc0f377f5 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:25 +0100
+Subject: [PATCH 027/163] iotests/236: fix transaction kwarg order
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-14-jsnow@redhat.com>
+Patchwork-id: 84945
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 13/19] iotests/236: fix transaction kwarg order
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+It's not enough to order the kwargs for consistent QMP log output,
+we must also sort any sub-dictionaries in lists that appear as values.
+
+Reported-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 039be85c410bfb4b53cdee2083b4245e0d4e4181)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/236.out    | 56 +++++++++++++++++++++----------------------
+ tests/qemu-iotests/iotests.py | 21 ++++++++--------
+ 2 files changed, 39 insertions(+), 38 deletions(-)
+
+diff --git a/tests/qemu-iotests/236.out b/tests/qemu-iotests/236.out
+index 1dad24d..bb2d71e 100644
+--- a/tests/qemu-iotests/236.out
++++ b/tests/qemu-iotests/236.out
+@@ -45,23 +45,23 @@ write -P0xcd 0x3ff0000 64k
+     "actions": [
+       {
+         "data": {
+-          "node": "drive0",
+-          "name": "bitmapB"
++          "name": "bitmapB",
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-disable"
+       },
+       {
+         "data": {
+-          "node": "drive0",
++          "granularity": 65536,
+           "name": "bitmapC",
+-          "granularity": 65536
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-add"
+       },
+       {
+         "data": {
+-          "node": "drive0",
+-          "name": "bitmapA"
++          "name": "bitmapA",
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-clear"
+       },
+@@ -105,30 +105,30 @@ write -P0xcd 0x3ff0000 64k
+     "actions": [
+       {
+         "data": {
+-          "node": "drive0",
+-          "name": "bitmapB"
++          "name": "bitmapB",
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-disable"
+       },
+       {
+         "data": {
+-          "node": "drive0",
++          "granularity": 65536,
+           "name": "bitmapC",
+-          "granularity": 65536
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-add"
+       },
+       {
+         "data": {
+-          "node": "drive0",
+-          "name": "bitmapC"
++          "name": "bitmapC",
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-disable"
+       },
+       {
+         "data": {
+-          "node": "drive0",
+-          "name": "bitmapC"
++          "name": "bitmapC",
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-enable"
+       }
+@@ -158,15 +158,15 @@ write -P0xea 0x3fe0000 64k
+     "actions": [
+       {
+         "data": {
+-          "node": "drive0",
+-          "name": "bitmapA"
++          "name": "bitmapA",
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-disable"
+       },
+       {
+         "data": {
+-          "node": "drive0",
+-          "name": "bitmapC"
++          "name": "bitmapC",
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-disable"
+       }
+@@ -209,21 +209,21 @@ write -P0xea 0x3fe0000 64k
+     "actions": [
+       {
+         "data": {
+-          "node": "drive0",
+           "disabled": true,
++          "granularity": 65536,
+           "name": "bitmapD",
+-          "granularity": 65536
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-add"
+       },
+       {
+         "data": {
+-          "node": "drive0",
+-          "target": "bitmapD",
+           "bitmaps": [
+             "bitmapB",
+             "bitmapC"
+-          ]
++          ],
++          "node": "drive0",
++          "target": "bitmapD"
+         },
+         "type": "block-dirty-bitmap-merge"
+       },
+@@ -273,21 +273,21 @@ write -P0xea 0x3fe0000 64k
+     "actions": [
+       {
+         "data": {
+-          "node": "drive0",
+           "disabled": true,
++          "granularity": 65536,
+           "name": "bitmapD",
+-          "granularity": 65536
++          "node": "drive0"
+         },
+         "type": "block-dirty-bitmap-add"
+       },
+       {
+         "data": {
+-          "node": "drive0",
+-          "target": "bitmapD",
+           "bitmaps": [
+             "bitmapB",
+             "bitmapC"
+-          ]
++          ],
++          "node": "drive0",
++          "target": "bitmapD"
+         },
+         "type": "block-dirty-bitmap-merge"
+       }
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index d178469..4e9b2c4 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -74,15 +74,16 @@ def qemu_img(*args):
+         sys.stderr.write('qemu-img received signal %i: %s\n' % (-exitcode, ' '.join(qemu_img_args + list(args))))
+     return exitcode
+ 
+-def ordered_kwargs(kwargs):
+-    # kwargs prior to 3.6 are not ordered, so:
+-    od = OrderedDict()
+-    for k, v in sorted(kwargs.items()):
+-        if isinstance(v, dict):
+-            od[k] = ordered_kwargs(v)
+-        else:
+-            od[k] = v
+-    return od
++def ordered_qmp(qmsg):
++    # Dictionaries are not ordered prior to 3.6, therefore:
++    if isinstance(qmsg, list):
++        return [ordered_qmp(atom) for atom in qmsg]
++    if isinstance(qmsg, dict):
++        od = OrderedDict()
++        for k, v in sorted(qmsg.items()):
++            od[k] = ordered_qmp(v)
++        return od
++    return qmsg
+ 
+ def qemu_img_create(*args):
+     args = list(args)
+@@ -485,7 +486,7 @@ class VM(qtest.QEMUQtestMachine):
+     def qmp_log(self, cmd, filters=[], indent=None, **kwargs):
+         full_cmd = OrderedDict((
+             ("execute", cmd),
+-            ("arguments", ordered_kwargs(kwargs))
++            ("arguments", ordered_qmp(kwargs))
+         ))
+         log(full_cmd, filters, indent=indent)
+         result = self.qmp(cmd, **kwargs)
+-- 
+1.8.3.1
+

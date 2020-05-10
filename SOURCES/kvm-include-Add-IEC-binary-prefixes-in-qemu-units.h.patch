@@ -1,0 +1,61 @@
+From 887a7e12d07315fe03f0b8efe7054d7c4f946bc2 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 7 Nov 2018 17:59:59 +0100
+Subject: [PATCH 25/34] include: Add IEC binary prefixes in "qemu/units.h"
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20181107180007.22954-2-pbonzini@redhat.com>
+Patchwork-id: 82941
+O-Subject: [RHEL7.6.z qemu-kvm-rhev PATCH 1/9] include: Add IEC binary prefixes in "qemu/units.h"
+Bugzilla: 1566195
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+From: Philippe Mathieu-Daudé <f4bug@amsat.org>
+
+Loosely based on 076b35b5a56.
+
+Suggested-by: Stefan Weil <sw@weilnetz.de>
+Signed-off-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Message-Id: <20180625124238.25339-2-f4bug@amsat.org>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 7ecdc94c40f4958a66893c0eac423c6a80f376d4)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/units.h | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+ create mode 100644 include/qemu/units.h
+
+diff --git a/include/qemu/units.h b/include/qemu/units.h
+new file mode 100644
+index 0000000..692db3f
+--- /dev/null
++++ b/include/qemu/units.h
+@@ -0,0 +1,20 @@
++/*
++ * IEC binary prefixes definitions
++ *
++ * Copyright (C) 2015 Nikunj A Dadhania, IBM Corporation
++ * Copyright (C) 2018 Philippe Mathieu-Daudé <f4bug@amsat.org>
++ *
++ * SPDX-License-Identifier: GPL-2.0-or-later
++ */
++
++#ifndef QEMU_UNITS_H
++#define QEMU_UNITS_H
++
++#define KiB     (INT64_C(1) << 10)
++#define MiB     (INT64_C(1) << 20)
++#define GiB     (INT64_C(1) << 30)
++#define TiB     (INT64_C(1) << 40)
++#define PiB     (INT64_C(1) << 50)
++#define EiB     (INT64_C(1) << 60)
++
++#endif
+-- 
+1.8.3.1
+

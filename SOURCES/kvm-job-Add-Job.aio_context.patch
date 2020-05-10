@@ -1,0 +1,112 @@
+From 25511b69b93fae007b86ccf1410585e6288c2b78 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:07 +0200
+Subject: [PATCH 38/89] job: Add Job.aio_context
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-25-kwolf@redhat.com>
+Patchwork-id: 81075
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 24/73] job: Add Job.aio_context
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+When block jobs need an AioContext, they just take it from their main
+block node. Generic jobs don't have a main block node, so we need to
+assign them an AioContext explicitly.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 08be6fe26f6c76d900fc987f58d322b94bc4e248)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c         | 5 ++++-
+ include/qemu/job.h | 7 ++++++-
+ job.c              | 4 +++-
+ 3 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index f4f9956..0a0b1c4 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -216,6 +216,7 @@ static void block_job_attached_aio_context(AioContext *new_context,
+ {
+     BlockJob *job = opaque;
+ 
++    job->job.aio_context = new_context;
+     if (job->driver->attached_aio_context) {
+         job->driver->attached_aio_context(job, new_context);
+     }
+@@ -247,6 +248,7 @@ static void block_job_detach_aio_context(void *opaque)
+         block_job_drain(job);
+     }
+ 
++    job->job.aio_context = NULL;
+     job_unref(&job->job);
+ }
+ 
+@@ -899,7 +901,8 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
+         return NULL;
+     }
+ 
+-    job = job_create(job_id, &driver->job_driver, errp);
++    job = job_create(job_id, &driver->job_driver, blk_get_aio_context(blk),
++                     errp);
+     if (job == NULL) {
+         blk_unref(blk);
+         return NULL;
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 5dfbec5..01e083f 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -47,6 +47,9 @@ typedef struct Job {
+     /** Current state; See @JobStatus for details. */
+     JobStatus status;
+ 
++    /** AioContext to run the job coroutine in */
++    AioContext *aio_context;
++
+     /**
+      * Set to true if the job should cancel itself.  The flag must
+      * always be tested just before toggling the busy flag from false
+@@ -79,9 +82,11 @@ struct JobDriver {
+  *
+  * @job_id: The id of the newly-created job, or %NULL for internal jobs
+  * @driver: The class object for the newly-created job.
++ * @ctx: The AioContext to run the job coroutine in.
+  * @errp: Error object.
+  */
+-void *job_create(const char *job_id, const JobDriver *driver, Error **errp);
++void *job_create(const char *job_id, const JobDriver *driver, AioContext *ctx,
++                 Error **errp);
+ 
+ /**
+  * Add a reference to Job refcnt, it will be decreased with job_unref, and then
+diff --git a/job.c b/job.c
+index 1abca6a..01074d0 100644
+--- a/job.c
++++ b/job.c
+@@ -121,7 +121,8 @@ Job *job_get(const char *id)
+     return NULL;
+ }
+ 
+-void *job_create(const char *job_id, const JobDriver *driver, Error **errp)
++void *job_create(const char *job_id, const JobDriver *driver, AioContext *ctx,
++                 Error **errp)
+ {
+     Job *job;
+ 
+@@ -140,6 +141,7 @@ void *job_create(const char *job_id, const JobDriver *driver, Error **errp)
+     job->driver        = driver;
+     job->id            = g_strdup(job_id);
+     job->refcnt        = 1;
++    job->aio_context   = ctx;
+ 
+     job_state_transition(job, JOB_STATUS_CREATED);
+ 
+-- 
+1.8.3.1
+

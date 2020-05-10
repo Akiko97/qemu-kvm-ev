@@ -1,0 +1,76 @@
+From 94cd049b8c81e2b58113db7cc289218f8925d27d Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:09 +0200
+Subject: [PATCH 02/54] qobject: Ensure base is at offset 0
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-3-armbru@redhat.com>
+Patchwork-id: 80724
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 02/23] qobject: Ensure base is at offset 0
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+From: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+All QObject types have the base QObject as their first field. This
+allows the simplification of qobject_to().
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180419150145.24795-2-marcandre.lureau@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+[Commit message paragraph on type casts dropped, to avoid giving the
+impression type casting would be okay]
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit 7ee9edfdb117da47c86c9764d90f0be11a648666)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qapi/qmp/qobject.h | 5 ++---
+ qobject/qobject.c          | 9 +++++++++
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/include/qapi/qmp/qobject.h b/include/qapi/qmp/qobject.h
+index e022707..5206ff9 100644
+--- a/include/qapi/qmp/qobject.h
++++ b/include/qapi/qmp/qobject.h
+@@ -61,9 +61,8 @@ struct QObject {
+ QEMU_BUILD_BUG_MSG(QTYPE__MAX != 7,
+                    "The QTYPE_CAST_TO_* list needs to be extended");
+ 
+-#define qobject_to(type, obj) ({ \
+-    QObject *_tmp = qobject_check_type(obj, glue(QTYPE_CAST_TO_, type)); \
+-    _tmp ? container_of(_tmp, type, base) : (type *)NULL; })
++#define qobject_to(type, obj)                                       \
++    ((type *)qobject_check_type(obj, glue(QTYPE_CAST_TO_, type)))
+ 
+ /* Initialize an object to default values */
+ static inline void qobject_init(QObject *obj, QType type)
+diff --git a/qobject/qobject.c b/qobject/qobject.c
+index 23600aa..87649c5 100644
+--- a/qobject/qobject.c
++++ b/qobject/qobject.c
+@@ -16,6 +16,15 @@
+ #include "qapi/qmp/qlist.h"
+ #include "qapi/qmp/qstring.h"
+ 
++QEMU_BUILD_BUG_MSG(
++    offsetof(QNull, base) != 0 ||
++    offsetof(QNum, base) != 0 ||
++    offsetof(QString, base) != 0 ||
++    offsetof(QDict, base) != 0 ||
++    offsetof(QList, base) != 0 ||
++    offsetof(QBool, base) != 0,
++    "base qobject must be at offset 0");
++
+ static void (*qdestroy[QTYPE__MAX])(QObject *) = {
+     [QTYPE_NONE] = NULL,               /* No such object exists */
+     [QTYPE_QNULL] = NULL,              /* qnull_ is indestructible */
+-- 
+1.8.3.1
+

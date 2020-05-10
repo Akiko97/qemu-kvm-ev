@@ -1,0 +1,66 @@
+From ba4e622bc5d07daba8a63589124c944d6105e054 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 6 Jul 2018 17:56:51 +0200
+Subject: [PATCH 17/89] pr-helper: fix --socket-path default in help
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20180706175659.30615-2-pbonzini@redhat.com>
+Patchwork-id: 81244
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 1/9] pr-helper: fix --socket-path default in help
+Bugzilla: 1533158
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Michal Privoznik <mprivozn@redhat.com>
+
+Currently --help shows "(default '(null)')" for the -k/--socket-path
+option.  Fix it by getting the default path in /var/run.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+(cherry picked from commit 50fa332516d5e42695811f43396b749185e21b9c)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ scsi/qemu-pr-helper.c | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/scsi/qemu-pr-helper.c b/scsi/qemu-pr-helper.c
+index 7a29e64..19887f5 100644
+--- a/scsi/qemu-pr-helper.c
++++ b/scsi/qemu-pr-helper.c
+@@ -74,8 +74,16 @@ static int uid = -1;
+ static int gid = -1;
+ #endif
+ 
++static void compute_default_paths(void)
++{
++    if (!socket_path) {
++        socket_path = qemu_get_local_state_pathname("run/qemu-pr-helper.sock");
++    }
++}
++
+ static void usage(const char *name)
+ {
++    compute_default_paths();
+     (printf) (
+ "Usage: %s [OPTIONS] FILE\n"
+ "Persistent Reservation helper program for QEMU\n"
+@@ -834,13 +842,6 @@ static const char *socket_activation_validate_opts(void)
+     return NULL;
+ }
+ 
+-static void compute_default_paths(void)
+-{
+-    if (!socket_path) {
+-        socket_path = qemu_get_local_state_pathname("run/qemu-pr-helper.sock");
+-    }
+-}
+-
+ static void termsig_handler(int signum)
+ {
+     atomic_cmpxchg(&state, RUNNING, TERMINATE);
+-- 
+1.8.3.1
+

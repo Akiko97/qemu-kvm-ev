@@ -1,0 +1,52 @@
+From 01cb24169e6f707daea28e19dbb9cbc59180023c Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 17:00:22 +0100
+Subject: [PATCH 21/23] qcow2: Explicit number replaced by a constant
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219170023.27826-13-kwolf@redhat.com>
+Patchwork-id: 84551
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 12/13] qcow2: Explicit number replaced by a constant
+Bugzilla: 1656913
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Leonid Bloch <lbloch@janustech.com>
+
+Signed-off-by: Leonid Bloch <lbloch@janustech.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit bd016b912cc68c6f6c68cd5acb2e13126bd9e05c)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index acd076c..114dcdd 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -1321,7 +1321,7 @@ static int coroutine_fn qcow2_do_open(BlockDriverState *bs, QDict *options,
+     /* 2^(s->refcount_order - 3) is the refcount width in bytes */
+     s->refcount_block_bits = s->cluster_bits - (s->refcount_order - 3);
+     s->refcount_block_size = 1 << s->refcount_block_bits;
+-    bs->total_sectors = header.size / 512;
++    bs->total_sectors = header.size / BDRV_SECTOR_SIZE;
+     s->csize_shift = (62 - (s->cluster_bits - 8));
+     s->csize_mask = (1 << (s->cluster_bits - 8)) - 1;
+     s->cluster_offset_mask = (1LL << s->csize_shift) - 1;
+@@ -3494,7 +3494,7 @@ static int coroutine_fn qcow2_co_truncate(BlockDriverState *bs, int64_t offset,
+         goto fail;
+     }
+ 
+-    old_length = bs->total_sectors * 512;
++    old_length = bs->total_sectors * BDRV_SECTOR_SIZE;
+     new_l1_size = size_to_l1(s, offset);
+ 
+     if (offset < old_length) {
+-- 
+1.8.3.1
+

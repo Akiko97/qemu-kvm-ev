@@ -1,0 +1,63 @@
+From 798456424d4941bed5e19e4ee3c712c7bc3766dd Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Wed, 13 Jun 2018 10:40:26 +0200
+Subject: [PATCH 4/9] Use 4 MB vram for cirrus.
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20180613104026.4395-3-kraxel@redhat.com>
+Patchwork-id: 80652
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/2] Use 4 MB vram for cirrus.
+Bugzilla: 1542080
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Daniel P. Berrange <berrange@redhat.com>
+
+Follow upstream, which switched from 8 MB to 4 MB in release 2.9,
+see commit 73c148130b58709f0f2abfedbae92681d87eb404.
+
+RHEL traditionally defaults to 16 MB video memory, so we had a patch
+changing 8 MB -> 16 MB downstream.  The 2.9 rebase kept that patch, now
+changing 4 MB -> 16 MB.
+
+This patch effectively reverts the downstream change and adds a compat
+property so the video memory will stay at 16 MB for 7.5 and older
+machine types.
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/display/cirrus_vga.c | 2 +-
+ include/hw/compat.h     | 4 ++++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/hw/display/cirrus_vga.c b/hw/display/cirrus_vga.c
+index feacb45..014268a 100644
+--- a/hw/display/cirrus_vga.c
++++ b/hw/display/cirrus_vga.c
+@@ -3133,7 +3133,7 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
+ 
+ static Property pci_vga_cirrus_properties[] = {
+     DEFINE_PROP_UINT32("vgamem_mb", struct PCICirrusVGAState,
+-                       cirrus_vga.vga.vram_size_mb, 16),
++                       cirrus_vga.vga.vram_size_mb, 4),
+     DEFINE_PROP_BOOL("blitter", struct PCICirrusVGAState,
+                      cirrus_vga.enable_blitter, true),
+     DEFINE_PROP_END_OF_LIST(),
+diff --git a/include/hw/compat.h b/include/hw/compat.h
+index 666eed9..9e659e9 100644
+--- a/include/hw/compat.h
++++ b/include/hw/compat.h
+@@ -476,6 +476,10 @@
+         .driver   = "virtio-tablet-device",\
+         .property = "wheel-axis",\
+         .value    = "false",\
++    },{ /* HW_COMPAT_RHEL7_5 */ \
++        .driver   = "cirrus-vga",\
++        .property = "vgamem_mb",\
++        .value    = "16",\
+     },
+ 
+ #endif /* HW_COMPAT_H */
+-- 
+1.8.3.1
+

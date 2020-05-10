@@ -1,0 +1,101 @@
+From b8f1b4c9b03d2ec06ed69d0f6769499d197eccd8 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 24 Jul 2018 12:50:06 +0200
+Subject: [PATCH 65/89] block: Fix parameter checking in
+ bdrv_co_copy_range_internal
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-15-jsnow@redhat.com>
+Patchwork-id: 81411
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 14/35] block: Fix parameter checking in bdrv_co_copy_range_internal
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+src may be NULL if BDRV_REQ_ZERO_WRITE flag is set, in this case only
+check dst and dst->bs. This bug was introduced when moving in the
+request tracking code from bdrv_co_copy_range, in 37aec7d75eb.
+
+This especially fixes the possible segfault when initializing src_bs
+with a NULL src.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Message-id: 20180703023758.14422-2-famz@redhat.com
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit d4d3e5a0d53a57282955e8a3ed7acc1ca90552d9)
+Signed-off-by: John Snow <jsnow@redhat.com>
+---
+ block/io.c | 28 +++++++++++++++-------------
+ 1 file changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 136a5d0..7981239 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -2848,17 +2848,11 @@ static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+                                                     bool recurse_src)
+ {
+     BdrvTrackedRequest src_req, dst_req;
+-    BlockDriverState *src_bs = src->bs;
+-    BlockDriverState *dst_bs = dst->bs;
+     int ret;
+ 
+-    if (!src || !dst || !src->bs || !dst->bs) {
++    if (!dst || !dst->bs) {
+         return -ENOMEDIUM;
+     }
+-    ret = bdrv_check_byte_request(src->bs, src_offset, bytes);
+-    if (ret) {
+-        return ret;
+-    }
+ 
+     ret = bdrv_check_byte_request(dst->bs, dst_offset, bytes);
+     if (ret) {
+@@ -2868,17 +2862,25 @@ static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+         return bdrv_co_pwrite_zeroes(dst, dst_offset, bytes, flags);
+     }
+ 
++    if (!src || !src->bs) {
++        return -ENOMEDIUM;
++    }
++    ret = bdrv_check_byte_request(src->bs, src_offset, bytes);
++    if (ret) {
++        return ret;
++    }
++    
+     if (!src->bs->drv->bdrv_co_copy_range_from
+         || !dst->bs->drv->bdrv_co_copy_range_to
+         || src->bs->encrypted || dst->bs->encrypted) {
+         return -ENOTSUP;
+     }
+ 
+-    bdrv_inc_in_flight(src_bs);
+-    bdrv_inc_in_flight(dst_bs);
+-    tracked_request_begin(&src_req, src_bs, src_offset,
++    bdrv_inc_in_flight(src->bs);
++    bdrv_inc_in_flight(dst->bs);
++    tracked_request_begin(&src_req, src->bs, src_offset,
+                           bytes, BDRV_TRACKED_READ);
+-    tracked_request_begin(&dst_req, dst_bs, dst_offset,
++    tracked_request_begin(&dst_req, dst->bs, dst_offset,
+                           bytes, BDRV_TRACKED_WRITE);
+ 
+     wait_serialising_requests(&src_req);
+@@ -2896,8 +2898,8 @@ static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+     }
+     tracked_request_end(&src_req);
+     tracked_request_end(&dst_req);
+-    bdrv_dec_in_flight(src_bs);
+-    bdrv_dec_in_flight(dst_bs);
++    bdrv_dec_in_flight(src->bs);
++    bdrv_dec_in_flight(dst->bs);
+     return ret;
+ }
+ 
+-- 
+1.8.3.1
+

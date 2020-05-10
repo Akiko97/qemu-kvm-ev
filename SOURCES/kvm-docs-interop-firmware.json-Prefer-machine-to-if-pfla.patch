@@ -1,0 +1,72 @@
+From 11a0638c7c56d8653e99b8eab194d1adc70a35f3 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:18 +0200
+Subject: [PATCH 51/53] docs/interop/firmware.json: Prefer -machine to
+ if=pflash
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-30-armbru@redhat.com>
+Patchwork-id: 87994
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 29/31] docs/interop/firmware.json: Prefer -machine to if=pflash
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+The previous commit added a way to configure firmware with -blockdev
+rather than -drive if=pflash.  Document it as the preferred way.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20190308131445.17502-13-armbru@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Laszlo Ersek <lersek@redhat.com>
+(cherry picked from commit e33763be7cd3769c9ae48e67d775348863fdabdb)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ docs/interop/firmware.json | 20 ++++++++++++++------
+ 1 file changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/docs/interop/firmware.json b/docs/interop/firmware.json
+index 28f9bc1..ff8c2ce 100644
+--- a/docs/interop/firmware.json
++++ b/docs/interop/firmware.json
+@@ -212,9 +212,13 @@
+ #
+ # @executable: Identifies the firmware executable. The firmware
+ #              executable may be shared by multiple virtual machine
+-#              definitions. The corresponding QEMU command line option
+-#              is "-drive
+-#              if=pflash,unit=0,readonly=on,file=@executable.@filename,format=@executable.@format".
++#              definitions. The preferred corresponding QEMU command
++#              line options are
++#                  -drive if=none,id=pflash0,readonly=on,file=@executable.@filename,format=@executable.@format
++#                  -machine pflash0=pflash0
++#              or equivalent -blockdev instead of -drive.
++#              With QEMU versions older than 4.0, you have to use
++#                  -drive if=pflash,unit=0,readonly=on,file=@executable.@filename,format=@executable.@format
+ #
+ # @nvram-template: Identifies the NVRAM template compatible with
+ #                  @executable. Management software instantiates an
+@@ -225,9 +229,13 @@
+ #                  individual copies of it are. An NVRAM file is
+ #                  typically used for persistently storing the
+ #                  non-volatile UEFI variables of a virtual machine
+-#                  definition. The corresponding QEMU command line
+-#                  option is "-drive
+-#                  if=pflash,unit=1,readonly=off,file=FILENAME_OF_PRIVATE_NVRAM_FILE,format=@nvram-template.@format".
++#                  definition. The preferred corresponding QEMU
++#                  command line options are
++#                      -drive if=none,id=pflash1,readonly=off,file=FILENAME_OF_PRIVATE_NVRAM_FILE,format=@nvram-template.@format
++#                      -machine pflash1=pflash1
++#                  or equivalent -blockdev instead of -drive.
++#                  With QEMU versions older than 4.0, you have to use
++#                      -drive if=pflash,unit=1,readonly=off,file=FILENAME_OF_PRIVATE_NVRAM_FILE,format=@nvram-template.@format
+ #
+ # Since: 3.0
+ ##
+-- 
+1.8.3.1
+

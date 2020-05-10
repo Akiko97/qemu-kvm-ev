@@ -1,0 +1,67 @@
+From 3483f36dbf965a4ca01c4a2d3bce1132340596d1 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Fri, 31 Aug 2018 16:25:52 +0200
+Subject: [PATCH 10/29] vfio/pci: do not set the PCIDevice 'has_rom' attribute
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: plai@redhat.com
+Message-id: <1535732759-22481-3-git-send-email-plai@redhat.com>
+Patchwork-id: 82004
+O-Subject: [RHEL7.6 PATCH BZ 1539280 2/9] vfio/pci: do not set the PCIDevice 'has_rom' attribute
+Bugzilla: 1539280
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Cédric Le Goater <clg@kaod.org>
+
+PCI devices needing a ROM allocate an optional MemoryRegion with
+pci_add_option_rom(). pci_del_option_rom() does the cleanup when the
+device is destroyed. The only action taken by this routine is to call
+vmstate_unregister_ram() which clears the id string of the optional
+ROM RAMBlock and now, also flags the RAMBlock as non-migratable. This
+was recently added by commit b895de502717 ("migration: discard
+non-migratable RAMBlocks"), .
+
+VFIO devices do their own loading of the PCI option ROM in
+vfio_pci_size_rom(). The memory region is switched to an I/O region
+and the PCI attribute 'has_rom' is set but the RAMBlock of the ROM
+region is not allocated. When the associated PCI device is deleted,
+pci_del_option_rom() calls vmstate_unregister_ram() which tries to
+flag a NULL RAMBlock, leading to a SEGV.
+
+It seems that 'has_rom' was set to have memory_region_destroy()
+called, but since commit 469b046ead06 ("memory: remove
+memory_region_destroy") this is not necessary anymore as the
+MemoryRegion is freed automagically.
+
+Remove the PCIDevice 'has_rom' attribute setting in vfio.
+
+Fixes: b895de502717 ("migration: discard non-migratable RAMBlocks")
+Signed-off-by: Cédric Le Goater <clg@kaod.org>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+(cherry picked from commit 26c0ae56386edacc8b0da40264748f59afedb1bb)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/vfio/pci.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/hw/vfio/pci.c b/hw/vfio/pci.c
+index 4683eb4..c00b91c 100644
+--- a/hw/vfio/pci.c
++++ b/hw/vfio/pci.c
+@@ -990,7 +990,6 @@ static void vfio_pci_size_rom(VFIOPCIDevice *vdev)
+     pci_register_bar(&vdev->pdev, PCI_ROM_SLOT,
+                      PCI_BASE_ADDRESS_SPACE_MEMORY, &vdev->pdev.rom);
+ 
+-    vdev->pdev.has_rom = true;
+     vdev->rom_read_failed = false;
+ }
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,69 @@
+From 9a2c829fe94fb3bb241cf9f22cd206c4392b87f3 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:20 +0100
+Subject: [PATCH 081/163] qemu-nbd: Use program name in error messages
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-8-jsnow@redhat.com>
+Patchwork-id: 85174
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 07/55] qemu-nbd: Use program name in error messages
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+This changes output from:
+
+$ qemu-nbd nosuch
+Failed to blk_new_open 'nosuch': Could not open 'nosuch': No such file or directory
+
+to something more consistent with qemu-img and qemu:
+
+$ qemu-nbd nosuch
+qemu-nbd: Failed to blk_new_open 'nosuch': Could not open 'nosuch': No such file or directory
+
+Update the lone affected test to match.  (Hmm - is it sad that we don't
+do much testing of expected failures?)
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20181215135324.152629-2-eblake@redhat.com>
+(cherry picked from commit 3ba1b7baf4b2518e8efdbe50175d909b79c21596)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-nbd.c                 | 1 +
+ tests/qemu-iotests/233.out | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/qemu-nbd.c b/qemu-nbd.c
+index e76fe30..7f078b2 100644
+--- a/qemu-nbd.c
++++ b/qemu-nbd.c
+@@ -571,6 +571,7 @@ int main(int argc, char **argv)
+ #endif
+ 
+     module_call_init(MODULE_INIT_TRACE);
++    error_set_progname(argv[0]);
+     qcrypto_init(&error_fatal);
+ 
+     module_call_init(MODULE_INIT_QOM);
+diff --git a/tests/qemu-iotests/233.out b/tests/qemu-iotests/233.out
+index 94acd9b..5f41672 100644
+--- a/tests/qemu-iotests/233.out
++++ b/tests/qemu-iotests/233.out
+@@ -27,7 +27,7 @@ virtual size: 64M (67108864 bytes)
+ disk size: unavailable
+ 
+ == check TLS with different CA fails ==
+-option negotiation failed: Verify failed: No certificate was found.
++qemu-nbd: option negotiation failed: Verify failed: No certificate was found.
+ qemu-img: Could not open 'driver=nbd,host=127.0.0.1,port=PORT,tls-creds=tls0': The certificate hasn't got a known issuer
+ 
+ == perform I/O over TLS ==
+-- 
+1.8.3.1
+

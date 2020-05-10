@@ -1,0 +1,59 @@
+From 24f8fe9543b18cc484fc43ac1bf5bd7780656fbd Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:35 +0200
+Subject: [PATCH 44/49] mirror: Fix potential use-after-free in active commit
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-38-kwolf@redhat.com>
+Patchwork-id: 82188
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 37/42] mirror: Fix potential use-after-free in active commit
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+When starting an active commit job, other callbacks can run before
+mirror_start_job() calls bdrv_ref() where needed and cause the nodes to
+go away. Add another pair of bdrv_ref/unref() around it to protect
+against this case.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/mirror.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index 4b27f71..8658873 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -1335,7 +1335,14 @@ void commit_active_start(const char *job_id, BlockDriverState *bs,
+ 
+     orig_base_flags = bdrv_get_flags(base);
+ 
++    /* bdrv_reopen() drains, which might make the BDSes go away before a
++     * reference is taken in mirror_start_job(). */
++    bdrv_ref(bs);
++    bdrv_ref(base);
++
+     if (bdrv_reopen(base, bs->open_flags, errp)) {
++        bdrv_unref(bs);
++        bdrv_unref(base);
+         return;
+     }
+ 
+@@ -1344,6 +1351,10 @@ void commit_active_start(const char *job_id, BlockDriverState *bs,
+                      on_error, on_error, true, cb, opaque,
+                      &commit_active_job_driver, false, base, auto_complete,
+                      filter_node_name, false, &local_err);
++
++    bdrv_unref(bs);
++    bdrv_unref(base);
++
+     if (local_err) {
+         error_propagate(errp, local_err);
+         goto error_restore_flags;
+-- 
+1.8.3.1
+

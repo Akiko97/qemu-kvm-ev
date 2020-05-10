@@ -1,0 +1,68 @@
+From 542fe943f769002a9826f057fcf32acdb1cdc41e Mon Sep 17 00:00:00 2001
+From: Stefan Hajnoczi <stefanha@redhat.com>
+Date: Mon, 23 Jul 2018 16:36:29 +0200
+Subject: [PATCH 89/89] throttle-groups: fix hang when group member leaves
+
+RH-Author: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: <20180723163629.7600-2-stefanha@redhat.com>
+Patchwork-id: 81469
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] throttle-groups: fix hang when group member leaves
+Bugzilla: 1535914
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Throttle groups consist of members sharing one throttling state
+(including bps/iops limits).  Round-robin scheduling is used to ensure
+fairness.  If a group member already has a timer pending then other
+groups members do not schedule their own timers.  The next group member
+will have its turn when the existing timer expires.
+
+A hang may occur when a group member leaves while it had a timer
+scheduled.  Although the code carefully removes the group member from
+the round-robin list, it does not schedule the next member.  Therefore
+remaining members continue to wait for the removed member's timer to
+expire.
+
+This patch schedules the next request if a timer is pending.
+Unfortunately the actual bug is a race condition that I've been unable
+to capture in a test case.
+
+Sometimes drive2 hangs when drive1 is removed from the throttling group:
+
+  $ qemu ... -drive if=none,id=drive1,cache=none,format=qcow2,file=data1.qcow2,iops=100,group=foo \
+             -device virtio-blk-pci,id=virtio-blk-pci0,drive=drive1 \
+             -drive if=none,id=drive2,cache=none,format=qcow2,file=data2.qcow2,iops=10,group=foo \
+             -device virtio-blk-pci,id=virtio-blk-pci1,drive=drive2
+  (guest-console1)# fio -filename /dev/vda 4k-seq-read.job
+  (guest-console2)# fio -filename /dev/vdb 4k-seq-read.job
+  (qmp) {"execute": "block_set_io_throttle", "arguments": {"device": "drive1","bps": 0,"bps_rd": 0,"bps_wr": 0,"iops": 0,"iops_rd": 0,"iops_wr": 0}}
+
+Reported-by: Nini Gu <ngu@redhat.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: 20180704145410.794-1-stefanha@redhat.com
+Cc: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/throttle-groups.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/block/throttle-groups.c b/block/throttle-groups.c
+index 36cc043..e297b04 100644
+--- a/block/throttle-groups.c
++++ b/block/throttle-groups.c
+@@ -564,6 +564,10 @@ void throttle_group_unregister_tgm(ThrottleGroupMember *tgm)
+ 
+     qemu_mutex_lock(&tg->lock);
+     for (i = 0; i < 2; i++) {
++        if (timer_pending(tgm->throttle_timers.timers[i])) {
++            tg->any_timer_armed[i] = false;
++            schedule_next_request(tgm, i);
++        }
+         if (tg->tokens[i] == tgm) {
+             token = throttle_group_next_tgm(tgm);
+             /* Take care of the case where this is the last tgm in the group */
+-- 
+1.8.3.1
+

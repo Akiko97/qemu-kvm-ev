@@ -1,0 +1,140 @@
+From a3c2d291823493cd39a79e0b2a38c9af29090cf0 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:26 +0200
+Subject: [PATCH 16/53] nbd/server: Trace client noncompliance on unaligned
+ requests
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-17-jsnow@redhat.com>
+Patchwork-id: 87198
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 16/19] nbd/server: Trace client noncompliance on unaligned requests
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+We've recently added traces for clients to flag server non-compliance;
+let's do the same for servers to flag client non-compliance. According
+to the spec, if the client requests NBD_INFO_BLOCK_SIZE, it is
+promising to send all requests aligned to those boundaries.  Of
+course, if the client does not request NBD_INFO_BLOCK_SIZE, then it
+made no promises so we shouldn't flag anything; and because we are
+willing to handle clients that made no promises (the spec allows us to
+use NBD_REP_ERR_BLOCK_SIZE_REQD if we had been unwilling), we already
+have to handle unaligned requests (which the block layer already does
+on our behalf).  So even though the spec allows us to return EINVAL
+for clients that promised to behave, it's easier to always answer
+unaligned requests.  Still, flagging non-compliance can be useful in
+debugging a client that is trying to be maximally portable.
+
+Qemu as client used to have one spot where it sent non-compliant
+requests: if the server sends an unaligned reply to
+NBD_CMD_BLOCK_STATUS, and the client was iterating over the entire
+disk, the next request would start at that unaligned point; this was
+fixed in commit a39286dd when the client was taught to work around
+server non-compliance; but is equally fixed if the server is patched
+to not send unaligned replies in the first place (yes, qemu 4.0 as
+server still has few such bugs, although they will be patched in
+4.1). Fortunately, I did not find any more spots where qemu as client
+was non-compliant. I was able to test the patch by using the following
+hack to convince qemu-io to run various unaligned commands, coupled
+with serving 512-byte alignment by intentionally omitting '-f raw' on
+the server while viewing server traces.
+
+| diff --git i/nbd/client.c w/nbd/client.c
+| index 427980bdd22..1858b2aac35 100644
+| --- i/nbd/client.c
+| +++ w/nbd/client.c
+| @@ -449,6 +449,7 @@ static int nbd_opt_info_or_go(QIOChannel *ioc, uint32_t opt,
+|                  nbd_send_opt_abort(ioc);
+|                  return -1;
+|              }
+| +            info->min_block = 1;//hack
+|              if (!is_power_of_2(info->min_block)) {
+|                  error_setg(errp, "server minimum block size %" PRIu32
+|                             " is not a power of two", info->min_block);
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190403030526.12258-3-eblake@redhat.com>
+[eblake: address minor review nits]
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit 6e280648d21d8c0aa8a101b62d0732cd1e608743)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c     | 17 ++++++++++++++++-
+ nbd/trace-events |  1 +
+ 2 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 6ae2154..42f77ae 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -124,6 +124,8 @@ struct NBDClient {
+     int nb_requests;
+     bool closing;
+ 
++    uint32_t check_align; /* If non-zero, check for aligned client requests */
++
+     bool structured_reply;
+     NBDExportMetaContexts export_meta;
+ 
+@@ -533,6 +535,7 @@ static int nbd_negotiate_handle_info(NBDClient *client, uint16_t myflags,
+     bool blocksize = false;
+     uint32_t sizes[3];
+     char buf[sizeof(uint64_t) + sizeof(uint16_t)];
++    uint32_t check_align = 0;
+ 
+     /* Client sends:
+         4 bytes: L, name length (can be 0)
+@@ -609,7 +612,7 @@ static int nbd_negotiate_handle_info(NBDClient *client, uint16_t myflags,
+      * whether this is OPT_INFO or OPT_GO. */
+     /* minimum - 1 for back-compat, or actual if client will obey it. */
+     if (client->opt == NBD_OPT_INFO || blocksize) {
+-        sizes[0] = blk_get_request_alignment(exp->blk);
++        check_align = sizes[0] = blk_get_request_alignment(exp->blk);
+     } else {
+         sizes[0] = 1;
+     }
+@@ -660,6 +663,7 @@ static int nbd_negotiate_handle_info(NBDClient *client, uint16_t myflags,
+ 
+     if (client->opt == NBD_OPT_GO) {
+         client->exp = exp;
++        client->check_align = check_align;
+         QTAILQ_INSERT_TAIL(&client->exp->clients, client, next);
+         nbd_export_get(client->exp);
+         nbd_check_meta_export(client);
+@@ -2126,6 +2130,17 @@ static int nbd_co_receive_request(NBDRequestData *req, NBDRequest *request,
+         return (request->type == NBD_CMD_WRITE ||
+                 request->type == NBD_CMD_WRITE_ZEROES) ? -ENOSPC : -EINVAL;
+     }
++    if (client->check_align && !QEMU_IS_ALIGNED(request->from | request->len,
++                                                client->check_align)) {
++        /*
++         * The block layer gracefully handles unaligned requests, but
++         * it's still worth tracing client non-compliance
++         */
++        trace_nbd_co_receive_align_compliance(nbd_cmd_lookup(request->type),
++                                              request->from,
++                                              request->len,
++                                              client->check_align);
++    }
+     valid_flags = NBD_CMD_FLAG_FUA;
+     if (request->type == NBD_CMD_READ && client->structured_reply) {
+         valid_flags |= NBD_CMD_FLAG_DF;
+diff --git a/nbd/trace-events b/nbd/trace-events
+index 7f10ebd..bd42cc8 100644
+--- a/nbd/trace-events
++++ b/nbd/trace-events
+@@ -71,4 +71,5 @@ nbd_co_send_structured_error(uint64_t handle, int err, const char *errname, cons
+ nbd_co_receive_request_decode_type(uint64_t handle, uint16_t type, const char *name) "Decoding type: handle = %" PRIu64 ", type = %" PRIu16 " (%s)"
+ nbd_co_receive_request_payload_received(uint64_t handle, uint32_t len) "Payload received: handle = %" PRIu64 ", len = %" PRIu32
+ nbd_co_receive_request_cmd_write(uint32_t len) "Reading %" PRIu32 " byte(s)"
++nbd_co_receive_align_compliance(const char *op, uint64_t from, uint32_t len, uint32_t align) "client sent non-compliant unaligned %s request: from=0x%" PRIx64 ", len=0x%" PRIx32 ", align=0x%" PRIx32
+ nbd_trip(void) "Reading request"
+-- 
+1.8.3.1
+

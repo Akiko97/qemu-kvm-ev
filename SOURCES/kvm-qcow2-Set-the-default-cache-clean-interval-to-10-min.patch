@@ -1,0 +1,118 @@
+From 098468977d64b1c8f63ae6fb312e24698d368c74 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 17:00:21 +0100
+Subject: [PATCH 20/23] qcow2: Set the default cache-clean-interval to 10
+ minutes
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219170023.27826-12-kwolf@redhat.com>
+Patchwork-id: 84550
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 11/13] qcow2: Set the default cache-clean-interval to 10 minutes
+Bugzilla: 1656913
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Leonid Bloch <lbloch@janustech.com>
+
+The default cache-clean-interval is set to 10 minutes, in order to lower
+the overhead of the qcow2 caches (before the default was 0, i.e.
+disabled).
+
+* For non-Linux platforms the default is kept at 0, because
+  cache-clean-interval is not supported there yet.
+
+Signed-off-by: Leonid Bloch <lbloch@janustech.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit e957b50b8daecfc39a1ac09855b0eacb6edfd328)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c        | 2 +-
+ block/qcow2.h        | 4 +++-
+ docs/qcow2-cache.txt | 4 ++--
+ qapi/block-core.json | 3 ++-
+ qemu-options.hx      | 2 +-
+ 5 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 72f1ea8..acd076c 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -940,7 +940,7 @@ static int qcow2_update_options_prepare(BlockDriverState *bs,
+     /* New interval for cache cleanup timer */
+     r->cache_clean_interval =
+         qemu_opt_get_number(opts, QCOW2_OPT_CACHE_CLEAN_INTERVAL,
+-                            s->cache_clean_interval);
++                            DEFAULT_CACHE_CLEAN_INTERVAL);
+ #ifndef CONFIG_LINUX
+     if (r->cache_clean_interval != 0) {
+         error_setg(errp, QCOW2_OPT_CACHE_CLEAN_INTERVAL
+diff --git a/block/qcow2.h b/block/qcow2.h
+index 6c6c742..29b041c 100644
+--- a/block/qcow2.h
++++ b/block/qcow2.h
+@@ -76,13 +76,15 @@
+ 
+ #ifdef CONFIG_LINUX
+ #define DEFAULT_L2_CACHE_MAX_SIZE S_32MiB
++#define DEFAULT_CACHE_CLEAN_INTERVAL 600  /* seconds */
+ #else
+ #define DEFAULT_L2_CACHE_MAX_SIZE S_8MiB
++/* Cache clean interval is currently available only on Linux, so must be 0 */
++#define DEFAULT_CACHE_CLEAN_INTERVAL 0
+ #endif
+ 
+ #define DEFAULT_CLUSTER_SIZE S_64KiB
+ 
+-
+ #define QCOW2_OPT_LAZY_REFCOUNTS "lazy-refcounts"
+ #define QCOW2_OPT_DISCARD_REQUEST "pass-discard-request"
+ #define QCOW2_OPT_DISCARD_SNAPSHOT "pass-discard-snapshot"
+diff --git a/docs/qcow2-cache.txt b/docs/qcow2-cache.txt
+index 1fcc065..59358b8 100644
+--- a/docs/qcow2-cache.txt
++++ b/docs/qcow2-cache.txt
+@@ -210,8 +210,8 @@ This example removes all unused cache entries every 15 minutes:
+ 
+    -drive file=hd.qcow2,cache-clean-interval=900
+ 
+-If unset, the default value for this parameter is 0 and it disables
+-this feature.
++If unset, the default value for this parameter is 600. Setting it to 0
++disables this feature.
+ 
+ Note that this functionality currently relies on the MADV_DONTNEED
+ argument for madvise() to actually free the memory. This is a
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 9741555..f43124e 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -2873,7 +2873,8 @@
+ #
+ # @cache-clean-interval:  clean unused entries in the L2 and refcount
+ #                         caches. The interval is in seconds. The default value
+-#                         is 0 and it disables this feature (since 2.5)
++#                         is 600, and 0 disables this feature. (since 2.5)
++#
+ # @encrypt:               Image decryption options. Mandatory for
+ #                         encrypted images, except when doing a metadata-only
+ #                         probe of the image. (since 2.10)
+diff --git a/qemu-options.hx b/qemu-options.hx
+index 3580d16..f7c9e23 100644
+--- a/qemu-options.hx
++++ b/qemu-options.hx
+@@ -767,7 +767,7 @@ it which is not used for the L2 cache)
+ 
+ @item cache-clean-interval
+ Clean unused entries in the L2 and refcount caches. The interval is in seconds.
+-The default value is 0 and it disables this feature.
++The default value is 600. Setting it to 0 disables this feature.
+ 
+ @item pass-discard-request
+ Whether discard requests to the qcow2 device should be forwarded to the data
+-- 
+1.8.3.1
+

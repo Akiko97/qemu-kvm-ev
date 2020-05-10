@@ -1,0 +1,91 @@
+From f93730ef94f17043f240950d40d4661629b89aa3 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:15 +0200
+Subject: [PATCH 05/53] qemu-img: Gracefully shutdown when map can't finish
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-6-jsnow@redhat.com>
+Patchwork-id: 87190
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 05/19] qemu-img: Gracefully shutdown when map can't finish
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Trying 'qemu-img map -f raw nbd://localhost:10809' causes the
+NBD server to output a scary message:
+
+qemu-nbd: Disconnect client, due to: Failed to read request: Unexpected end-of-file before all bytes were read
+
+This is because the NBD client, being remote, has no way to expose a
+human-readable map (the --output=json data is fine, however). But
+because we exit(1) right after the message, causing the client to
+bypass all block cleanup, the server sees the abrupt exit and warns,
+whereas it would be silent had the client had a chance to send
+NBD_CMD_DISC. Other protocols may have similar cleanup issues, where
+failure to blk_unref() could cause unintended effects.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190326184043.7544-1-eblake@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 30065d142443981924786da72828ba683da35e8f)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index 096e844..5be2abf 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -2713,14 +2713,14 @@ static int img_info(int argc, char **argv)
+     return 0;
+ }
+ 
+-static void dump_map_entry(OutputFormat output_format, MapEntry *e,
+-                           MapEntry *next)
++static int dump_map_entry(OutputFormat output_format, MapEntry *e,
++                          MapEntry *next)
+ {
+     switch (output_format) {
+     case OFORMAT_HUMAN:
+         if (e->data && !e->has_offset) {
+             error_report("File contains external, encrypted or compressed clusters.");
+-            exit(1);
++            return -1;
+         }
+         if (e->data && !e->zero) {
+             printf("%#-16"PRIx64"%#-16"PRIx64"%#-16"PRIx64"%s\n",
+@@ -2753,6 +2753,7 @@ static void dump_map_entry(OutputFormat output_format, MapEntry *e,
+         }
+         break;
+     }
++    return 0;
+ }
+ 
+ static int get_block_status(BlockDriverState *bs, int64_t offset,
+@@ -2939,12 +2940,15 @@ static int img_map(int argc, char **argv)
+         }
+ 
+         if (curr.length > 0) {
+-            dump_map_entry(output_format, &curr, &next);
++            ret = dump_map_entry(output_format, &curr, &next);
++            if (ret < 0) {
++                goto out;
++            }
+         }
+         curr = next;
+     }
+ 
+-    dump_map_entry(output_format, &curr, NULL);
++    ret = dump_map_entry(output_format, &curr, NULL);
+ 
+ out:
+     blk_unref(blk);
+-- 
+1.8.3.1
+

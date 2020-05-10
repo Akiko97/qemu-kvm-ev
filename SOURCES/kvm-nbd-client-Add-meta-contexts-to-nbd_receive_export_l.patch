@@ -1,0 +1,142 @@
+From 1c6d308e59fe4d6f50a0664eea5c0d09b8075f20 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:52 +0100
+Subject: [PATCH 114/163] nbd/client: Add meta contexts to
+ nbd_receive_export_list()
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-40-jsnow@redhat.com>
+Patchwork-id: 85199
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 39/55] nbd/client: Add meta contexts to nbd_receive_export_list()
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+We want to be able to detect whether a given qemu NBD server is
+exposing the right export(s) and dirty bitmaps, at least for
+regression testing.  We could use 'nbd-client -l' from the upstream
+NBD project to list exports, but it's annoying to rely on
+out-of-tree binaries; furthermore, nbd-client doesn't necessarily
+know about all of the qemu NBD extensions.  Thus, we plan on adding
+a new mode to qemu-nbd that merely sniffs all possible information
+from the server during handshake phase, then disconnects and dumps
+the information.
+
+This patch continues the work of the previous patch, by adding the
+ability to track the list of available meta contexts into
+NBDExportInfo.  It benefits from the recent refactoring patches
+with a new nbd_list_meta_contexts() that reuses much of the same
+framework as setting a meta context.
+
+Note: a malicious server could exhaust memory of a client by feeding
+an unending loop of contexts; perhaps we could place a limit on how
+many we are willing to receive. But this is no different from our
+earlier analysis on a server sending an unending list of exports,
+and the death of a client due to memory exhaustion when the client
+was going to exit soon anyways is not really a denial of service
+attack.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20190117193658.16413-19-eblake@redhat.com>
+(cherry picked from commit 0b576b6bfb56291bb13db0a54d99adf2f3706030)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/block/nbd.h |  2 ++
+ nbd/client.c        | 41 +++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 41 insertions(+), 2 deletions(-)
+
+diff --git a/include/block/nbd.h b/include/block/nbd.h
+index 19332b4..4faf394 100644
+--- a/include/block/nbd.h
++++ b/include/block/nbd.h
+@@ -284,6 +284,8 @@ struct NBDExportInfo {
+ 
+     /* Set by server results during nbd_receive_export_list() */
+     char *description;
++    int n_contexts;
++    char **contexts;
+ };
+ typedef struct NBDExportInfo NBDExportInfo;
+ 
+diff --git a/nbd/client.c b/nbd/client.c
+index 8a32169..798b82f 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -818,6 +818,36 @@ static int nbd_negotiate_simple_meta_context(QIOChannel *ioc,
+ }
+ 
+ /*
++ * nbd_list_meta_contexts:
++ * Request the server to list all meta contexts for export @info->name.
++ * return 0 if list is complete (even if empty),
++ *        -1 with errp set for any error
++ */
++static int nbd_list_meta_contexts(QIOChannel *ioc,
++                                  NBDExportInfo *info,
++                                  Error **errp)
++{
++    int ret;
++
++    if (nbd_send_meta_query(ioc, NBD_OPT_LIST_META_CONTEXT,
++                            info->name, NULL, errp) < 0) {
++        return -1;
++    }
++
++    while (1) {
++        char *context;
++
++        ret = nbd_receive_one_meta_context(ioc, NBD_OPT_LIST_META_CONTEXT,
++                                           &context, NULL, errp);
++        if (ret <= 0) {
++            return ret;
++        }
++        info->contexts = g_renew(char *, info->contexts, ++info->n_contexts);
++        info->contexts[info->n_contexts - 1] = context;
++    }
++}
++
++/*
+  * nbd_start_negotiate:
+  * Start the handshake to the server.  After a positive return, the server
+  * is ready to accept additional NBD_OPT requests.
+@@ -1066,7 +1096,7 @@ int nbd_receive_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
+ /* Clean up result of nbd_receive_export_list */
+ void nbd_free_export_list(NBDExportInfo *info, int count)
+ {
+-    int i;
++    int i, j;
+ 
+     if (!info) {
+         return;
+@@ -1075,6 +1105,10 @@ void nbd_free_export_list(NBDExportInfo *info, int count)
+     for (i = 0; i < count; i++) {
+         g_free(info[i].name);
+         g_free(info[i].description);
++        for (j = 0; j < info[i].n_contexts; j++) {
++            g_free(info[i].contexts[j]);
++        }
++        g_free(info[i].contexts);
+     }
+     g_free(info);
+ }
+@@ -1144,7 +1178,10 @@ int nbd_receive_export_list(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
+                 break;
+             }
+ 
+-            /* TODO: Grab meta contexts */
++            if (result == 3 &&
++                nbd_list_meta_contexts(ioc, &array[i], errp) < 0) {
++                goto out;
++            }
+         }
+ 
+         /* Send NBD_OPT_ABORT as a courtesy before hanging up */
+-- 
+1.8.3.1
+

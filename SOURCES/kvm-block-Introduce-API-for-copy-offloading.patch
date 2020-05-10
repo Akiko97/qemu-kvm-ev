@@ -1,0 +1,236 @@
+From 62cb216e19f41b1d1c4c5d4523df56dce865ab30 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Fri, 29 Jun 2018 06:11:41 +0200
+Subject: [PATCH 37/57] block: Introduce API for copy offloading
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180629061153.12687-2-famz@redhat.com>
+Patchwork-id: 81153
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 01/13] block: Introduce API for copy offloading
+Bugzilla: 1482537
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Introduce the bdrv_co_copy_range() API for copy offloading.  Block
+drivers implementing this API support efficient copy operations that
+avoid reading each block from the source device and writing it to the
+destination devices.  Examples of copy offload primitives are SCSI
+EXTENDED COPY and Linux copy_file_range(2).
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: 20180601092648.24614-2-famz@redhat.com
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit fcc6767836efe1b160289905dce7228d594c123c)
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c                | 97 +++++++++++++++++++++++++++++++++++++++++++++++
+ include/block/block.h     | 32 ++++++++++++++++
+ include/block/block_int.h | 38 +++++++++++++++++++
+ 3 files changed, 167 insertions(+)
+
+diff --git a/block/io.c b/block/io.c
+index fada4ef..5c043a4 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -2832,3 +2832,100 @@ void bdrv_unregister_buf(BlockDriverState *bs, void *host)
+         bdrv_unregister_buf(child->bs, host);
+     }
+ }
++
++static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
++                                                    uint64_t src_offset,
++                                                    BdrvChild *dst,
++                                                    uint64_t dst_offset,
++                                                    uint64_t bytes,
++                                                    BdrvRequestFlags flags,
++                                                    bool recurse_src)
++{
++    int ret;
++
++    if (!src || !dst || !src->bs || !dst->bs) {
++        return -ENOMEDIUM;
++    }
++    ret = bdrv_check_byte_request(src->bs, src_offset, bytes);
++    if (ret) {
++        return ret;
++    }
++
++    ret = bdrv_check_byte_request(dst->bs, dst_offset, bytes);
++    if (ret) {
++        return ret;
++    }
++    if (flags & BDRV_REQ_ZERO_WRITE) {
++        return bdrv_co_pwrite_zeroes(dst, dst_offset, bytes, flags);
++    }
++
++    if (!src->bs->drv->bdrv_co_copy_range_from
++        || !dst->bs->drv->bdrv_co_copy_range_to
++        || src->bs->encrypted || dst->bs->encrypted) {
++        return -ENOTSUP;
++    }
++    if (recurse_src) {
++        return src->bs->drv->bdrv_co_copy_range_from(src->bs,
++                                                     src, src_offset,
++                                                     dst, dst_offset,
++                                                     bytes, flags);
++    } else {
++        return dst->bs->drv->bdrv_co_copy_range_to(dst->bs,
++                                                   src, src_offset,
++                                                   dst, dst_offset,
++                                                   bytes, flags);
++    }
++}
++
++/* Copy range from @src to @dst.
++ *
++ * See the comment of bdrv_co_copy_range for the parameter and return value
++ * semantics. */
++int coroutine_fn bdrv_co_copy_range_from(BdrvChild *src, uint64_t src_offset,
++                                         BdrvChild *dst, uint64_t dst_offset,
++                                         uint64_t bytes, BdrvRequestFlags flags)
++{
++    return bdrv_co_copy_range_internal(src, src_offset, dst, dst_offset,
++                                       bytes, flags, true);
++}
++
++/* Copy range from @src to @dst.
++ *
++ * See the comment of bdrv_co_copy_range for the parameter and return value
++ * semantics. */
++int coroutine_fn bdrv_co_copy_range_to(BdrvChild *src, uint64_t src_offset,
++                                       BdrvChild *dst, uint64_t dst_offset,
++                                       uint64_t bytes, BdrvRequestFlags flags)
++{
++    return bdrv_co_copy_range_internal(src, src_offset, dst, dst_offset,
++                                       bytes, flags, false);
++}
++
++int coroutine_fn bdrv_co_copy_range(BdrvChild *src, uint64_t src_offset,
++                                    BdrvChild *dst, uint64_t dst_offset,
++                                    uint64_t bytes, BdrvRequestFlags flags)
++{
++    BdrvTrackedRequest src_req, dst_req;
++    BlockDriverState *src_bs = src->bs;
++    BlockDriverState *dst_bs = dst->bs;
++    int ret;
++
++    bdrv_inc_in_flight(src_bs);
++    bdrv_inc_in_flight(dst_bs);
++    tracked_request_begin(&src_req, src_bs, src_offset,
++                          bytes, BDRV_TRACKED_READ);
++    tracked_request_begin(&dst_req, dst_bs, dst_offset,
++                          bytes, BDRV_TRACKED_WRITE);
++
++    wait_serialising_requests(&src_req);
++    wait_serialising_requests(&dst_req);
++    ret = bdrv_co_copy_range_from(src, src_offset,
++                                  dst, dst_offset,
++                                  bytes, flags);
++
++    tracked_request_end(&src_req);
++    tracked_request_end(&dst_req);
++    bdrv_dec_in_flight(src_bs);
++    bdrv_dec_in_flight(dst_bs);
++    return ret;
++}
+diff --git a/include/block/block.h b/include/block/block.h
+index 2d17b09..e677080 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -613,4 +613,36 @@ bool bdrv_can_store_new_dirty_bitmap(BlockDriverState *bs, const char *name,
+  */
+ void bdrv_register_buf(BlockDriverState *bs, void *host, size_t size);
+ void bdrv_unregister_buf(BlockDriverState *bs, void *host);
++
++/**
++ *
++ * bdrv_co_copy_range:
++ *
++ * Do offloaded copy between two children. If the operation is not implemented
++ * by the driver, or if the backend storage doesn't support it, a negative
++ * error code will be returned.
++ *
++ * Note: block layer doesn't emulate or fallback to a bounce buffer approach
++ * because usually the caller shouldn't attempt offloaded copy any more (e.g.
++ * calling copy_file_range(2)) after the first error, thus it should fall back
++ * to a read+write path in the caller level.
++ *
++ * @src: Source child to copy data from
++ * @src_offset: offset in @src image to read data
++ * @dst: Destination child to copy data to
++ * @dst_offset: offset in @dst image to write data
++ * @bytes: number of bytes to copy
++ * @flags: request flags. Must be one of:
++ *         0 - actually read data from src;
++ *         BDRV_REQ_ZERO_WRITE - treat the @src range as zero data and do zero
++ *                               write on @dst as if bdrv_co_pwrite_zeroes is
++ *                               called. Used to simplify caller code, or
++ *                               during BlockDriver.bdrv_co_copy_range_from()
++ *                               recursion.
++ *
++ * Returns: 0 if succeeded; negative error code if failed.
++ **/
++int coroutine_fn bdrv_co_copy_range(BdrvChild *src, uint64_t src_offset,
++                                    BdrvChild *dst, uint64_t dst_offset,
++                                    uint64_t bytes, BdrvRequestFlags flags);
+ #endif
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index ad2b852..3da86a7 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -206,6 +206,37 @@ struct BlockDriver {
+     int coroutine_fn (*bdrv_co_pdiscard)(BlockDriverState *bs,
+         int64_t offset, int bytes);
+ 
++    /* Map [offset, offset + nbytes) range onto a child of @bs to copy from,
++     * and invoke bdrv_co_copy_range_from(child, ...), or invoke
++     * bdrv_co_copy_range_to() if @bs is the leaf child to copy data from.
++     *
++     * See the comment of bdrv_co_copy_range for the parameter and return value
++     * semantics.
++     */
++    int coroutine_fn (*bdrv_co_copy_range_from)(BlockDriverState *bs,
++                                                BdrvChild *src,
++                                                uint64_t offset,
++                                                BdrvChild *dst,
++                                                uint64_t dst_offset,
++                                                uint64_t bytes,
++                                                BdrvRequestFlags flags);
++
++    /* Map [offset, offset + nbytes) range onto a child of bs to copy data to,
++     * and invoke bdrv_co_copy_range_to(child, src, ...), or perform the copy
++     * operation if @bs is the leaf and @src has the same BlockDriver.  Return
++     * -ENOTSUP if @bs is the leaf but @src has a different BlockDriver.
++     *
++     * See the comment of bdrv_co_copy_range for the parameter and return value
++     * semantics.
++     */
++    int coroutine_fn (*bdrv_co_copy_range_to)(BlockDriverState *bs,
++                                              BdrvChild *src,
++                                              uint64_t src_offset,
++                                              BdrvChild *dst,
++                                              uint64_t dst_offset,
++                                              uint64_t bytes,
++                                              BdrvRequestFlags flags);
++
+     /*
+      * Building block for bdrv_block_status[_above] and
+      * bdrv_is_allocated[_above].  The driver should answer only
+@@ -1091,4 +1122,11 @@ void bdrv_dec_in_flight(BlockDriverState *bs);
+ 
+ void blockdev_close_all_bdrv_states(void);
+ 
++int coroutine_fn bdrv_co_copy_range_from(BdrvChild *src, uint64_t src_offset,
++                                         BdrvChild *dst, uint64_t dst_offset,
++                                         uint64_t bytes, BdrvRequestFlags flags);
++int coroutine_fn bdrv_co_copy_range_to(BdrvChild *src, uint64_t src_offset,
++                                       BdrvChild *dst, uint64_t dst_offset,
++                                       uint64_t bytes, BdrvRequestFlags flags);
++
+ #endif /* BLOCK_INT_H */
+-- 
+1.8.3.1
+

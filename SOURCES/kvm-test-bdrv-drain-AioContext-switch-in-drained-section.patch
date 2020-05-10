@@ -1,0 +1,76 @@
+From ed61540140ae22f897f15846a359dc11a0a0b027 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 1 Mar 2019 14:27:46 +0100
+Subject: [PATCH 4/9] test-bdrv-drain: AioContext switch in drained section
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190301142747.12251-5-kwolf@redhat.com>
+Patchwork-id: 84766
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 4/5] test-bdrv-drain: AioContext switch in drained section
+Bugzilla: 1671173
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 247d2737715833525725d27e5cecf5840c62f900)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/test-bdrv-drain.c | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/tests/test-bdrv-drain.c b/tests/test-bdrv-drain.c
+index 8641b54..05c6f12 100644
+--- a/tests/test-bdrv-drain.c
++++ b/tests/test-bdrv-drain.c
+@@ -1521,6 +1521,36 @@ static void test_append_to_drained(void)
+     blk_unref(blk);
+ }
+ 
++static void test_set_aio_context(void)
++{
++    BlockDriverState *bs;
++    IOThread *a = iothread_new();
++    IOThread *b = iothread_new();
++    AioContext *ctx_a = iothread_get_aio_context(a);
++    AioContext *ctx_b = iothread_get_aio_context(b);
++
++    bs = bdrv_new_open_driver(&bdrv_test, "test-node", BDRV_O_RDWR,
++                              &error_abort);
++
++    bdrv_drained_begin(bs);
++    bdrv_set_aio_context(bs, ctx_a);
++
++    aio_context_acquire(ctx_a);
++    bdrv_drained_end(bs);
++
++    bdrv_drained_begin(bs);
++    bdrv_set_aio_context(bs, ctx_b);
++    aio_context_release(ctx_a);
++    aio_context_acquire(ctx_b);
++    bdrv_set_aio_context(bs, qemu_get_aio_context());
++    aio_context_release(ctx_b);
++    bdrv_drained_end(bs);
++
++    bdrv_unref(bs);
++    iothread_join(a);
++    iothread_join(b);
++}
++
+ int main(int argc, char **argv)
+ {
+     int ret;
+@@ -1602,6 +1632,8 @@ int main(int argc, char **argv)
+ 
+     g_test_add_func("/bdrv-drain/attach/drain", test_append_to_drained);
+ 
++    g_test_add_func("/bdrv-drain/set_aio_context", test_set_aio_context);
++
+     ret = g_test_run();
+     qemu_event_destroy(&done_event);
+     return ret;
+-- 
+1.8.3.1
+

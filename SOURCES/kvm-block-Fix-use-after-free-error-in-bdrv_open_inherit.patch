@@ -1,0 +1,50 @@
+From 9fbe06ec1dad1ffc7a2bcc138b7dbd6bf83e36cd Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:10:02 +0100
+Subject: [PATCH 006/163] block: Fix use after free error in
+ bdrv_open_inherit()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-7-kwolf@redhat.com>
+Patchwork-id: 84883
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 06/14] block: Fix use after free error in bdrv_open_inherit()
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Alberto Garcia <berto@igalia.com>
+
+When a block device is opened with BDRV_O_SNAPSHOT and the
+bdrv_append_temp_snapshot() call fails then the error code path tries
+to unref the already destroyed 'options' QDict.
+
+This can be reproduced easily by setting TMPDIR to a location where
+the QEMU process can't write:
+
+   $ TMPDIR=/nonexistent $QEMU -drive driver=null-co,snapshot=on
+
+Signed-off-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 8961be33e8ca7e809c603223803ea66ef7ea5be7)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block.c b/block.c
+index b31124c..25b3fe5 100644
+--- a/block.c
++++ b/block.c
+@@ -2834,6 +2834,7 @@ static BlockDriverState *bdrv_open_inherit(const char *filename,
+     bdrv_parent_cb_change_media(bs, true);
+ 
+     qobject_unref(options);
++    options = NULL;
+ 
+     /* For snapshot=on, create a temporary qcow2 overlay. bs points to the
+      * temporary snapshot afterwards. */
+-- 
+1.8.3.1
+

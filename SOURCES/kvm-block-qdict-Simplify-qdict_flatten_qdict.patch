@@ -1,0 +1,82 @@
+From 637b26d723d07ce653b22c7882037db6661d0bbf Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:22 +0200
+Subject: [PATCH 15/54] block-qdict: Simplify qdict_flatten_qdict()
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-16-armbru@redhat.com>
+Patchwork-id: 80723
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 15/23] block-qdict: Simplify qdict_flatten_qdict()
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+There's no need to restart the loop.  We don't elsewhere, e.g. in
+qdict_extract_subqdict(), qdict_join() and qemu_opts_absorb_qdict().
+Simplify accordingly.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit eb0e0f7d3d4a9c585421d05b19ca71df5d69fc47)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qobject/block-qdict.c | 18 +++---------------
+ 1 file changed, 3 insertions(+), 15 deletions(-)
+
+diff --git a/qobject/block-qdict.c b/qobject/block-qdict.c
+index 41f39ab..f32df34 100644
+--- a/qobject/block-qdict.c
++++ b/qobject/block-qdict.c
+@@ -89,16 +89,13 @@ static void qdict_flatten_qdict(QDict *qdict, QDict *target, const char *prefix)
+     QObject *value;
+     const QDictEntry *entry, *next;
+     char *new_key;
+-    bool delete;
+ 
+     entry = qdict_first(qdict);
+ 
+     while (entry != NULL) {
+-
+         next = qdict_next(qdict, entry);
+         value = qdict_entry_value(entry);
+         new_key = NULL;
+-        delete = false;
+ 
+         if (prefix) {
+             new_key = g_strdup_printf("%s.%s", prefix, entry->key);
+@@ -109,27 +106,18 @@ static void qdict_flatten_qdict(QDict *qdict, QDict *target, const char *prefix)
+              * itself disappears. */
+             qdict_flatten_qdict(qobject_to(QDict, value), target,
+                                 new_key ? new_key : entry->key);
+-            delete = true;
++            qdict_del(qdict, entry->key);
+         } else if (qobject_type(value) == QTYPE_QLIST) {
+             qdict_flatten_qlist(qobject_to(QList, value), target,
+                                 new_key ? new_key : entry->key);
+-            delete = true;
++            qdict_del(qdict, entry->key);
+         } else if (prefix) {
+             /* All other objects are moved to the target unchanged. */
+             qdict_put_obj(target, new_key, qobject_ref(value));
+-            delete = true;
+-        }
+-
+-        g_free(new_key);
+-
+-        if (delete) {
+             qdict_del(qdict, entry->key);
+-
+-            /* Restart loop after modifying the iterated QDict */
+-            entry = qdict_first(qdict);
+-            continue;
+         }
+ 
++        g_free(new_key);
+         entry = next;
+     }
+ }
+-- 
+1.8.3.1
+

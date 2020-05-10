@@ -1,0 +1,51 @@
+From 3e96785b4f89d97ca8297e2ea4ed2458409422ec Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:48 +0200
+Subject: [PATCH 63/89] qcow2: Remove dead check on !ret
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-13-jsnow@redhat.com>
+Patchwork-id: 81409
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 12/35] qcow2: Remove dead check on !ret
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+In the beginning of the function, we initialize the local variable to 0,
+and in the body of the function, we check the assigned values and exit
+the loop immediately. So here it can never be non-zero.
+
+Reported-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 354d930dc6e90e97599459b79c071ff1b93e433b)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index c5341a4..e171a99 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -1772,7 +1772,7 @@ static coroutine_fn int qcow2_handle_l2meta(BlockDriverState *bs,
+     while (l2meta != NULL) {
+         QCowL2Meta *next;
+ 
+-        if (!ret && link_l2) {
++        if (link_l2) {
+             ret = qcow2_alloc_cluster_link_l2(bs, l2meta);
+             if (ret) {
+                 goto out;
+-- 
+1.8.3.1
+

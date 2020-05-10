@@ -1,0 +1,161 @@
+From d84d88a3036a0d5db9b19a1611158946cd362603 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 17 Dec 2019 22:23:42 +0100
+Subject: [PATCH 2/2] target/i386: add support for MSR_IA32_TSX_CTRL
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20191217222342.1939034-3-ehabkost@redhat.com>
+Patchwork-id: 93165
+O-Subject: [RHEL-7.8 qemu-kvm-rhev PATCH 2/2] target/i386: add support for MSR_IA32_TSX_CTRL
+Bugzilla: 1779530
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Paolo Bonzini <pbonzini@redhat.com>
+
+The MSR_IA32_TSX_CTRL MSR can be used to hide TSX (also known as the
+Trusty Side-channel Extension).  By virtualizing the MSR, KVM guests
+can disable TSX and avoid paying the price of mitigating TSX-based
+attacks on microarchitectural side channels.
+
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 2a9758c51e2c2d13fc3845c3d603c11df98b8823)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c     |  2 +-
+ target/i386/cpu.h     |  4 ++++
+ target/i386/kvm.c     | 13 +++++++++++++
+ target/i386/machine.c | 20 ++++++++++++++++++++
+ 4 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 8d03d0e..4d87879 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1147,7 +1147,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+         .type = MSR_FEATURE_WORD,
+         .feat_names = {
+             "rdctl-no", "ibrs-all", "rsba", "skip-l1dfl-vmentry",
+-            "ssb-no", "mds-no", NULL, NULL,
++            "ssb-no", "mds-no", NULL, "tsx-ctrl",
+             "taa-no", NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 095e695..65c4fda 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -354,6 +354,9 @@ typedef enum X86Seg {
+ #define MSR_VIRT_SSBD                   0xc001011f
+ #define MSR_IA32_PRED_CMD               0x49
+ #define MSR_IA32_ARCH_CAPABILITIES      0x10a
++#define ARCH_CAP_TSX_CTRL_MSR		(1<<7)
++
++#define MSR_IA32_TSX_CTRL		0x122
+ #define MSR_IA32_TSCDEADLINE            0x6e0
+ 
+ #define FEATURE_CONTROL_LOCKED                    (1<<0)
+@@ -1221,6 +1224,7 @@ typedef struct CPUX86State {
+     uint64_t msr_smi_count;
+ 
+     uint32_t pkru;
++    uint32_t tsx_ctrl;
+ 
+     uint64_t spec_ctrl;
+     uint64_t virt_ssbd;
+diff --git a/target/i386/kvm.c b/target/i386/kvm.c
+index 72901e1..a6e5a87 100644
+--- a/target/i386/kvm.c
++++ b/target/i386/kvm.c
+@@ -92,6 +92,7 @@ static bool has_msr_hv_stimer;
+ static bool has_msr_hv_frequencies;
+ static bool has_msr_xss;
+ static bool has_msr_spec_ctrl;
++static bool has_msr_tsx_ctrl;
+ static bool has_msr_virt_ssbd;
+ static bool has_msr_smi_count;
+ static bool has_msr_arch_capabs;
+@@ -1340,6 +1341,9 @@ static int kvm_get_supported_msrs(KVMState *s)
+                 case MSR_IA32_SPEC_CTRL:
+                     has_msr_spec_ctrl = true;
+                     break;
++                case MSR_IA32_TSX_CTRL:
++                    has_msr_tsx_ctrl = true;
++                    break;
+                 case MSR_VIRT_SSBD:
+                     has_msr_virt_ssbd = true;
+                     break;
+@@ -1836,6 +1840,9 @@ static int kvm_put_msrs(X86CPU *cpu, int level)
+     if (has_msr_spec_ctrl) {
+         kvm_msr_entry_add(cpu, MSR_IA32_SPEC_CTRL, env->spec_ctrl);
+     }
++    if (has_msr_tsx_ctrl) {
++        kvm_msr_entry_add(cpu, MSR_IA32_TSX_CTRL, env->tsx_ctrl);
++    }
+     if (has_msr_virt_ssbd) {
+         kvm_msr_entry_add(cpu, MSR_VIRT_SSBD, env->virt_ssbd);
+     }
+@@ -2222,6 +2229,9 @@ static int kvm_get_msrs(X86CPU *cpu)
+     if (has_msr_spec_ctrl) {
+         kvm_msr_entry_add(cpu, MSR_IA32_SPEC_CTRL, 0);
+     }
++    if (has_msr_tsx_ctrl) {
++        kvm_msr_entry_add(cpu, MSR_IA32_TSX_CTRL, 0);
++    }
+     if (has_msr_virt_ssbd) {
+         kvm_msr_entry_add(cpu, MSR_VIRT_SSBD, 0);
+     }
+@@ -2597,6 +2607,9 @@ static int kvm_get_msrs(X86CPU *cpu)
+         case MSR_IA32_SPEC_CTRL:
+             env->spec_ctrl = msrs[i].data;
+             break;
++        case MSR_IA32_TSX_CTRL:
++            env->tsx_ctrl = msrs[i].data;
++            break;
+         case MSR_VIRT_SSBD:
+             env->virt_ssbd = msrs[i].data;
+             break;
+diff --git a/target/i386/machine.c b/target/i386/machine.c
+index 52b1eae..6a2d761 100644
+--- a/target/i386/machine.c
++++ b/target/i386/machine.c
+@@ -954,6 +954,25 @@ static const VMStateDescription vmstate_msr_virt_ssbd = {
+     }
+ };
+ 
++static bool msr_tsx_ctrl_needed(void *opaque)
++{
++    X86CPU *cpu = opaque;
++    CPUX86State *env = &cpu->env;
++
++    return env->features[FEAT_ARCH_CAPABILITIES] & ARCH_CAP_TSX_CTRL_MSR;
++}
++
++static const VMStateDescription vmstate_msr_tsx_ctrl = {
++    .name = "cpu/msr_tsx_ctrl",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .needed = msr_tsx_ctrl_needed,
++    .fields = (VMStateField[]) {
++        VMSTATE_UINT32(env.tsx_ctrl, X86CPU),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
+ VMStateDescription vmstate_x86_cpu = {
+     .name = "cpu",
+     .version_id = 12,
+@@ -1079,6 +1098,7 @@ VMStateDescription vmstate_x86_cpu = {
+         &vmstate_msr_intel_pt,
+         &vmstate_xsave,
+         &vmstate_msr_virt_ssbd,
++        &vmstate_msr_tsx_ctrl,
+         NULL
+     }
+ };
+-- 
+1.8.3.1
+

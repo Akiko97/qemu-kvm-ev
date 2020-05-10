@@ -1,0 +1,87 @@
+From de5542b5a8dc74f413bf2f1b0d5f4b370aa6801b Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 5 Jun 2019 13:57:05 +0200
+Subject: [PATCH 17/23] qemu-io: Add write -n for BDRV_REQ_NO_FALLBACK
+
+RH-Author: Maxim Levitsky <mlevitsk@redhat.com>
+Message-id: <20190605135705.24526-10-mlevitsk@redhat.com>
+Patchwork-id: 88565
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 9/9] qemu-io: Add write -n for BDRV_REQ_NO_FALLBACK
+Bugzilla: 1648622
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Kevin Wolf <kwolf@redhat.com>
+
+This makes the new BDRV_REQ_NO_FALLBACK flag available in the qemu-io
+write command.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Acked-by: Eric Blake <eblake@redhat.com>
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1648622
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+(Cherry picked from c6e3f520c802c5cb2de80576aba7f9f1fe985d8b)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-io-cmds.c | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/qemu-io-cmds.c b/qemu-io-cmds.c
+index 9c51e57..ac8c533 100644
+--- a/qemu-io-cmds.c
++++ b/qemu-io-cmds.c
+@@ -945,6 +945,7 @@ static void write_help(void)
+ " -b, -- write to the VM state rather than the virtual disk\n"
+ " -c, -- write compressed data with blk_write_compressed\n"
+ " -f, -- use Force Unit Access semantics\n"
++" -n, -- with -z, don't allow slow fallback\n"
+ " -p, -- ignored for backwards compatibility\n"
+ " -P, -- use different pattern to fill file\n"
+ " -C, -- report statistics in a machine parsable format\n"
+@@ -963,7 +964,7 @@ static const cmdinfo_t write_cmd = {
+     .perm       = BLK_PERM_WRITE,
+     .argmin     = 2,
+     .argmax     = -1,
+-    .args       = "[-bcCfquz] [-P pattern] off len",
++    .args       = "[-bcCfnquz] [-P pattern] off len",
+     .oneline    = "writes a number of bytes at a specified offset",
+     .help       = write_help,
+ };
+@@ -982,7 +983,7 @@ static int write_f(BlockBackend *blk, int argc, char **argv)
+     int64_t total = 0;
+     int pattern = 0xcd;
+ 
+-    while ((c = getopt(argc, argv, "bcCfpP:quz")) != -1) {
++    while ((c = getopt(argc, argv, "bcCfnpP:quz")) != -1) {
+         switch (c) {
+         case 'b':
+             bflag = true;
+@@ -996,6 +997,9 @@ static int write_f(BlockBackend *blk, int argc, char **argv)
+         case 'f':
+             flags |= BDRV_REQ_FUA;
+             break;
++        case 'n':
++            flags |= BDRV_REQ_NO_FALLBACK;
++            break;
+         case 'p':
+             /* Ignored for backwards compatibility */
+             break;
+@@ -1036,6 +1040,11 @@ static int write_f(BlockBackend *blk, int argc, char **argv)
+         return -EINVAL;
+     }
+ 
++    if ((flags & BDRV_REQ_NO_FALLBACK) && !zflag) {
++        printf("-n requires -z to be specified\n");
++        return -EINVAL;
++    }
++
+     if ((flags & BDRV_REQ_MAY_UNMAP) && !zflag) {
+         printf("-u requires -z to be specified\n");
+         return -EINVAL;
+-- 
+1.8.3.1
+

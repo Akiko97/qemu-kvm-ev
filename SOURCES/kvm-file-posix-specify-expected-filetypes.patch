@@ -1,0 +1,151 @@
+From 75d7ceaa7c842deeae5cd7c09bbfd982c3dd0f2e Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 13 Jul 2018 14:50:01 +0200
+Subject: [PATCH 43/89] file-posix: specify expected filetypes
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180713145002.20953-2-kwolf@redhat.com>
+Patchwork-id: 81350
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/2] file-posix: specify expected filetypes
+Bugzilla: 1525829
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: John Snow <jsnow@redhat.com>
+
+Adjust each caller of raw_open_common to specify if they are expecting
+host and character devices or not. Tighten expectations of file types upon
+open in the common code and refuse types that are not expected.
+
+This has two effects:
+
+(1) Character and block devices are now considered deprecated for the
+    'file' driver, which expects only S_IFREG, and
+(2) no file-posix driver (file, host_cdrom, or host_device) can open
+    directories now.
+
+I don't think there's a legitimate reason to open directories as if
+they were files. This prevents QEMU from opening and attempting to probe
+a directory inode, which can break in exciting ways. One of those ways
+is lseek on ext4/xfs, which will return 0x7fffffffffffffff as the file
+size instead of EISDIR. This can coax QEMU into responding with a
+confusing "file too big" instead of "Hey, that's not a file".
+
+See: https://bugs.launchpad.net/qemu/+bug/1739304/
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 230ff73904e72dde2d7718c2da407786a1c72e57)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 39 +++++++++++++++++++++++++++++++--------
+ qemu-doc.texi      |  6 ++++++
+ 2 files changed, 37 insertions(+), 8 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 24c2367..06ec67d 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -431,7 +431,8 @@ static QemuOptsList raw_runtime_opts = {
+ };
+ 
+ static int raw_open_common(BlockDriverState *bs, QDict *options,
+-                           int bdrv_flags, int open_flags, Error **errp)
++                           int bdrv_flags, int open_flags,
++                           bool device, Error **errp)
+ {
+     BDRVRawState *s = bs->opaque;
+     QemuOpts *opts;
+@@ -569,10 +570,32 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
+         error_setg_errno(errp, errno, "Could not stat file");
+         goto fail;
+     }
+-    if (S_ISREG(st.st_mode)) {
+-        s->discard_zeroes = true;
+-        s->has_fallocate = true;
++
++    if (!device) {
++        if (S_ISBLK(st.st_mode)) {
++            warn_report("Opening a block device as a file using the '%s' "
++                        "driver is deprecated", bs->drv->format_name);
++        } else if (S_ISCHR(st.st_mode)) {
++            warn_report("Opening a character device as a file using the '%s' "
++                        "driver is deprecated", bs->drv->format_name);
++        } else if (!S_ISREG(st.st_mode)) {
++            error_setg(errp, "A regular file was expected by the '%s' driver, "
++                       "but something else was given", bs->drv->format_name);
++            ret = -EINVAL;
++            goto fail;
++        } else {
++            s->discard_zeroes = true;
++            s->has_fallocate = true;
++        }
++    } else {
++        if (!(S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))) {
++            error_setg(errp, "'%s' driver expects either "
++                       "a character or block device", bs->drv->format_name);
++            ret = -EINVAL;
++            goto fail;
++        }
+     }
++
+     if (S_ISBLK(st.st_mode)) {
+ #ifdef BLKDISCARDZEROES
+         unsigned int arg;
+@@ -625,7 +648,7 @@ static int raw_open(BlockDriverState *bs, QDict *options, int flags,
+     BDRVRawState *s = bs->opaque;
+ 
+     s->type = FTYPE_FILE;
+-    return raw_open_common(bs, options, flags, 0, errp);
++    return raw_open_common(bs, options, flags, 0, false, errp);
+ }
+ 
+ typedef enum {
+@@ -2794,7 +2817,7 @@ hdev_open_Mac_error:
+ 
+     s->type = FTYPE_FILE;
+ 
+-    ret = raw_open_common(bs, options, flags, 0, &local_err);
++    ret = raw_open_common(bs, options, flags, 0, true, &local_err);
+     if (ret < 0) {
+         error_propagate(errp, local_err);
+ #if defined(__APPLE__) && defined(__MACH__)
+@@ -3023,7 +3046,7 @@ static int cdrom_open(BlockDriverState *bs, QDict *options, int flags,
+     s->type = FTYPE_CD;
+ 
+     /* open will not fail even if no CD is inserted, so add O_NONBLOCK */
+-    return raw_open_common(bs, options, flags, O_NONBLOCK, errp);
++    return raw_open_common(bs, options, flags, O_NONBLOCK, true, errp);
+ }
+ 
+ static int cdrom_probe_device(const char *filename)
+@@ -3136,7 +3159,7 @@ static int cdrom_open(BlockDriverState *bs, QDict *options, int flags,
+ 
+     s->type = FTYPE_CD;
+ 
+-    ret = raw_open_common(bs, options, flags, 0, &local_err);
++    ret = raw_open_common(bs, options, flags, 0, true, &local_err);
+     if (ret) {
+         error_propagate(errp, local_err);
+         return ret;
+diff --git a/qemu-doc.texi b/qemu-doc.texi
+index de5097a..985e0f2 100644
+--- a/qemu-doc.texi
++++ b/qemu-doc.texi
+@@ -2938,6 +2938,12 @@ The @code{-startdate} option has been replaced by @code{-rtc base=@var{date}}.
+ The ``convert -s snapshot_id_or_name'' argument is obsoleted
+ by the ``convert -l snapshot_param'' argument instead.
+ 
++@subsection -drive file=json:@{...@{'driver':'file'@}@} (since 3.0)
++
++The 'file' driver for drives is no longer appropriate for character or host
++devices and will only accept regular files (S_IFREG). The correct driver
++for these file types is 'host_cdrom' or 'host_device' as appropriate.
++
+ @section QEMU Machine Protocol (QMP) commands
+ 
+ @subsection block-dirty-bitmap-add "autoload" parameter (since 2.12.0)
+-- 
+1.8.3.1
+

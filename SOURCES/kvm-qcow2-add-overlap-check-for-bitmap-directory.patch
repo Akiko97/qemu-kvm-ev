@@ -1,0 +1,217 @@
+From 1b36ea8bc4840907b78867ae040231fe91f12851 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:45 +0200
+Subject: [PATCH 60/89] qcow2: add overlap check for bitmap directory
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-10-jsnow@redhat.com>
+Patchwork-id: 81394
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 09/35] qcow2: add overlap check for bitmap directory
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20180705151515.779173-1-vsementsov@virtuozzo.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 0e4e4318eaa56c831001bdf617094807ec6d451c)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2-bitmap.c   |  7 ++++++-
+ block/qcow2-refcount.c | 10 ++++++++++
+ block/qcow2.c          | 22 ++++++++++++++--------
+ block/qcow2.h          | 45 ++++++++++++++++++++++++---------------------
+ qapi/block-core.json   | 21 ++++++++++++---------
+ 5 files changed, 66 insertions(+), 39 deletions(-)
+
+diff --git a/block/qcow2-bitmap.c b/block/qcow2-bitmap.c
+index 3e4e4e4..14050eb 100644
+--- a/block/qcow2-bitmap.c
++++ b/block/qcow2-bitmap.c
+@@ -775,7 +775,12 @@ static int bitmap_list_store(BlockDriverState *bs, Qcow2BitmapList *bm_list,
+         }
+     }
+ 
+-    ret = qcow2_pre_write_overlap_check(bs, 0, dir_offset, dir_size);
++    /* Actually, even in in-place case ignoring QCOW2_OL_BITMAP_DIRECTORY is not
++     * necessary, because we drop QCOW2_AUTOCLEAR_BITMAPS when updating bitmap
++     * directory in-place (actually, turn-off the extension), which is checked
++     * in qcow2_check_metadata_overlap() */
++    ret = qcow2_pre_write_overlap_check(
++            bs, in_place ? QCOW2_OL_BITMAP_DIRECTORY : 0, dir_offset, dir_size);
+     if (ret < 0) {
+         goto fail;
+     }
+diff --git a/block/qcow2-refcount.c b/block/qcow2-refcount.c
+index 4e14c0a..1307069 100644
+--- a/block/qcow2-refcount.c
++++ b/block/qcow2-refcount.c
+@@ -2705,6 +2705,16 @@ int qcow2_check_metadata_overlap(BlockDriverState *bs, int ign, int64_t offset,
+         }
+     }
+ 
++    if ((chk & QCOW2_OL_BITMAP_DIRECTORY) &&
++        (s->autoclear_features & QCOW2_AUTOCLEAR_BITMAPS))
++    {
++        if (overlaps_with(s->bitmap_directory_offset,
++                          s->bitmap_directory_size))
++        {
++            return QCOW2_OL_BITMAP_DIRECTORY;
++        }
++    }
++
+     return 0;
+ }
+ 
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 71fbfcd..c5341a4 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -676,6 +676,11 @@ static QemuOptsList qcow2_runtime_opts = {
+             .help = "Check for unintended writes into an inactive L2 table",
+         },
+         {
++            .name = QCOW2_OPT_OVERLAP_BITMAP_DIRECTORY,
++            .type = QEMU_OPT_BOOL,
++            .help = "Check for unintended writes into the bitmap directory",
++        },
++        {
+             .name = QCOW2_OPT_CACHE_SIZE,
+             .type = QEMU_OPT_SIZE,
+             .help = "Maximum combined metadata (L2 tables and refcount blocks) "
+@@ -708,14 +713,15 @@ static QemuOptsList qcow2_runtime_opts = {
+ };
+ 
+ static const char *overlap_bool_option_names[QCOW2_OL_MAX_BITNR] = {
+-    [QCOW2_OL_MAIN_HEADER_BITNR]    = QCOW2_OPT_OVERLAP_MAIN_HEADER,
+-    [QCOW2_OL_ACTIVE_L1_BITNR]      = QCOW2_OPT_OVERLAP_ACTIVE_L1,
+-    [QCOW2_OL_ACTIVE_L2_BITNR]      = QCOW2_OPT_OVERLAP_ACTIVE_L2,
+-    [QCOW2_OL_REFCOUNT_TABLE_BITNR] = QCOW2_OPT_OVERLAP_REFCOUNT_TABLE,
+-    [QCOW2_OL_REFCOUNT_BLOCK_BITNR] = QCOW2_OPT_OVERLAP_REFCOUNT_BLOCK,
+-    [QCOW2_OL_SNAPSHOT_TABLE_BITNR] = QCOW2_OPT_OVERLAP_SNAPSHOT_TABLE,
+-    [QCOW2_OL_INACTIVE_L1_BITNR]    = QCOW2_OPT_OVERLAP_INACTIVE_L1,
+-    [QCOW2_OL_INACTIVE_L2_BITNR]    = QCOW2_OPT_OVERLAP_INACTIVE_L2,
++    [QCOW2_OL_MAIN_HEADER_BITNR]      = QCOW2_OPT_OVERLAP_MAIN_HEADER,
++    [QCOW2_OL_ACTIVE_L1_BITNR]        = QCOW2_OPT_OVERLAP_ACTIVE_L1,
++    [QCOW2_OL_ACTIVE_L2_BITNR]        = QCOW2_OPT_OVERLAP_ACTIVE_L2,
++    [QCOW2_OL_REFCOUNT_TABLE_BITNR]   = QCOW2_OPT_OVERLAP_REFCOUNT_TABLE,
++    [QCOW2_OL_REFCOUNT_BLOCK_BITNR]   = QCOW2_OPT_OVERLAP_REFCOUNT_BLOCK,
++    [QCOW2_OL_SNAPSHOT_TABLE_BITNR]   = QCOW2_OPT_OVERLAP_SNAPSHOT_TABLE,
++    [QCOW2_OL_INACTIVE_L1_BITNR]      = QCOW2_OPT_OVERLAP_INACTIVE_L1,
++    [QCOW2_OL_INACTIVE_L2_BITNR]      = QCOW2_OPT_OVERLAP_INACTIVE_L2,
++    [QCOW2_OL_BITMAP_DIRECTORY_BITNR] = QCOW2_OPT_OVERLAP_BITMAP_DIRECTORY,
+ };
+ 
+ static void cache_clean_timer_cb(void *opaque)
+diff --git a/block/qcow2.h b/block/qcow2.h
+index b5e2aa3..d2c63e4 100644
+--- a/block/qcow2.h
++++ b/block/qcow2.h
+@@ -98,6 +98,7 @@
+ #define QCOW2_OPT_OVERLAP_SNAPSHOT_TABLE "overlap-check.snapshot-table"
+ #define QCOW2_OPT_OVERLAP_INACTIVE_L1 "overlap-check.inactive-l1"
+ #define QCOW2_OPT_OVERLAP_INACTIVE_L2 "overlap-check.inactive-l2"
++#define QCOW2_OPT_OVERLAP_BITMAP_DIRECTORY "overlap-check.bitmap-directory"
+ #define QCOW2_OPT_CACHE_SIZE "cache-size"
+ #define QCOW2_OPT_L2_CACHE_SIZE "l2-cache-size"
+ #define QCOW2_OPT_L2_CACHE_ENTRY_SIZE "l2-cache-entry-size"
+@@ -401,34 +402,36 @@ typedef enum QCow2ClusterType {
+ } QCow2ClusterType;
+ 
+ typedef enum QCow2MetadataOverlap {
+-    QCOW2_OL_MAIN_HEADER_BITNR    = 0,
+-    QCOW2_OL_ACTIVE_L1_BITNR      = 1,
+-    QCOW2_OL_ACTIVE_L2_BITNR      = 2,
+-    QCOW2_OL_REFCOUNT_TABLE_BITNR = 3,
+-    QCOW2_OL_REFCOUNT_BLOCK_BITNR = 4,
+-    QCOW2_OL_SNAPSHOT_TABLE_BITNR = 5,
+-    QCOW2_OL_INACTIVE_L1_BITNR    = 6,
+-    QCOW2_OL_INACTIVE_L2_BITNR    = 7,
+-
+-    QCOW2_OL_MAX_BITNR            = 8,
+-
+-    QCOW2_OL_NONE           = 0,
+-    QCOW2_OL_MAIN_HEADER    = (1 << QCOW2_OL_MAIN_HEADER_BITNR),
+-    QCOW2_OL_ACTIVE_L1      = (1 << QCOW2_OL_ACTIVE_L1_BITNR),
+-    QCOW2_OL_ACTIVE_L2      = (1 << QCOW2_OL_ACTIVE_L2_BITNR),
+-    QCOW2_OL_REFCOUNT_TABLE = (1 << QCOW2_OL_REFCOUNT_TABLE_BITNR),
+-    QCOW2_OL_REFCOUNT_BLOCK = (1 << QCOW2_OL_REFCOUNT_BLOCK_BITNR),
+-    QCOW2_OL_SNAPSHOT_TABLE = (1 << QCOW2_OL_SNAPSHOT_TABLE_BITNR),
+-    QCOW2_OL_INACTIVE_L1    = (1 << QCOW2_OL_INACTIVE_L1_BITNR),
++    QCOW2_OL_MAIN_HEADER_BITNR      = 0,
++    QCOW2_OL_ACTIVE_L1_BITNR        = 1,
++    QCOW2_OL_ACTIVE_L2_BITNR        = 2,
++    QCOW2_OL_REFCOUNT_TABLE_BITNR   = 3,
++    QCOW2_OL_REFCOUNT_BLOCK_BITNR   = 4,
++    QCOW2_OL_SNAPSHOT_TABLE_BITNR   = 5,
++    QCOW2_OL_INACTIVE_L1_BITNR      = 6,
++    QCOW2_OL_INACTIVE_L2_BITNR      = 7,
++    QCOW2_OL_BITMAP_DIRECTORY_BITNR = 8,
++
++    QCOW2_OL_MAX_BITNR              = 9,
++
++    QCOW2_OL_NONE             = 0,
++    QCOW2_OL_MAIN_HEADER      = (1 << QCOW2_OL_MAIN_HEADER_BITNR),
++    QCOW2_OL_ACTIVE_L1        = (1 << QCOW2_OL_ACTIVE_L1_BITNR),
++    QCOW2_OL_ACTIVE_L2        = (1 << QCOW2_OL_ACTIVE_L2_BITNR),
++    QCOW2_OL_REFCOUNT_TABLE   = (1 << QCOW2_OL_REFCOUNT_TABLE_BITNR),
++    QCOW2_OL_REFCOUNT_BLOCK   = (1 << QCOW2_OL_REFCOUNT_BLOCK_BITNR),
++    QCOW2_OL_SNAPSHOT_TABLE   = (1 << QCOW2_OL_SNAPSHOT_TABLE_BITNR),
++    QCOW2_OL_INACTIVE_L1      = (1 << QCOW2_OL_INACTIVE_L1_BITNR),
+     /* NOTE: Checking overlaps with inactive L2 tables will result in bdrv
+      * reads. */
+-    QCOW2_OL_INACTIVE_L2    = (1 << QCOW2_OL_INACTIVE_L2_BITNR),
++    QCOW2_OL_INACTIVE_L2      = (1 << QCOW2_OL_INACTIVE_L2_BITNR),
++    QCOW2_OL_BITMAP_DIRECTORY = (1 << QCOW2_OL_BITMAP_DIRECTORY_BITNR),
+ } QCow2MetadataOverlap;
+ 
+ /* Perform all overlap checks which can be done in constant time */
+ #define QCOW2_OL_CONSTANT \
+     (QCOW2_OL_MAIN_HEADER | QCOW2_OL_ACTIVE_L1 | QCOW2_OL_REFCOUNT_TABLE | \
+-     QCOW2_OL_SNAPSHOT_TABLE)
++     QCOW2_OL_SNAPSHOT_TABLE | QCOW2_OL_BITMAP_DIRECTORY)
+ 
+ /* Perform all overlap checks which don't require disk access */
+ #define QCOW2_OL_CACHED \
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 27ed91b..69e0cf8 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -2666,18 +2666,21 @@
+ # @template: Specifies a template mode which can be adjusted using the other
+ #            flags, defaults to 'cached'
+ #
++# @bitmap-directory: since 3.0
++#
+ # Since: 2.9
+ ##
+ { 'struct': 'Qcow2OverlapCheckFlags',
+-  'data': { '*template':       'Qcow2OverlapCheckMode',
+-            '*main-header':    'bool',
+-            '*active-l1':      'bool',
+-            '*active-l2':      'bool',
+-            '*refcount-table': 'bool',
+-            '*refcount-block': 'bool',
+-            '*snapshot-table': 'bool',
+-            '*inactive-l1':    'bool',
+-            '*inactive-l2':    'bool' } }
++  'data': { '*template':         'Qcow2OverlapCheckMode',
++            '*main-header':      'bool',
++            '*active-l1':        'bool',
++            '*active-l2':        'bool',
++            '*refcount-table':   'bool',
++            '*refcount-block':   'bool',
++            '*snapshot-table':   'bool',
++            '*inactive-l1':      'bool',
++            '*inactive-l2':      'bool',
++            '*bitmap-directory': 'bool' } }
+ 
+ ##
+ # @Qcow2OverlapChecks:
+-- 
+1.8.3.1
+

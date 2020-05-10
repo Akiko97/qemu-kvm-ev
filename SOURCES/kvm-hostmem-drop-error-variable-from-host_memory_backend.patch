@@ -1,0 +1,139 @@
+From 09b663f38767ce0d84b2301c97efec2d37e71a49 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 29 Oct 2018 07:01:36 +0100
+Subject: [PATCH 06/22] hostmem: drop error variable from
+ host_memory_backend_get_memory()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20181029070137.21196-3-armbru@redhat.com>
+Patchwork-id: 82902
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/3] hostmem: drop error variable from host_memory_backend_get_memory()
+Bugzilla: 1620373
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+From: David Hildenbrand <david@redhat.com>
+
+Unused, so let's remove it.
+
+Reviewed-by: David Gibson <david@gibson.dropbear.id.au>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Message-Id: <20180619134141.29478-8-david@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 7943e97b858e64eddf0f3395427e58c5cc00a7d9)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ backends/hostmem.c       | 3 +--
+ hw/mem/nvdimm.c          | 4 ++--
+ hw/mem/pc-dimm.c         | 4 ++--
+ hw/misc/ivshmem.c        | 3 +--
+ include/sysemu/hostmem.h | 3 +--
+ numa.c                   | 3 +--
+ 6 files changed, 8 insertions(+), 12 deletions(-)
+
+diff --git a/backends/hostmem.c b/backends/hostmem.c
+index f610936..799ec69 100644
+--- a/backends/hostmem.c
++++ b/backends/hostmem.c
+@@ -246,8 +246,7 @@ bool host_memory_backend_mr_inited(HostMemoryBackend *backend)
+     return memory_region_size(&backend->mr) != 0;
+ }
+ 
+-MemoryRegion *
+-host_memory_backend_get_memory(HostMemoryBackend *backend, Error **errp)
++MemoryRegion *host_memory_backend_get_memory(HostMemoryBackend *backend)
+ {
+     return host_memory_backend_mr_inited(backend) ? &backend->mr : NULL;
+ }
+diff --git a/hw/mem/nvdimm.c b/hw/mem/nvdimm.c
+index 5f1813d..da2b989 100644
+--- a/hw/mem/nvdimm.c
++++ b/hw/mem/nvdimm.c
+@@ -106,7 +106,7 @@ static MemoryRegion *nvdimm_get_memory_region(PCDIMMDevice *dimm, Error **errp)
+ 
+ static void nvdimm_realize(PCDIMMDevice *dimm, Error **errp)
+ {
+-    MemoryRegion *mr = host_memory_backend_get_memory(dimm->hostmem, errp);
++    MemoryRegion *mr = host_memory_backend_get_memory(dimm->hostmem);
+     NVDIMMDevice *nvdimm = NVDIMM(dimm);
+     uint64_t align, pmem_size, size = memory_region_size(mr);
+ 
+@@ -168,7 +168,7 @@ static void nvdimm_write_label_data(NVDIMMDevice *nvdimm, const void *buf,
+         pmem_memcpy_persist(nvdimm->label_data + offset, buf, size);
+     }
+ 
+-    mr = host_memory_backend_get_memory(dimm->hostmem, &error_abort);
++    mr = host_memory_backend_get_memory(dimm->hostmem);
+     backend_offset = memory_region_size(mr) - nvdimm->label_size + offset;
+     memory_region_set_dirty(mr, backend_offset, size);
+ }
+diff --git a/hw/mem/pc-dimm.c b/hw/mem/pc-dimm.c
+index a9d7c51..c4a6551 100644
+--- a/hw/mem/pc-dimm.c
++++ b/hw/mem/pc-dimm.c
+@@ -442,12 +442,12 @@ static MemoryRegion *pc_dimm_get_memory_region(PCDIMMDevice *dimm, Error **errp)
+         return NULL;
+     }
+ 
+-    return host_memory_backend_get_memory(dimm->hostmem, errp);
++    return host_memory_backend_get_memory(dimm->hostmem);
+ }
+ 
+ static MemoryRegion *pc_dimm_get_vmstate_memory_region(PCDIMMDevice *dimm)
+ {
+-    return host_memory_backend_get_memory(dimm->hostmem, &error_abort);
++    return host_memory_backend_get_memory(dimm->hostmem);
+ }
+ 
+ static void pc_dimm_class_init(ObjectClass *oc, void *data)
+diff --git a/hw/misc/ivshmem.c b/hw/misc/ivshmem.c
+index bfbfc0e..47456b8 100644
+--- a/hw/misc/ivshmem.c
++++ b/hw/misc/ivshmem.c
+@@ -916,8 +916,7 @@ static void ivshmem_common_realize(PCIDevice *dev, Error **errp)
+     if (s->hostmem != NULL) {
+         IVSHMEM_DPRINTF("using hostmem\n");
+ 
+-        s->ivshmem_bar2 = host_memory_backend_get_memory(s->hostmem,
+-                                                         &error_abort);
++        s->ivshmem_bar2 = host_memory_backend_get_memory(s->hostmem);
+     } else {
+         Chardev *chr = qemu_chr_fe_get_driver(&s->server_chr);
+         assert(chr);
+diff --git a/include/sysemu/hostmem.h b/include/sysemu/hostmem.h
+index 47bc984..69ba393 100644
+--- a/include/sysemu/hostmem.h
++++ b/include/sysemu/hostmem.h
+@@ -63,8 +63,7 @@ struct HostMemoryBackend {
+ };
+ 
+ bool host_memory_backend_mr_inited(HostMemoryBackend *backend);
+-MemoryRegion *host_memory_backend_get_memory(HostMemoryBackend *backend,
+-                                             Error **errp);
++MemoryRegion *host_memory_backend_get_memory(HostMemoryBackend *backend);
+ 
+ void host_memory_backend_set_mapped(HostMemoryBackend *backend, bool mapped);
+ bool host_memory_backend_is_mapped(HostMemoryBackend *backend);
+diff --git a/numa.c b/numa.c
+index e78fba5..6e3d679 100644
+--- a/numa.c
++++ b/numa.c
+@@ -512,8 +512,7 @@ void memory_region_allocate_system_memory(MemoryRegion *mr, Object *owner,
+         if (!backend) {
+             continue;
+         }
+-        MemoryRegion *seg = host_memory_backend_get_memory(backend,
+-                                                           &error_fatal);
++        MemoryRegion *seg = host_memory_backend_get_memory(backend);
+ 
+         if (memory_region_is_mapped(seg)) {
+             char *path = object_get_canonical_path_component(OBJECT(backend));
+-- 
+1.8.3.1
+

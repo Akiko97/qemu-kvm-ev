@@ -1,0 +1,77 @@
+From c5a20feec46deb3f25037f29e7ae4823fe46afdf Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:10:07 +0100
+Subject: [PATCH 011/163] file-posix: Store BDRVRawState.reopen_state during
+ reopen
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-12-kwolf@redhat.com>
+Patchwork-id: 84888
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 11/14] file-posix: Store BDRVRawState.reopen_state during reopen
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+We'll want to access the file descriptor in the reopen_state while
+processing permission changes in the context of the repoen.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit e0c9cf3a484beb746996c0cd63e5585fecb3fd25)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index e50eb0e..b577d88 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -156,6 +156,8 @@ typedef struct BDRVRawState {
+     uint64_t locked_perm;
+     uint64_t locked_shared_perm;
+ 
++    BDRVReopenState *reopen_state;
++
+ #ifdef CONFIG_XFS
+     bool is_xfs:1;
+ #endif
+@@ -926,6 +928,7 @@ static int raw_reopen_prepare(BDRVReopenState *state,
+         }
+     }
+ 
++    s->reopen_state = state;
+ out:
+     return ret;
+ }
+@@ -950,12 +953,16 @@ static void raw_reopen_commit(BDRVReopenState *state)
+ 
+     g_free(state->opaque);
+     state->opaque = NULL;
++
++    assert(s->reopen_state == state);
++    s->reopen_state = NULL;
+ }
+ 
+ 
+ static void raw_reopen_abort(BDRVReopenState *state)
+ {
+     BDRVRawReopenState *rs = state->opaque;
++    BDRVRawState *s = state->bs->opaque;
+ 
+      /* nothing to do if NULL, we didn't get far enough */
+     if (rs == NULL) {
+@@ -968,6 +975,9 @@ static void raw_reopen_abort(BDRVReopenState *state)
+     }
+     g_free(state->opaque);
+     state->opaque = NULL;
++
++    assert(s->reopen_state == state);
++    s->reopen_state = NULL;
+ }
+ 
+ static int hdev_get_max_transfer_length(BlockDriverState *bs, int fd)
+-- 
+1.8.3.1
+

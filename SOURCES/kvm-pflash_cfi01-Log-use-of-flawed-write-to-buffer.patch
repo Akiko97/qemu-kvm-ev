@@ -1,0 +1,86 @@
+From d35903b0e772c0cdcd3f685dbee81ffbd110a24a Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:50:54 +0200
+Subject: [PATCH 27/53] pflash_cfi01: Log use of flawed "write to buffer"
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-6-armbru@redhat.com>
+Patchwork-id: 87990
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 05/31] pflash_cfi01: Log use of flawed "write to buffer"
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Our implementation of "write to buffer" (command 0xE8) is flawed.
+LOG_UNIMP its use, and add some FIXME comments.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Message-Id: <20190308094610.21210-4-armbru@redhat.com>
+(cherry picked from commit 4dbda935e054600667f9e57095fa97e2ce5936f9)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/block/pflash_cfi01.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/hw/block/pflash_cfi01.c b/hw/block/pflash_cfi01.c
+index c565db1..3a6bd10 100644
+--- a/hw/block/pflash_cfi01.c
++++ b/hw/block/pflash_cfi01.c
+@@ -515,6 +515,10 @@ static void pflash_write(PFlashCFI01 *pfl, hwaddr offset,
+             break;
+         case 0xe8: /* Write to buffer */
+             DPRINTF("%s: Write to buffer\n", __func__);
++            /* FIXME should save @offset, @width for case 1+ */
++            qemu_log_mask(LOG_UNIMP,
++                          "%s: Write to buffer emulation is flawed\n",
++                          __func__);
+             pfl->status |= 0x80; /* Ready! */
+             break;
+         case 0xf0: /* Probe for AMD flash */
+@@ -558,6 +562,7 @@ static void pflash_write(PFlashCFI01 *pfl, hwaddr offset,
+             /* Mask writeblock size based on device width, or bank width if
+              * device width not specified.
+              */
++            /* FIXME check @offset, @width */
+             if (pfl->device_width) {
+                 value = extract32(value, 0, pfl->device_width * 8);
+             } else {
+@@ -595,7 +600,13 @@ static void pflash_write(PFlashCFI01 *pfl, hwaddr offset,
+     case 2:
+         switch (pfl->cmd) {
+         case 0xe8: /* Block write */
++            /* FIXME check @offset, @width */
+             if (!pfl->ro) {
++                /*
++                 * FIXME writing straight to memory is *wrong*.  We
++                 * should write to a buffer, and flush it to memory
++                 * only on confirm command (see below).
++                 */
+                 pflash_data_write(pfl, offset, value, width, be);
+             } else {
+                 pfl->status |= 0x10; /* Programming error */
+@@ -611,6 +622,7 @@ static void pflash_write(PFlashCFI01 *pfl, hwaddr offset,
+                 pfl->wcycle++;
+                 if (!pfl->ro) {
+                     /* Flush the entire write buffer onto backing storage.  */
++                    /* FIXME premature! */
+                     pflash_update(pfl, offset & mask, pfl->writeblock_size);
+                 } else {
+                     pfl->status |= 0x10; /* Programming error */
+@@ -627,6 +639,7 @@ static void pflash_write(PFlashCFI01 *pfl, hwaddr offset,
+         switch (pfl->cmd) {
+         case 0xe8: /* Block write */
+             if (cmd == 0xd0) {
++                /* FIXME this is where we should write out the buffer */
+                 pfl->wcycle = 0;
+                 pfl->status |= 0x80;
+             } else {
+-- 
+1.8.3.1
+

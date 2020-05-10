@@ -1,0 +1,97 @@
+From 95c9f56041b8d3b95644d790e2b3f59587805a01 Mon Sep 17 00:00:00 2001
+From: David Gibson <dgibson@redhat.com>
+Date: Tue, 17 Sep 2019 03:47:09 +0200
+Subject: [PATCH 3/4] migration: Do not re-read the clock on pre_save in case
+ of paused guest
+
+RH-Author: David Gibson <dgibson@redhat.com>
+Message-id: <20190917034709.20167-1-dgibson@redhat.com>
+Patchwork-id: 90473
+O-Subject: [RHEL-7.8 qemu-kvm-rhev PATCH] migration: Do not re-read the clock on pre_save in case of paused guest
+Bugzilla: 1743508
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+From: "Maxiwell S. Garcia" <maxiwell@linux.ibm.com>
+
+Re-read the timebase before migrate was ported from x86 commit:
+   6053a86fe7bd: kvmclock: reduce kvmclock difference on migration
+
+The clock move makes the guest knows about the paused time between
+the stop and migrate commands. This is an issue in an already-paused
+VM because some side effects, like process stalls, could happen
+after migration.
+
+So, this patch checks the runstate of guest in the pre_save handler and
+do not re-reads the timebase in case of paused state (cold migration).
+
+Signed-off-by: Maxiwell S. Garcia <maxiwell@linux.ibm.com>
+Message-Id: <20190711194702.26598-1-maxiwell@linux.ibm.com>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+(cherry picked from commit d14f33976282a8744ca1bf1d64e73996c145aa3f)
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1743508
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=23524287
+Testing: Booted a guest with the scratch qemu build
+
+Signed-off-by: David Gibson <dgibson@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/ppc.c         | 13 +++++++++----
+ target/ppc/cpu-qom.h |  1 +
+ 2 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/hw/ppc/ppc.c b/hw/ppc/ppc.c
+index ec4be25..fb90d19 100644
+--- a/hw/ppc/ppc.c
++++ b/hw/ppc/ppc.c
+@@ -877,6 +877,8 @@ static void timebase_save(PPCTimebase *tb)
+      * there is no need to update it from KVM here
+      */
+     tb->guest_timebase = ticks + first_ppc_cpu->env.tb_env->tb_offset;
++
++    tb->runstate_paused = runstate_check(RUN_STATE_PAUSED);
+ }
+ 
+ static void timebase_load(PPCTimebase *tb)
+@@ -923,9 +925,9 @@ void cpu_ppc_clock_vm_state_change(void *opaque, int running,
+ }
+ 
+ /*
+- * When migrating, read the clock just before migration,
+- * so that the guest clock counts during the events
+- * between:
++ * When migrating a running guest, read the clock just
++ * before migration, so that the guest clock counts
++ * during the events between:
+  *
+  *  * vm_stop()
+  *  *
+@@ -940,7 +942,10 @@ static int timebase_pre_save(void *opaque)
+ {
+     PPCTimebase *tb = opaque;
+ 
+-    timebase_save(tb);
++    /* guest_timebase won't be overridden in case of paused guest */
++    if (!tb->runstate_paused) {
++        timebase_save(tb);
++    }
+ 
+     return 0;
+ }
+diff --git a/target/ppc/cpu-qom.h b/target/ppc/cpu-qom.h
+index deaa46a..b900277 100644
+--- a/target/ppc/cpu-qom.h
++++ b/target/ppc/cpu-qom.h
+@@ -210,6 +210,7 @@ typedef struct PowerPCCPUClass {
+ typedef struct PPCTimebase {
+     uint64_t guest_timebase;
+     int64_t time_of_the_day_ns;
++    bool runstate_paused;
+ } PPCTimebase;
+ 
+ extern const struct VMStateDescription vmstate_ppc_timebase;
+-- 
+1.8.3.1
+

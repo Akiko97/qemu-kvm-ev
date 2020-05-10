@@ -1,0 +1,79 @@
+From ebba9a277c36df319d1ec59f25d8b8d596fb8ab4 Mon Sep 17 00:00:00 2001
+From: Wei Huang <wei@redhat.com>
+Date: Wed, 17 Jan 2018 22:13:23 +0100
+Subject: target-i386: sanitize x86 MSR_PAT loaded from another source
+
+RH-Author: Wei Huang <wei@redhat.com>
+Message-id: <20180117221323.1008-1-wei@redhat.com>
+Patchwork-id: 78659
+O-Subject: [RHEL-7.5 qemu-kvm-rhev PATCH 1/1] target-i386: sanitize x86 MSR_PAT loaded from another source
+Bugzilla: 1529461
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+The RHEL 7 downstream commit a94f33258 honors guest VM's writes of MSR_PAT
+for SVM machines. But this cause a problem when an x86 VM is migrated from
+an old host, such as RHEL 6.9. This is because older system doesn't save
+the guest's PAT field during migration; Instead 0x0 is saved and migrated.
+At the destination, it will use 0x0 as guest PAT because of a94f33258.
+This causes the guest VM's performance to drop significatly.
+
+This patch solves the problem by sanitizing the PAT field. If it is zero,
+we use the default MSR_PAT value (0x0007040600070406ULL) to prevent
+performance drop. This solution should work with different types of
+(old or new) VM sources.
+
+Signed-off-by: Wei Huang <wei@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+(cherry picked from commit 09fbed03321a5b7a2ecd55ba37bed53db552b0b9)
+(cherry picked from commit e883fc66d38107233b26acc588fb7af9a2afc8a2)
+(cherry picked from commit afd4296db6ae47e5f073a4dd07ea256b660f60de)
+---
+ target/i386/cpu.c     | 2 +-
+ target/i386/cpu.h     | 1 +
+ target/i386/machine.c | 3 +++
+ 3 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index a9db495..0fc7fb0 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -3785,7 +3785,7 @@ static void x86_cpu_reset(CPUState *s)
+     /* All units are in INIT state.  */
+     env->xstate_bv = 0;
+ 
+-    env->pat = 0x0007040600070406ULL;
++    env->pat = MSR_PAT_DEFAULT;
+     env->msr_ia32_misc_enable = MSR_IA32_MISC_ENABLE_DEFAULT;
+ 
+     memset(env->dr, 0, sizeof(env->dr));
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 1b219fa..0c7a3d6 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -401,6 +401,7 @@ typedef enum X86Seg {
+ #define MSR_MTRRfix4K_F8000             0x26f
+ 
+ #define MSR_PAT                         0x277
++#define MSR_PAT_DEFAULT                 0x0007040600070406ULL
+ 
+ #define MSR_MTRRdefType                 0x2ff
+ 
+diff --git a/target/i386/machine.c b/target/i386/machine.c
+index c9a3b5c..f86abe7 100644
+--- a/target/i386/machine.c
++++ b/target/i386/machine.c
+@@ -277,6 +277,9 @@ static int cpu_post_load(void *opaque, int version_id)
+     env->hflags &= ~HF_CPL_MASK;
+     env->hflags |= (env->segs[R_SS].flags >> DESC_DPL_SHIFT) & HF_CPL_MASK;
+ 
++    if (!(env->pat))
++        env->pat = MSR_PAT_DEFAULT;
++
+     env->fpstt = (env->fpus_vmstate >> 11) & 7;
+     env->fpus = env->fpus_vmstate & ~0x3800;
+     env->fptag_vmstate ^= 0xff;
+-- 
+1.8.3.1
+

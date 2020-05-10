@@ -1,0 +1,76 @@
+From a746ca268865ce21cf72710577e1fc3f69ce9506 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Fri, 4 Oct 2019 19:57:13 +0200
+Subject: [PATCH 3/4] i386: Disable OSPKE on Cascadelake-Server
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20191004195714.10176-3-ehabkost@redhat.com>
+Patchwork-id: 90962
+O-Subject: [RHEL-7.8 qemu-kvm-rhev PATCH 2/3] i386: Disable OSPKE on Cascadelake-Server
+Bugzilla: 1638472
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+
+This is a partial cherry pick of upstream commit:
+
+commit bb4928c7cafe50ab2137a0034e350ef1bfa044d9
+Author: Eduardo Habkost <ehabkost@redhat.com>
+Date:   Tue Mar 19 17:05:15 2019 -0300
+
+    i386: Disable OSPKE on CPU model definitions
+
+    Currently, the Cascadelake-Server, Icelake-Client, and
+    Icelake-Server are always generating the following warning:
+
+      qemu-system-x86_64: warning: \
+        host doesn't support requested feature: CPUID.07H:ECX [bit 4]
+
+    This happens because OSPKE was never returned by
+    GET_SUPPORTED_CPUID or x86_cpu_get_supported_feature_word().
+    OSPKE is a runtime flag automatically set by the KVM module or by
+    TCG code, was always cleared by x86_cpu_filter_features(), and
+    was not supposed to appear on the CPU model table.
+
+    Remove the OSPKE flag from the CPU model table entries, to avoid
+    the bogus warning and avoid returning invalid feature data on
+    query-cpu-* QMP commands.  As OSPKE was always cleared by
+    x86_cpu_filter_features(), this won't have any guest-visible
+    impact.
+
+    Include a test case that should detect the problem if we introduce
+    a similar bug again.
+
+    Fixes: c7a88b52f62b ("i386: Add new model of Cascadelake-Server")
+    Fixes: 8a11c62da914 ("i386: Add new CPU model Icelake-{Server,Client}")
+    Cc: Tao Xu <tao3.xu@intel.com>
+    Cc: Robert Hoo <robert.hu@linux.intel.com>
+    Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+    Message-Id: <20190319200515.14999-1-ehabkost@redhat.com>
+    Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+
+It includes only the Cascadelake-Server change, because Icelake*
+is not present in the RHEL7 tree.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 2b85193..b377564 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -2518,7 +2518,7 @@ static X86CPUDefinition builtin_x86_defs[] = {
+             CPUID_7_0_EBX_AVX512VL | CPUID_7_0_EBX_CLFLUSHOPT |
+             CPUID_7_0_EBX_INTEL_PT,
+         .features[FEAT_7_0_ECX] =
+-            CPUID_7_0_ECX_PKU | CPUID_7_0_ECX_OSPKE |
++            CPUID_7_0_ECX_PKU |
+             CPUID_7_0_ECX_AVX512VNNI,
+         .features[FEAT_7_0_EDX] =
+             CPUID_7_0_EDX_SPEC_CTRL | CPUID_7_0_EDX_SPEC_CTRL_SSBD,
+-- 
+1.8.3.1
+

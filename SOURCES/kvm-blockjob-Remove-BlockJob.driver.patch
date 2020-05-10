@@ -1,0 +1,96 @@
+From 0991b141d8b65fb00b9261532faeb65a93d4d650 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:34 +0200
+Subject: [PATCH 65/89] blockjob: Remove BlockJob.driver
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-52-kwolf@redhat.com>
+Patchwork-id: 81123
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 51/73] blockjob: Remove BlockJob.driver
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+BlockJob.driver is redundant with Job.driver and only used in very few
+places any more. Remove it.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 9f6bb4c004a6458227b9eec6aff3f79afe159699)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c               | 17 ++++++++++-------
+ include/block/blockjob.h |  3 ---
+ 2 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index 5c8ff6f..0306533 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -103,10 +103,12 @@ static void block_job_attached_aio_context(AioContext *new_context,
+                                            void *opaque)
+ {
+     BlockJob *job = opaque;
++    const JobDriver *drv = job->job.driver;
++    BlockJobDriver *bjdrv = container_of(drv, BlockJobDriver, job_driver);
+ 
+     job->job.aio_context = new_context;
+-    if (job->driver->attached_aio_context) {
+-        job->driver->attached_aio_context(job, new_context);
++    if (bjdrv->attached_aio_context) {
++        bjdrv->attached_aio_context(job, new_context);
+     }
+ 
+     job_resume(&job->job);
+@@ -115,10 +117,12 @@ static void block_job_attached_aio_context(AioContext *new_context,
+ void block_job_drain(Job *job)
+ {
+     BlockJob *bjob = container_of(job, BlockJob, job);
++    const JobDriver *drv = job->driver;
++    BlockJobDriver *bjdrv = container_of(drv, BlockJobDriver, job_driver);
+ 
+     blk_drain(bjob->blk);
+-    if (bjob->driver->drain) {
+-        bjob->driver->drain(bjob);
++    if (bjdrv->drain) {
++        bjdrv->drain(bjob);
+     }
+ }
+ 
+@@ -201,7 +205,7 @@ bool block_job_is_internal(BlockJob *job)
+ 
+ const BlockJobDriver *block_job_driver(BlockJob *job)
+ {
+-    return job->driver;
++    return container_of(job->job.driver, BlockJobDriver, job_driver);
+ }
+ 
+ /* Assumes the job_mutex is held */
+@@ -386,8 +390,7 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
+     assert(job->job.driver->user_resume == &block_job_user_resume);
+     assert(job->job.driver->drain == &block_job_drain);
+ 
+-    job->driver        = driver;
+-    job->blk           = blk;
++    job->blk = blk;
+ 
+     job->finalize_cancelled_notifier.notify = block_job_event_cancelled;
+     job->finalize_completed_notifier.notify = block_job_event_completed;
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index 3021d11..32c00b7 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -43,9 +43,6 @@ typedef struct BlockJob {
+     /** Data belonging to the generic Job infrastructure */
+     Job job;
+ 
+-    /** The job type, including the job vtable.  */
+-    const BlockJobDriver *driver;
+-
+     /** The block device on which the job is operating.  */
+     BlockBackend *blk;
+ 
+-- 
+1.8.3.1
+

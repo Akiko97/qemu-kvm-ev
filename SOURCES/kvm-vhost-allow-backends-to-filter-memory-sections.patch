@@ -1,0 +1,117 @@
+From 6f1ec0b51c03a266c26f3108bbdf45987f01b53f Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Thu, 21 Jun 2018 18:54:41 +0200
+Subject: [PATCH 32/57] vhost: allow backends to filter memory sections
+
+RH-Author: plai@redhat.com
+Message-id: <1529607285-9942-7-git-send-email-plai@redhat.com>
+Patchwork-id: 80941
+O-Subject: [RHEL7.6 PATCH BZ 1526645 06/10] vhost: allow backends to filter memory sections
+Bugzilla: 1526645
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Maxime Coquelin <maxime.coquelin@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Tiwei Bie <tiwei.bie@intel.com>
+
+This patch introduces a vhost op for vhost backends to allow
+them to filter the memory sections that they can handle.
+
+Signed-off-by: Tiwei Bie <tiwei.bie@intel.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 988a27754bbbc45698f7acb54352e5a1ae699514)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/virtio/vhost-user.c            | 11 +++++++++++
+ hw/virtio/vhost.c                 |  9 +++++++--
+ include/hw/virtio/vhost-backend.h |  4 ++++
+ 3 files changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/hw/virtio/vhost-user.c b/hw/virtio/vhost-user.c
+index 85d8fd2..ebb946a 100644
+--- a/hw/virtio/vhost-user.c
++++ b/hw/virtio/vhost-user.c
+@@ -1620,6 +1620,16 @@ vhost_user_crypto_close_session(struct vhost_dev *dev, uint64_t session_id)
+     return 0;
+ }
+ 
++static bool vhost_user_mem_section_filter(struct vhost_dev *dev,
++                                          MemoryRegionSection *section)
++{
++    bool result;
++
++    result = memory_region_get_fd(section->mr) >= 0;
++
++    return result;
++}
++
+ const VhostOps user_ops = {
+         .backend_type = VHOST_BACKEND_TYPE_USER,
+         .vhost_backend_init = vhost_user_init,
+@@ -1650,4 +1660,5 @@ const VhostOps user_ops = {
+         .vhost_set_config = vhost_user_set_config,
+         .vhost_crypto_create_session = vhost_user_crypto_create_session,
+         .vhost_crypto_close_session = vhost_user_crypto_close_session,
++        .vhost_backend_mem_section_filter = vhost_user_mem_section_filter,
+ };
+diff --git a/hw/virtio/vhost.c b/hw/virtio/vhost.c
+index 9d5850a..1ae68ff 100644
+--- a/hw/virtio/vhost.c
++++ b/hw/virtio/vhost.c
+@@ -386,7 +386,7 @@ static int vhost_verify_ring_mappings(struct vhost_dev *dev,
+     return r;
+ }
+ 
+-static bool vhost_section(MemoryRegionSection *section)
++static bool vhost_section(struct vhost_dev *dev, MemoryRegionSection *section)
+ {
+     bool result;
+     bool log_dirty = memory_region_get_dirty_log_mask(section->mr) &
+@@ -399,6 +399,11 @@ static bool vhost_section(MemoryRegionSection *section)
+      */
+     result &= !log_dirty;
+ 
++    if (result && dev->vhost_ops->vhost_backend_mem_section_filter) {
++        result &=
++            dev->vhost_ops->vhost_backend_mem_section_filter(dev, section);
++    }
++
+     trace_vhost_section(section->mr->name, result);
+     return result;
+ }
+@@ -632,7 +637,7 @@ static void vhost_region_addnop(MemoryListener *listener,
+     struct vhost_dev *dev = container_of(listener, struct vhost_dev,
+                                          memory_listener);
+ 
+-    if (!vhost_section(section)) {
++    if (!vhost_section(dev, section)) {
+         return;
+     }
+     vhost_region_add_section(dev, section);
+diff --git a/include/hw/virtio/vhost-backend.h b/include/hw/virtio/vhost-backend.h
+index 5dac61f..81283ec 100644
+--- a/include/hw/virtio/vhost-backend.h
++++ b/include/hw/virtio/vhost-backend.h
+@@ -101,6 +101,9 @@ typedef int (*vhost_crypto_create_session_op)(struct vhost_dev *dev,
+ typedef int (*vhost_crypto_close_session_op)(struct vhost_dev *dev,
+                                              uint64_t session_id);
+ 
++typedef bool (*vhost_backend_mem_section_filter_op)(struct vhost_dev *dev,
++                                                MemoryRegionSection *section);
++
+ typedef struct VhostOps {
+     VhostBackendType backend_type;
+     vhost_backend_init vhost_backend_init;
+@@ -138,6 +141,7 @@ typedef struct VhostOps {
+     vhost_set_config_op vhost_set_config;
+     vhost_crypto_create_session_op vhost_crypto_create_session;
+     vhost_crypto_close_session_op vhost_crypto_close_session;
++    vhost_backend_mem_section_filter_op vhost_backend_mem_section_filter;
+ } VhostOps;
+ 
+ extern const VhostOps user_ops;
+-- 
+1.8.3.1
+

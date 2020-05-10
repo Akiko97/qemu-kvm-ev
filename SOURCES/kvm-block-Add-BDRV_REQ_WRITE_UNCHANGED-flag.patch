@@ -1,0 +1,70 @@
+From c757f534ae34ad858e0d706e0fb893ef5f3aeb28 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 16:12:06 +0200
+Subject: [PATCH 30/54] block: Add BDRV_REQ_WRITE_UNCHANGED flag
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618161212.14444-5-mreitz@redhat.com>
+Patchwork-id: 80764
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 04/10] block: Add BDRV_REQ_WRITE_UNCHANGED flag
+Bugzilla: 1518738
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+This flag signifies that a write request will not change the visible
+disk content.  With this flag set, it is sufficient to have the
+BLK_PERM_WRITE_UNCHANGED permission instead of BLK_PERM_WRITE.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Message-id: 20180421132929.21610-4-mreitz@redhat.com
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit c6035964f8316b504060618d05b5dd434f18595b)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c            | 6 +++++-
+ include/block/block.h | 6 +++++-
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index bd9a19a..134b2a4 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -1501,7 +1501,11 @@ static int coroutine_fn bdrv_aligned_pwritev(BdrvChild *child,
+     assert(!waited || !req->serialising);
+     assert(req->overlap_offset <= offset);
+     assert(offset + bytes <= req->overlap_offset + req->overlap_bytes);
+-    assert(child->perm & BLK_PERM_WRITE);
++    if (flags & BDRV_REQ_WRITE_UNCHANGED) {
++        assert(child->perm & (BLK_PERM_WRITE_UNCHANGED | BLK_PERM_WRITE));
++    } else {
++        assert(child->perm & BLK_PERM_WRITE);
++    }
+     assert(end_sector <= bs->total_sectors || child->perm & BLK_PERM_RESIZE);
+ 
+     ret = notifier_with_return_list_notify(&bs->before_write_notifiers, req);
+diff --git a/include/block/block.h b/include/block/block.h
+index 397b5e8..3894edd 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -54,8 +54,12 @@ typedef enum {
+     BDRV_REQ_FUA                = 0x10,
+     BDRV_REQ_WRITE_COMPRESSED   = 0x20,
+ 
++    /* Signifies that this write request will not change the visible disk
++     * content. */
++    BDRV_REQ_WRITE_UNCHANGED    = 0x40,
++
+     /* Mask of valid flags */
+-    BDRV_REQ_MASK               = 0x3f,
++    BDRV_REQ_MASK               = 0x7f,
+ } BdrvRequestFlags;
+ 
+ typedef struct BlockSizes {
+-- 
+1.8.3.1
+

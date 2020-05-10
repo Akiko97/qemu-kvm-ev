@@ -1,0 +1,60 @@
+From 0c2dc6236b6a86a87c26994772e32fbb979e48a3 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Mon, 2 Jul 2018 15:40:06 +0200
+Subject: [PATCH 53/57] qemu-iotests: Update 026.out.nocache reference output
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180702154008.15533-2-kwolf@redhat.com>
+Patchwork-id: 81186
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/3] qemu-iotests: Update 026.out.nocache reference output
+Bugzilla: 1528541
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+Commit abf754fe406 updated 026.out, but forgot to also update
+026.out.nocache.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 93a3642efcadf4ad6045ccea38a05ff5297dfe26)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/026.out.nocache | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/tests/qemu-iotests/026.out.nocache b/tests/qemu-iotests/026.out.nocache
+index ea2e166..650ccd8 100644
+--- a/tests/qemu-iotests/026.out.nocache
++++ b/tests/qemu-iotests/026.out.nocache
+@@ -541,7 +541,7 @@ Failed to flush the L2 table cache: No space left on device
+ Failed to flush the refcount block cache: No space left on device
+ write failed: No space left on device
+ 
+-11 leaked clusters were found on the image.
++10 leaked clusters were found on the image.
+ This means waste of disk space, but no harm to data.
+ Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=1073741824 
+ 
+@@ -569,7 +569,7 @@ Failed to flush the L2 table cache: No space left on device
+ Failed to flush the refcount block cache: No space left on device
+ write failed: No space left on device
+ 
+-11 leaked clusters were found on the image.
++10 leaked clusters were found on the image.
+ This means waste of disk space, but no harm to data.
+ Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=1073741824 
+ 
+@@ -597,7 +597,7 @@ Failed to flush the L2 table cache: No space left on device
+ Failed to flush the refcount block cache: No space left on device
+ write failed: No space left on device
+ 
+-11 leaked clusters were found on the image.
++10 leaked clusters were found on the image.
+ This means waste of disk space, but no harm to data.
+ Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=1073741824 
+ 
+-- 
+1.8.3.1
+

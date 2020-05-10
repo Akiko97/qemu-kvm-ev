@@ -1,0 +1,129 @@
+From 29c28722af50333db06c4c2497852896cf15ca23 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Fri, 23 Aug 2019 15:11:10 +0200
+Subject: [PATCH 3/4] file-posix: Handle undetectable alignment
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20190823151110.17322-2-mreitz@redhat.com>
+Patchwork-id: 90139
+O-Subject: [RHEL-7.7.z qemu-kvm-rhev PATCH 1/1] file-posix: Handle undetectable alignment
+Bugzilla: 1743365
+RH-Acked-by: Maxim Levitsky <mlevitsk@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+From: Nir Soffer <nirsof@gmail.com>
+
+In some cases buf_align or request_alignment cannot be detected:
+
+1. With Gluster, buf_align cannot be detected since the actual I/O is
+   done on Gluster server, and qemu buffer alignment does not matter.
+   Since we don't have alignment requirement, buf_align=1 is the best
+   value.
+
+2. With local XFS filesystem, buf_align cannot be detected if reading
+   from unallocated area. In this we must align the buffer, but we don't
+   know what is the correct size. Using the wrong alignment results in
+   I/O error.
+
+3. With Gluster backed by XFS, request_alignment cannot be detected if
+   reading from unallocated area. In this case we need to use the
+   correct alignment, and failing to do so results in I/O errors.
+
+4. With NFS, the server does not use direct I/O, so both buf_align cannot
+   be detected. In this case we don't need any alignment so we can use
+   buf_align=1 and request_alignment=1.
+
+These cases seems to work when storage sector size is 512 bytes, because
+the current code starts checking align=512. If the check succeeds
+because alignment cannot be detected we use 512. But this does not work
+for storage with 4k sector size.
+
+To determine if we can detect the alignment, we probe first with
+align=1. If probing succeeds, maybe there are no alignment requirement
+(cases 1, 4) or we are probing unallocated area (cases 2, 3). Since we
+don't have any way to tell, we treat this as undetectable alignment. If
+probing with align=1 fails with EINVAL, but probing with one of the
+expected alignments succeeds, we know that we found a working alignment.
+
+Practically the alignment requirements are the same for buffer
+alignment, buffer length, and offset in file. So in case we cannot
+detect buf_align, we can use request alignment. If we cannot detect
+request alignment, we can fallback to a safe value. To use this logic,
+we probe first request alignment instead of buf_align.
+
+Here is a table showing the behaviour with current code (the value in
+parenthesis is the optimal value).
+
+Case    Sector    buf_align (opt)   request_alignment (opt)     result
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 36 +++++++++++++++++++++++++-----------
+ 1 file changed, 25 insertions(+), 11 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index d1926b3..548424d 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -325,6 +325,7 @@ static void raw_probe_alignment(BlockDriverState *bs, int fd, Error **errp)
+     BDRVRawState *s = bs->opaque;
+     char *buf;
+     size_t max_align = MAX(MAX_BLOCKSIZE, getpagesize());
++    size_t alignments[] = {1, 512, 1024, 2048, 4096};
+ 
+     /* For SCSI generic devices the alignment is not really used.
+        With buffered I/O, we don't have any restrictions. */
+@@ -351,25 +352,38 @@ static void raw_probe_alignment(BlockDriverState *bs, int fd, Error **errp)
+     }
+ #endif
+ 
+-    /* If we could not get the sizes so far, we can only guess them */
+-    if (!s->buf_align) {
++    /*
++     * If we could not get the sizes so far, we can only guess them. First try
++     * to detect request alignment, since it is more likely to succeed. Then
++     * try to detect buf_align, which cannot be detected in some cases (e.g.
++     * Gluster). If buf_align cannot be detected, we fallback to the value of
++     * request_alignment.
++     */
++
++    if (!bs->bl.request_alignment) {
++        int i;
+         size_t align;
+-        buf = qemu_memalign(max_align, 2 * max_align);
+-        for (align = 512; align <= max_align; align <<= 1) {
+-            if (raw_is_io_aligned(fd, buf + align, max_align)) {
+-                s->buf_align = align;
++        buf = qemu_memalign(max_align, max_align);
++        for (i = 0; i < ARRAY_SIZE(alignments); i++) {
++            align = alignments[i];
++            if (raw_is_io_aligned(fd, buf, align)) {
++                /* Fallback to safe value. */
++                bs->bl.request_alignment = (align != 1) ? align : max_align;
+                 break;
+             }
+         }
+         qemu_vfree(buf);
+     }
+ 
+-    if (!bs->bl.request_alignment) {
++    if (!s->buf_align) {
++        int i;
+         size_t align;
+-        buf = qemu_memalign(s->buf_align, max_align);
+-        for (align = 512; align <= max_align; align <<= 1) {
+-            if (raw_is_io_aligned(fd, buf, align)) {
+-                bs->bl.request_alignment = align;
++        buf = qemu_memalign(max_align, 2 * max_align);
++        for (i = 0; i < ARRAY_SIZE(alignments); i++) {
++            align = alignments[i];
++            if (raw_is_io_aligned(fd, buf + align, max_align)) {
++                /* Fallback to request_aligment. */
++                s->buf_align = (align != 1) ? align : bs->bl.request_alignment;
+                 break;
+             }
+         }
+-- 
+1.8.3.1
+

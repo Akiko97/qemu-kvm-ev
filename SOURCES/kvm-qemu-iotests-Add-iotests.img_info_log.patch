@@ -1,0 +1,67 @@
+From ca9184bc1b0c0748b2c2e1395518f402be6f69e3 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:43 +0200
+Subject: [PATCH 74/89] qemu-iotests: Add iotests.img_info_log()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-61-kwolf@redhat.com>
+Patchwork-id: 81082
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 60/73] qemu-iotests: Add iotests.img_info_log()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This adds a filter function to postprocess 'qemu-img info' input
+(similar to what _img_info does), and an img_info_log() function that
+calls 'qemu-img info' and logs the filtered output.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit 6b605adec4d7491488d9cfb50bc256e667d8caf1)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index bc5731a..4b0760f 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -109,6 +109,12 @@ def qemu_img_pipe(*args):
+         sys.stderr.write('qemu-img received signal %i: %s\n' % (-exitcode, ' '.join(qemu_img_args + list(args))))
+     return subp.communicate()[0]
+ 
++def img_info_log(filename, filter_path=None):
++    output = qemu_img_pipe('info', '-f', imgfmt, filename)
++    if not filter_path:
++        filter_path = filename
++    log(filter_img_info(output, filter_path))
++
+ def qemu_io(*args):
+     '''Run qemu-io and return the stdout data'''
+     args = qemu_io_args + list(args)
+@@ -219,6 +225,18 @@ def filter_testfiles(msg):
+     prefix = os.path.join(test_dir, "%s-" % (os.getpid()))
+     return msg.replace(prefix, 'TEST_DIR/PID-')
+ 
++def filter_img_info(output, filename):
++    lines = []
++    for line in output.split('\n'):
++        if 'disk size' in line or 'actual-size' in line:
++            continue
++        line = line.replace(filename, 'TEST_IMG') \
++                   .replace(imgfmt, 'IMGFMT')
++        line = re.sub('iters: [0-9]+', 'iters: XXX', line)
++        line = re.sub('uuid: [-a-f0-9]+', 'uuid: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', line)
++        lines.append(line)
++    return '\n'.join(lines)
++
+ def log(msg, filters=[]):
+     for flt in filters:
+         msg = flt(msg)
+-- 
+1.8.3.1
+

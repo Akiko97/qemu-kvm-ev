@@ -1,0 +1,83 @@
+From 0ace323e4037200dc16bda1d77bbdc4f2711a658 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:03 +0200
+Subject: [PATCH 12/49] tests/test-bdrv-drain: bdrv_drain_all() works in
+ coroutines now
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-6-kwolf@redhat.com>
+Patchwork-id: 82156
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 05/42] tests/test-bdrv-drain: bdrv_drain_all() works in coroutines now
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Since we use bdrv_do_drained_begin/end() for bdrv_drain_all_begin/end(),
+coroutine context is automatically left with a BH, preventing the
+deadlocks that made bdrv_drain_all*() unsafe in coroutine context. Now
+that we even removed the old polling code as dead code, it's obvious
+that it's compatible now.
+
+Enable the coroutine test cases for bdrv_drain_all().
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 6d0252f2f9cb49925deb1c41101462c9481dfc90)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/test-bdrv-drain.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/tests/test-bdrv-drain.c b/tests/test-bdrv-drain.c
+index f1276a1..f5d85c9 100644
+--- a/tests/test-bdrv-drain.c
++++ b/tests/test-bdrv-drain.c
+@@ -233,6 +233,11 @@ static void test_drv_cb_drain_subtree(void)
+     test_drv_cb_common(BDRV_SUBTREE_DRAIN, true);
+ }
+ 
++static void test_drv_cb_co_drain_all(void)
++{
++    call_in_coroutine(test_drv_cb_drain_all);
++}
++
+ static void test_drv_cb_co_drain(void)
+ {
+     call_in_coroutine(test_drv_cb_drain);
+@@ -289,6 +294,11 @@ static void test_quiesce_drain_subtree(void)
+     test_quiesce_common(BDRV_SUBTREE_DRAIN, true);
+ }
+ 
++static void test_quiesce_co_drain_all(void)
++{
++    call_in_coroutine(test_quiesce_drain_all);
++}
++
+ static void test_quiesce_co_drain(void)
+ {
+     call_in_coroutine(test_quiesce_drain);
+@@ -795,7 +805,8 @@ int main(int argc, char **argv)
+     g_test_add_func("/bdrv-drain/driver-cb/drain_subtree",
+                     test_drv_cb_drain_subtree);
+ 
+-    // XXX bdrv_drain_all() doesn't work in coroutine context
++    g_test_add_func("/bdrv-drain/driver-cb/co/drain_all",
++                    test_drv_cb_co_drain_all);
+     g_test_add_func("/bdrv-drain/driver-cb/co/drain", test_drv_cb_co_drain);
+     g_test_add_func("/bdrv-drain/driver-cb/co/drain_subtree",
+                     test_drv_cb_co_drain_subtree);
+@@ -806,7 +817,8 @@ int main(int argc, char **argv)
+     g_test_add_func("/bdrv-drain/quiesce/drain_subtree",
+                     test_quiesce_drain_subtree);
+ 
+-    // XXX bdrv_drain_all() doesn't work in coroutine context
++    g_test_add_func("/bdrv-drain/quiesce/co/drain_all",
++                    test_quiesce_co_drain_all);
+     g_test_add_func("/bdrv-drain/quiesce/co/drain", test_quiesce_co_drain);
+     g_test_add_func("/bdrv-drain/quiesce/co/drain_subtree",
+                     test_quiesce_co_drain_subtree);
+-- 
+1.8.3.1
+

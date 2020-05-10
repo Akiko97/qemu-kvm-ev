@@ -1,0 +1,144 @@
+From 4395bef7b50eba7711d47a5a9064ef048cdee8d2 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Thu, 21 Jun 2018 18:54:42 +0200
+Subject: [PATCH 33/57] vhost-user: allow slave to send fds via slave channel
+
+RH-Author: plai@redhat.com
+Message-id: <1529607285-9942-8-git-send-email-plai@redhat.com>
+Patchwork-id: 80935
+O-Subject: [RHEL7.6 PATCH BZ 1526645 07/10] vhost-user: allow slave to send fds via slave channel
+Bugzilla: 1526645
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Maxime Coquelin <maxime.coquelin@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Tiwei Bie <tiwei.bie@intel.com>
+
+Introduce VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD protocol
+feature to allow slave to send at most 8 descriptors
+in each message to master via ancillary data using the
+slave channel.
+
+Suggested-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Tiwei Bie <tiwei.bie@intel.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 5f57fbeaaf7c4cd33152d7f2e449caab4d4209d9)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ docs/interop/vhost-user.txt |  5 +++++
+ hw/virtio/vhost-user.c      | 27 +++++++++++++++++----------
+ 2 files changed, 22 insertions(+), 10 deletions(-)
+
+diff --git a/docs/interop/vhost-user.txt b/docs/interop/vhost-user.txt
+index 534caab..682a683 100644
+--- a/docs/interop/vhost-user.txt
++++ b/docs/interop/vhost-user.txt
+@@ -367,6 +367,10 @@ The fd is provided via VHOST_USER_SET_SLAVE_REQ_FD ancillary data.
+ A slave may then send VHOST_USER_SLAVE_* messages to the master
+ using this fd communication channel.
+ 
++If VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD protocol feature is negotiated,
++slave can send file descriptors (at most 8 descriptors in each message)
++to master via ancillary data using this fd communication channel.
++
+ Protocol features
+ -----------------
+ 
+@@ -380,6 +384,7 @@ Protocol features
+ #define VHOST_USER_PROTOCOL_F_CRYPTO_SESSION 7
+ #define VHOST_USER_PROTOCOL_F_PAGEFAULT      8
+ #define VHOST_USER_PROTOCOL_F_CONFIG         9
++#define VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD  10
+ 
+ Master message types
+ --------------------
+diff --git a/hw/virtio/vhost-user.c b/hw/virtio/vhost-user.c
+index ebb946a..e8027ad 100644
+--- a/hw/virtio/vhost-user.c
++++ b/hw/virtio/vhost-user.c
+@@ -30,6 +30,7 @@
+ 
+ #define VHOST_MEMORY_MAX_NREGIONS    8
+ #define VHOST_USER_F_PROTOCOL_FEATURES 30
++#define VHOST_USER_SLAVE_MAX_FDS     8
+ 
+ /*
+  * Maximum size of virtio device config space
+@@ -47,6 +48,7 @@ enum VhostUserProtocolFeature {
+     VHOST_USER_PROTOCOL_F_CRYPTO_SESSION = 7,
+     VHOST_USER_PROTOCOL_F_PAGEFAULT = 8,
+     VHOST_USER_PROTOCOL_F_CONFIG = 9,
++    VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD = 10,
+     VHOST_USER_PROTOCOL_F_MAX
+ };
+ 
+@@ -854,10 +856,10 @@ static void slave_read(void *opaque)
+     int size, ret = 0;
+     struct iovec iov;
+     struct msghdr msgh;
+-    int fd = -1;
++    int fd[VHOST_USER_SLAVE_MAX_FDS];
+     char control[CMSG_SPACE(sizeof(fd))];
+     struct cmsghdr *cmsg;
+-    size_t fdsize;
++    int i, fdsize = 0;
+ 
+     memset(&msgh, 0, sizeof(msgh));
+     msgh.msg_iov = &iov;
+@@ -865,6 +867,8 @@ static void slave_read(void *opaque)
+     msgh.msg_control = control;
+     msgh.msg_controllen = sizeof(control);
+ 
++    memset(fd, -1, sizeof(fd));
++
+     /* Read header */
+     iov.iov_base = &hdr;
+     iov.iov_len = VHOST_USER_HDR_SIZE;
+@@ -885,7 +889,7 @@ static void slave_read(void *opaque)
+             if (cmsg->cmsg_level == SOL_SOCKET &&
+                 cmsg->cmsg_type == SCM_RIGHTS) {
+                     fdsize = cmsg->cmsg_len - CMSG_LEN(0);
+-                    memcpy(&fd, CMSG_DATA(cmsg), fdsize);
++                    memcpy(fd, CMSG_DATA(cmsg), fdsize);
+                     break;
+             }
+     }
+@@ -913,14 +917,15 @@ static void slave_read(void *opaque)
+         break;
+     default:
+         error_report("Received unexpected msg type.");
+-        if (fd != -1) {
+-            close(fd);
+-        }
+         ret = -EINVAL;
+     }
+ 
+-    /* Message handlers need to make sure that fd will be consumed. */
+-    fd = -1;
++    /* Close the remaining file descriptors. */
++    for (i = 0; i < fdsize; i++) {
++        if (fd[i] != -1) {
++            close(fd[i]);
++        }
++    }
+ 
+     /*
+      * REPLY_ACK feature handling. Other reply types has to be managed
+@@ -954,8 +959,10 @@ err:
+     qemu_set_fd_handler(u->slave_fd, NULL, NULL, NULL);
+     close(u->slave_fd);
+     u->slave_fd = -1;
+-    if (fd != -1) {
+-        close(fd);
++    for (i = 0; i < fdsize; i++) {
++        if (fd[i] != -1) {
++            close(fd[i]);
++        }
+     }
+     return;
+ }
+-- 
+1.8.3.1
+

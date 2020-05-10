@@ -1,0 +1,51 @@
+From 48815daa02f8d90bf1f4dc10e560cdc9ca61352b Mon Sep 17 00:00:00 2001
+From: Cornelia Huck <cohuck@redhat.com>
+Date: Wed, 1 Aug 2018 11:09:14 +0200
+Subject: [PATCH 14/15] s390x/sclp: fix maxram calculation
+
+RH-Author: Cornelia Huck <cohuck@redhat.com>
+Message-id: <20180801110914.17729-1-cohuck@redhat.com>
+Patchwork-id: 81564
+O-Subject: [RHEL-7.6 qemu-kvm-ma PATCH] s390x/sclp: fix maxram calculation
+Bugzilla: 1595740
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+
+We clamp down ram_size to match the sclp increment size. We do
+not do the same for maxram_size, which means for large guests
+with some sizes (e.g. -m 50000) maxram_size differs from ram_size.
+This can break other code (e.g. CMMA migration) which uses maxram_size
+to calculate the number of pages and then throws some errors.
+
+Fixes: 82fab5c5b90e468f3e9d54c ("s390x/sclp: remove memory hotplug support")
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+CC: qemu-stable@nongnu.org
+CC: David Hildenbrand <david@redhat.com>
+Message-Id: <1532959766-53343-1-git-send-email-borntraeger@de.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Cornelia Huck <cohuck@redhat.com>
+(cherry picked from commit 408e5ace517ff18c9c7cd918fc93358162e6e26d)
+Signed-off-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/s390x/sclp.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/s390x/sclp.c b/hw/s390x/sclp.c
+index 047d577..2abdb62 100644
+--- a/hw/s390x/sclp.c
++++ b/hw/s390x/sclp.c
+@@ -319,6 +319,7 @@ static void sclp_memory_init(SCLPDevice *sclp)
+     initial_mem = initial_mem >> increment_size << increment_size;
+ 
+     machine->ram_size = initial_mem;
++    machine->maxram_size = initial_mem;
+     /* let's propagate the changed ram size into the global variable. */
+     ram_size = initial_mem;
+ }
+-- 
+1.8.3.1
+

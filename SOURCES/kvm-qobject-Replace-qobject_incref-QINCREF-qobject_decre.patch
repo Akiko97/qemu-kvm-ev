@@ -1,0 +1,5252 @@
+From 7760613392819cfcfca3f2569909fb2fa794204f Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:11 +0200
+Subject: [PATCH 04/54] qobject: Replace qobject_incref/QINCREF
+ qobject_decref/QDECREF
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-5-armbru@redhat.com>
+Patchwork-id: 80739
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 04/23] qobject: Replace qobject_incref/QINCREF qobject_decref/QDECREF
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+From: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+Now that we can safely call QOBJECT() on QObject * as well as its
+subtypes, we can have macros qobject_ref() / qobject_unref() that work
+everywhere instead of having to use QINCREF() / QDECREF() for QObject
+and qobject_incref() / qobject_decref() for its subtypes.
+
+The replacement is mechanical, except I broke a long line, and added a
+cast in monitor_qmp_cleanup_req_queue_locked().  Unlike
+qobject_decref(), qobject_unref() doesn't accept void *.
+
+Note that the new macros evaluate their argument exactly once, thus no
+need to shout them.
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180419150145.24795-4-marcandre.lureau@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+[Rebased, semantic conflict resolved, commit message improved]
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit cb3e7f08aeaab0ab13e629ce8496dca150a449ba)
+[Trivial conflict in tests/migration-test.c resolved]
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c                             |  78 ++++++++++++++--------------
+ block/blkdebug.c                    |   4 +-
+ block/blkverify.c                   |   4 +-
+ block/crypto.c                      |   4 +-
+ block/gluster.c                     |   4 +-
+ block/iscsi.c                       |   2 +-
+ block/nbd.c                         |   4 +-
+ block/nfs.c                         |   4 +-
+ block/null.c                        |   2 +-
+ block/nvme.c                        |   2 +-
+ block/parallels.c                   |   4 +-
+ block/qapi.c                        |   2 +-
+ block/qcow.c                        |   8 +--
+ block/qcow2.c                       |   8 +--
+ block/qed.c                         |   4 +-
+ block/quorum.c                      |   2 +-
+ block/rbd.c                         |  14 ++---
+ block/sheepdog.c                    |  12 ++---
+ block/snapshot.c                    |   4 +-
+ block/ssh.c                         |   4 +-
+ block/vdi.c                         |   2 +-
+ block/vhdx.c                        |   4 +-
+ block/vpc.c                         |   4 +-
+ block/vvfat.c                       |   2 +-
+ block/vxhs.c                        |   2 +-
+ blockdev.c                          |  16 +++---
+ docs/devel/qapi-code-gen.txt        |   2 +-
+ hw/i386/acpi-build.c                |  12 ++---
+ hw/ppc/spapr_drc.c                  |   2 +-
+ hw/usb/xen-usb.c                    |   4 +-
+ include/qapi/qmp/qnull.h            |   2 +-
+ include/qapi/qmp/qobject.h          |  40 +++++++--------
+ migration/migration.c               |   4 +-
+ migration/qjson.c                   |   2 +-
+ monitor.c                           |  50 +++++++++---------
+ qapi/qapi-dealloc-visitor.c         |   4 +-
+ qapi/qmp-dispatch.c                 |   6 +--
+ qapi/qobject-input-visitor.c        |   8 +--
+ qapi/qobject-output-visitor.c       |   8 +--
+ qemu-img.c                          |  18 +++----
+ qemu-io.c                           |   6 +--
+ qga/main.c                          |  12 ++---
+ qmp.c                               |   4 +-
+ qobject/json-parser.c               |  10 ++--
+ qobject/qdict.c                     |  38 +++++++-------
+ qobject/qjson.c                     |   2 +-
+ qobject/qlist.c                     |   4 +-
+ qom/object.c                        |  16 +++---
+ qom/object_interfaces.c             |   2 +-
+ scripts/coccinelle/qobject.cocci    |   8 +--
+ scripts/qapi/events.py              |   2 +-
+ target/ppc/translate_init.c         |   2 +-
+ target/s390x/cpu_models.c           |   2 +-
+ tests/ahci-test.c                   |   6 +--
+ tests/check-qdict.c                 | 100 ++++++++++++++++++------------------
+ tests/check-qjson.c                 |  84 +++++++++++++++---------------
+ tests/check-qlist.c                 |   8 +--
+ tests/check-qlit.c                  |  10 ++--
+ tests/check-qnull.c                 |  10 ++--
+ tests/check-qnum.c                  |  28 +++++-----
+ tests/check-qobject.c               |   2 +-
+ tests/check-qstring.c               |  10 ++--
+ tests/cpu-plug-test.c               |   4 +-
+ tests/device-introspect-test.c      |  24 ++++-----
+ tests/drive_del-test.c              |   4 +-
+ tests/libqos/libqos.c               |   8 +--
+ tests/libqos/pci-pc.c               |   2 +-
+ tests/libqtest.c                    |  24 ++++-----
+ tests/machine-none-test.c           |   2 +-
+ tests/migration-test.c              |  24 ++++-----
+ tests/numa-test.c                   |  16 +++---
+ tests/pvpanic-test.c                |   2 +-
+ tests/q35-test.c                    |   2 +-
+ tests/qmp-test.c                    |  38 +++++++-------
+ tests/qom-test.c                    |   8 +--
+ tests/tco-test.c                    |  12 ++---
+ tests/test-char.c                   |   2 +-
+ tests/test-keyval.c                 |  82 ++++++++++++++---------------
+ tests/test-netfilter.c              |  26 +++++-----
+ tests/test-qemu-opts.c              |  14 ++---
+ tests/test-qga.c                    |  76 +++++++++++++--------------
+ tests/test-qmp-cmds.c               |  24 ++++-----
+ tests/test-qmp-event.c              |   2 +-
+ tests/test-qobject-input-visitor.c  |  10 ++--
+ tests/test-qobject-output-visitor.c |  18 +++----
+ tests/test-visitor-serialization.c  |   6 +--
+ tests/test-x86-cpuid-compat.c       |  14 ++---
+ tests/tmp105-test.c                 |   4 +-
+ tests/vhost-user-test.c             |   6 +--
+ tests/virtio-net-test.c             |   6 +--
+ tests/vmgenid-test.c                |   2 +-
+ tests/wdt_ib700-test.c              |  14 ++---
+ util/keyval.c                       |  12 ++---
+ util/qemu-config.c                  |   4 +-
+ 94 files changed, 608 insertions(+), 612 deletions(-)
+
+diff --git a/block.c b/block.c
+index a2caadf..55a7984 100644
+--- a/block.c
++++ b/block.c
+@@ -1227,9 +1227,9 @@ BlockDriverState *bdrv_new_open_driver(BlockDriver *drv, const char *node_name,
+ 
+     ret = bdrv_open_driver(bs, drv, node_name, bs->options, flags, errp);
+     if (ret < 0) {
+-        QDECREF(bs->explicit_options);
++        qobject_unref(bs->explicit_options);
+         bs->explicit_options = NULL;
+-        QDECREF(bs->options);
++        qobject_unref(bs->options);
+         bs->options = NULL;
+         bdrv_unref(bs);
+         return NULL;
+@@ -1460,7 +1460,7 @@ static QDict *parse_json_filename(const char *filename, Error **errp)
+ 
+     options = qobject_to(QDict, options_obj);
+     if (!options) {
+-        qobject_decref(options_obj);
++        qobject_unref(options_obj);
+         error_setg(errp, "Invalid JSON object given");
+         return NULL;
+     }
+@@ -1490,7 +1490,7 @@ static void parse_json_protocol(QDict *options, const char **pfilename,
+     /* Options given in the filename have lower priority than options
+      * specified directly */
+     qdict_join(options, json_options, false);
+-    QDECREF(json_options);
++    qobject_unref(json_options);
+     *pfilename = NULL;
+ }
+ 
+@@ -2273,7 +2273,7 @@ int bdrv_open_backing_file(BlockDriverState *bs, QDict *parent_options,
+     if (reference || qdict_haskey(options, "file.filename")) {
+         backing_filename[0] = '\0';
+     } else if (bs->backing_file[0] == '\0' && qdict_size(options) == 0) {
+-        QDECREF(options);
++        qobject_unref(options);
+         goto free_exit;
+     } else {
+         bdrv_get_full_backing_filename(bs, backing_filename, PATH_MAX,
+@@ -2281,7 +2281,7 @@ int bdrv_open_backing_file(BlockDriverState *bs, QDict *parent_options,
+         if (local_err) {
+             ret = -EINVAL;
+             error_propagate(errp, local_err);
+-            QDECREF(options);
++            qobject_unref(options);
+             goto free_exit;
+         }
+     }
+@@ -2289,7 +2289,7 @@ int bdrv_open_backing_file(BlockDriverState *bs, QDict *parent_options,
+     if (!bs->drv || !bs->drv->supports_backing) {
+         ret = -EINVAL;
+         error_setg(errp, "Driver doesn't support backing files");
+-        QDECREF(options);
++        qobject_unref(options);
+         goto free_exit;
+     }
+ 
+@@ -2323,7 +2323,7 @@ int bdrv_open_backing_file(BlockDriverState *bs, QDict *parent_options,
+ 
+ free_exit:
+     g_free(backing_filename);
+-    QDECREF(tmp_parent_options);
++    qobject_unref(tmp_parent_options);
+     return ret;
+ }
+ 
+@@ -2356,7 +2356,7 @@ bdrv_open_child_bs(const char *filename, QDict *options, const char *bdref_key,
+             error_setg(errp, "A block device must be specified for \"%s\"",
+                        bdref_key);
+         }
+-        QDECREF(image_options);
++        qobject_unref(image_options);
+         goto done;
+     }
+ 
+@@ -2449,7 +2449,7 @@ BlockDriverState *bdrv_open_blockdev_ref(BlockdevRef *ref, Error **errp)
+     obj = NULL;
+ 
+ fail:
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     visit_free(v);
+     return bs;
+ }
+@@ -2519,7 +2519,7 @@ static BlockDriverState *bdrv_append_temp_snapshot(BlockDriverState *bs,
+     }
+ 
+ out:
+-    QDECREF(snapshot_options);
++    qobject_unref(snapshot_options);
+     g_free(tmp_filename);
+     return bs_snapshot;
+ }
+@@ -2530,7 +2530,7 @@ out:
+  * options is a QDict of options to pass to the block drivers, or NULL for an
+  * empty set of options. The reference to the QDict belongs to the block layer
+  * after the call (even on failure), so if the caller intends to reuse the
+- * dictionary, it needs to use QINCREF() before calling bdrv_open.
++ * dictionary, it needs to use qobject_ref() before calling bdrv_open.
+  *
+  * If *pbs is NULL, a new BDS will be created with a pointer to it stored there.
+  * If it is not NULL, the referenced BDS will be reused.
+@@ -2561,7 +2561,7 @@ static BlockDriverState *bdrv_open_inherit(const char *filename,
+ 
+     if (reference) {
+         bool options_non_empty = options ? qdict_size(options) : false;
+-        QDECREF(options);
++        qobject_unref(options);
+ 
+         if (filename || options_non_empty) {
+             error_setg(errp, "Cannot reference an existing block device with "
+@@ -2752,7 +2752,7 @@ static BlockDriverState *bdrv_open_inherit(const char *filename,
+ 
+     bdrv_parent_cb_change_media(bs, true);
+ 
+-    QDECREF(options);
++    qobject_unref(options);
+ 
+     /* For snapshot=on, create a temporary qcow2 overlay. bs points to the
+      * temporary snapshot afterwards. */
+@@ -2776,10 +2776,10 @@ static BlockDriverState *bdrv_open_inherit(const char *filename,
+ 
+ fail:
+     blk_unref(file);
+-    QDECREF(snapshot_options);
+-    QDECREF(bs->explicit_options);
+-    QDECREF(bs->options);
+-    QDECREF(options);
++    qobject_unref(snapshot_options);
++    qobject_unref(bs->explicit_options);
++    qobject_unref(bs->options);
++    qobject_unref(options);
+     bs->options = NULL;
+     bs->explicit_options = NULL;
+     bdrv_unref(bs);
+@@ -2788,8 +2788,8 @@ fail:
+ 
+ close_and_fail:
+     bdrv_unref(bs);
+-    QDECREF(snapshot_options);
+-    QDECREF(options);
++    qobject_unref(snapshot_options);
++    qobject_unref(options);
+     error_propagate(errp, local_err);
+     return NULL;
+ }
+@@ -2884,7 +2884,7 @@ static BlockReopenQueue *bdrv_reopen_queue_child(BlockReopenQueue *bs_queue,
+         old_options = qdict_clone_shallow(bs->explicit_options);
+     }
+     bdrv_join_options(bs, options, old_options);
+-    QDECREF(old_options);
++    qobject_unref(old_options);
+ 
+     explicit_options = qdict_clone_shallow(options);
+ 
+@@ -2899,13 +2899,13 @@ static BlockReopenQueue *bdrv_reopen_queue_child(BlockReopenQueue *bs_queue,
+         qemu_opts_absorb_qdict(opts, options_copy, NULL);
+         update_flags_from_options(&flags, opts);
+         qemu_opts_del(opts);
+-        QDECREF(options_copy);
++        qobject_unref(options_copy);
+     }
+ 
+     /* Old values are used for options that aren't set yet */
+     old_options = qdict_clone_shallow(bs->options);
+     bdrv_join_options(bs, options, old_options);
+-    QDECREF(old_options);
++    qobject_unref(old_options);
+ 
+     /* bdrv_open_inherit() sets and clears some additional flags internally */
+     flags &= ~BDRV_O_PROTOCOL;
+@@ -2917,8 +2917,8 @@ static BlockReopenQueue *bdrv_reopen_queue_child(BlockReopenQueue *bs_queue,
+         bs_entry = g_new0(BlockReopenQueueEntry, 1);
+         QSIMPLEQ_INSERT_TAIL(bs_queue, bs_entry, entry);
+     } else {
+-        QDECREF(bs_entry->state.options);
+-        QDECREF(bs_entry->state.explicit_options);
++        qobject_unref(bs_entry->state.options);
++        qobject_unref(bs_entry->state.explicit_options);
+     }
+ 
+     bs_entry->state.bs = bs;
+@@ -3008,9 +3008,9 @@ cleanup:
+         if (ret && bs_entry->prepared) {
+             bdrv_reopen_abort(&bs_entry->state);
+         } else if (ret) {
+-            QDECREF(bs_entry->state.explicit_options);
++            qobject_unref(bs_entry->state.explicit_options);
+         }
+-        QDECREF(bs_entry->state.options);
++        qobject_unref(bs_entry->state.options);
+         g_free(bs_entry);
+     }
+     g_free(bs_queue);
+@@ -3253,7 +3253,7 @@ void bdrv_reopen_commit(BDRVReopenState *reopen_state)
+     }
+ 
+     /* set BDS specific flags now */
+-    QDECREF(bs->explicit_options);
++    qobject_unref(bs->explicit_options);
+ 
+     bs->explicit_options   = reopen_state->explicit_options;
+     bs->open_flags         = reopen_state->flags;
+@@ -3296,7 +3296,7 @@ void bdrv_reopen_abort(BDRVReopenState *reopen_state)
+         drv->bdrv_reopen_abort(reopen_state);
+     }
+ 
+-    QDECREF(reopen_state->explicit_options);
++    qobject_unref(reopen_state->explicit_options);
+ 
+     bdrv_abort_perm_update(reopen_state->bs);
+ }
+@@ -3343,11 +3343,11 @@ static void bdrv_close(BlockDriverState *bs)
+     bs->total_sectors = 0;
+     bs->encrypted = false;
+     bs->sg = false;
+-    QDECREF(bs->options);
+-    QDECREF(bs->explicit_options);
++    qobject_unref(bs->options);
++    qobject_unref(bs->explicit_options);
+     bs->options = NULL;
+     bs->explicit_options = NULL;
+-    QDECREF(bs->full_open_options);
++    qobject_unref(bs->full_open_options);
+     bs->full_open_options = NULL;
+ 
+     bdrv_release_named_dirty_bitmaps(bs);
+@@ -5134,7 +5134,7 @@ static bool append_open_options(QDict *d, BlockDriverState *bs)
+             continue;
+         }
+ 
+-        qobject_incref(qdict_entry_value(entry));
++        qobject_ref(qdict_entry_value(entry));
+         qdict_put_obj(d, qdict_entry_key(entry), qdict_entry_value(entry));
+         found_any = true;
+     }
+@@ -5174,21 +5174,21 @@ void bdrv_refresh_filename(BlockDriverState *bs)
+          * information before refreshing it */
+         bs->exact_filename[0] = '\0';
+         if (bs->full_open_options) {
+-            QDECREF(bs->full_open_options);
++            qobject_unref(bs->full_open_options);
+             bs->full_open_options = NULL;
+         }
+ 
+         opts = qdict_new();
+         append_open_options(opts, bs);
+         drv->bdrv_refresh_filename(bs, opts);
+-        QDECREF(opts);
++        qobject_unref(opts);
+     } else if (bs->file) {
+         /* Try to reconstruct valid information from the underlying file */
+         bool has_open_options;
+ 
+         bs->exact_filename[0] = '\0';
+         if (bs->full_open_options) {
+-            QDECREF(bs->full_open_options);
++            qobject_unref(bs->full_open_options);
+             bs->full_open_options = NULL;
+         }
+ 
+@@ -5207,12 +5207,12 @@ void bdrv_refresh_filename(BlockDriverState *bs)
+          * suffices without querying the (exact_)filename of this BDS. */
+         if (bs->file->bs->full_open_options) {
+             qdict_put_str(opts, "driver", drv->format_name);
+-            QINCREF(bs->file->bs->full_open_options);
++            qobject_ref(bs->file->bs->full_open_options);
+             qdict_put(opts, "file", bs->file->bs->full_open_options);
+ 
+             bs->full_open_options = opts;
+         } else {
+-            QDECREF(opts);
++            qobject_unref(opts);
+         }
+     } else if (!bs->full_open_options && qdict_size(bs->options)) {
+         /* There is no underlying file BDS (at least referenced by BDS.file),
+@@ -5246,7 +5246,7 @@ void bdrv_refresh_filename(BlockDriverState *bs)
+         QString *json = qobject_to_json(QOBJECT(bs->full_open_options));
+         snprintf(bs->filename, sizeof(bs->filename), "json:%s",
+                  qstring_get_str(json));
+-        QDECREF(json);
++        qobject_unref(json);
+     }
+ }
+ 
+diff --git a/block/blkdebug.c b/block/blkdebug.c
+index 5897124..689703d 100644
+--- a/block/blkdebug.c
++++ b/block/blkdebug.c
+@@ -845,12 +845,12 @@ static void blkdebug_refresh_filename(BlockDriverState *bs, QDict *options)
+     opts = qdict_new();
+     qdict_put_str(opts, "driver", "blkdebug");
+ 
+-    QINCREF(bs->file->bs->full_open_options);
++    qobject_ref(bs->file->bs->full_open_options);
+     qdict_put(opts, "image", bs->file->bs->full_open_options);
+ 
+     for (e = qdict_first(options); e; e = qdict_next(options, e)) {
+         if (strcmp(qdict_entry_key(e), "x-image")) {
+-            qobject_incref(qdict_entry_value(e));
++            qobject_ref(qdict_entry_value(e));
+             qdict_put_obj(opts, qdict_entry_key(e), qdict_entry_value(e));
+         }
+     }
+diff --git a/block/blkverify.c b/block/blkverify.c
+index 331365b..3cffcb1 100644
+--- a/block/blkverify.c
++++ b/block/blkverify.c
+@@ -291,9 +291,9 @@ static void blkverify_refresh_filename(BlockDriverState *bs, QDict *options)
+         QDict *opts = qdict_new();
+         qdict_put_str(opts, "driver", "blkverify");
+ 
+-        QINCREF(bs->file->bs->full_open_options);
++        qobject_ref(bs->file->bs->full_open_options);
+         qdict_put(opts, "raw", bs->file->bs->full_open_options);
+-        QINCREF(s->test_file->bs->full_open_options);
++        qobject_ref(s->test_file->bs->full_open_options);
+         qdict_put(opts, "test", s->test_file->bs->full_open_options);
+ 
+         bs->full_open_options = opts;
+diff --git a/block/crypto.c b/block/crypto.c
+index bc6c7e3..7e7ad2d 100644
+--- a/block/crypto.c
++++ b/block/crypto.c
+@@ -305,7 +305,7 @@ static int block_crypto_open_generic(QCryptoBlockFormat format,
+ 
+     ret = 0;
+  cleanup:
+-    QDECREF(cryptoopts);
++    qobject_unref(cryptoopts);
+     qapi_free_QCryptoBlockOpenOptions(open_opts);
+     return ret;
+ }
+@@ -635,7 +635,7 @@ static int coroutine_fn block_crypto_co_create_opts_luks(const char *filename,
+ fail:
+     bdrv_unref(bs);
+     qapi_free_QCryptoBlockCreateOptions(create_opts);
+-    QDECREF(cryptoopts);
++    qobject_unref(cryptoopts);
+     return ret;
+ }
+ 
+diff --git a/block/gluster.c b/block/gluster.c
+index 4adc1a8..55be566 100644
+--- a/block/gluster.c
++++ b/block/gluster.c
+@@ -650,7 +650,7 @@ static int qemu_gluster_parse_json(BlockdevOptionsGluster *gconf,
+         }
+         gsconf = NULL;
+ 
+-        QDECREF(backing_options);
++        qobject_unref(backing_options);
+         backing_options = NULL;
+         g_free(str);
+         str = NULL;
+@@ -663,7 +663,7 @@ out:
+     qapi_free_SocketAddress(gsconf);
+     qemu_opts_del(opts);
+     g_free(str);
+-    QDECREF(backing_options);
++    qobject_unref(backing_options);
+     errno = EINVAL;
+     return -errno;
+ }
+diff --git a/block/iscsi.c b/block/iscsi.c
+index f5aecfc..d19ae0e 100644
+--- a/block/iscsi.c
++++ b/block/iscsi.c
+@@ -2143,7 +2143,7 @@ static int coroutine_fn iscsi_co_create_opts(const char *filename, QemuOpts *opt
+     } else {
+         ret = iscsi_open(bs, bs_options, 0, NULL);
+     }
+-    QDECREF(bs_options);
++    qobject_unref(bs_options);
+ 
+     if (ret != 0) {
+         goto out;
+diff --git a/block/nbd.c b/block/nbd.c
+index 1e2b3ba..3e1693c 100644
+--- a/block/nbd.c
++++ b/block/nbd.c
+@@ -293,8 +293,8 @@ static SocketAddress *nbd_config(BDRVNBDState *s, QDict *options,
+     }
+ 
+ done:
+-    QDECREF(addr);
+-    qobject_decref(crumpled_addr);
++    qobject_unref(addr);
++    qobject_unref(crumpled_addr);
+     visit_free(iv);
+     return saddr;
+ }
+diff --git a/block/nfs.c b/block/nfs.c
+index 2577df4..66fddf1 100644
+--- a/block/nfs.c
++++ b/block/nfs.c
+@@ -567,7 +567,7 @@ static BlockdevOptionsNfs *nfs_options_qdict_to_qapi(QDict *options,
+     v = qobject_input_visitor_new_keyval(crumpled);
+     visit_type_BlockdevOptionsNfs(v, NULL, &opts, &local_err);
+     visit_free(v);
+-    qobject_decref(crumpled);
++    qobject_unref(crumpled);
+ 
+     if (local_err) {
+         return NULL;
+@@ -683,7 +683,7 @@ static int coroutine_fn nfs_file_co_create_opts(const char *url, QemuOpts *opts,
+ 
+     ret = 0;
+ out:
+-    QDECREF(options);
++    qobject_unref(options);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+ }
+diff --git a/block/null.c b/block/null.c
+index 806a863..700a2d0 100644
+--- a/block/null.c
++++ b/block/null.c
+@@ -244,7 +244,7 @@ static int coroutine_fn null_co_block_status(BlockDriverState *bs,
+ 
+ static void null_refresh_filename(BlockDriverState *bs, QDict *opts)
+ {
+-    QINCREF(opts);
++    qobject_ref(opts);
+     qdict_del(opts, "filename");
+ 
+     if (!qdict_size(opts)) {
+diff --git a/block/nvme.c b/block/nvme.c
+index c4f3a7b..e192da9 100644
+--- a/block/nvme.c
++++ b/block/nvme.c
+@@ -1073,7 +1073,7 @@ static int nvme_reopen_prepare(BDRVReopenState *reopen_state,
+ 
+ static void nvme_refresh_filename(BlockDriverState *bs, QDict *opts)
+ {
+-    QINCREF(opts);
++    qobject_ref(opts);
+     qdict_del(opts, "filename");
+ 
+     if (!qdict_size(opts)) {
+diff --git a/block/parallels.c b/block/parallels.c
+index 799215e..045810d 100644
+--- a/block/parallels.c
++++ b/block/parallels.c
+@@ -651,7 +651,7 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple(qdict, errp);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+         ret = -EINVAL;
+@@ -682,7 +682,7 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
+     ret = 0;
+ 
+ done:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     bdrv_unref(bs);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+diff --git a/block/qapi.c b/block/qapi.c
+index 04c6fc6..e12968f 100644
+--- a/block/qapi.c
++++ b/block/qapi.c
+@@ -773,7 +773,7 @@ void bdrv_image_info_specific_dump(fprintf_function func_fprintf, void *f,
+     visit_complete(v, &obj);
+     data = qdict_get(qobject_to(QDict, obj), "data");
+     dump_qobject(func_fprintf, f, 1, data);
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     visit_free(v);
+ }
+ 
+diff --git a/block/qcow.c b/block/qcow.c
+index f928916..4b2f7db 100644
+--- a/block/qcow.c
++++ b/block/qcow.c
+@@ -315,7 +315,7 @@ static int qcow_open(BlockDriverState *bs, QDict *options, int flags,
+         goto fail;
+     }
+ 
+-    QDECREF(encryptopts);
++    qobject_unref(encryptopts);
+     qapi_free_QCryptoBlockOpenOptions(crypto_opts);
+     qemu_co_mutex_init(&s->lock);
+     return 0;
+@@ -326,7 +326,7 @@ static int qcow_open(BlockDriverState *bs, QDict *options, int flags,
+     g_free(s->cluster_cache);
+     g_free(s->cluster_data);
+     qcrypto_block_free(s->crypto);
+-    QDECREF(encryptopts);
++    qobject_unref(encryptopts);
+     qapi_free_QCryptoBlockOpenOptions(crypto_opts);
+     return ret;
+ }
+@@ -995,7 +995,7 @@ static int coroutine_fn qcow_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple(qdict, errp);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+         ret = -EINVAL;
+@@ -1025,7 +1025,7 @@ static int coroutine_fn qcow_co_create_opts(const char *filename,
+ 
+     ret = 0;
+ fail:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     bdrv_unref(bs);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+diff --git a/block/qcow2.c b/block/qcow2.c
+index ef68772..2f36e63 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -1063,7 +1063,7 @@ static int qcow2_update_options_prepare(BlockDriverState *bs,
+ 
+     ret = 0;
+ fail:
+-    QDECREF(encryptopts);
++    qobject_unref(encryptopts);
+     qemu_opts_del(opts);
+     opts = NULL;
+     return ret;
+@@ -2183,7 +2183,7 @@ static void coroutine_fn qcow2_co_invalidate_cache(BlockDriverState *bs,
+     qemu_co_mutex_lock(&s->lock);
+     ret = qcow2_do_open(bs, options, flags, &local_err);
+     qemu_co_mutex_unlock(&s->lock);
+-    QDECREF(options);
++    qobject_unref(options);
+     if (local_err) {
+         error_propagate(errp, local_err);
+         error_prepend(errp, "Could not reopen qcow2 layer: ");
+@@ -3139,7 +3139,7 @@ static int coroutine_fn qcow2_co_create_opts(const char *filename, QemuOpts *opt
+ 
+     /* Now get the QAPI type BlockdevCreateOptions */
+     qobj = qdict_crumple(qdict, errp);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+         ret = -EINVAL;
+@@ -3168,7 +3168,7 @@ static int coroutine_fn qcow2_co_create_opts(const char *filename, QemuOpts *opt
+ 
+     ret = 0;
+ finish:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     bdrv_unref(bs);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+diff --git a/block/qed.c b/block/qed.c
+index 35ff505..1db8eaf 100644
+--- a/block/qed.c
++++ b/block/qed.c
+@@ -763,7 +763,7 @@ static int coroutine_fn bdrv_qed_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple(qdict, errp);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+         ret = -EINVAL;
+@@ -789,7 +789,7 @@ static int coroutine_fn bdrv_qed_co_create_opts(const char *filename,
+     ret = bdrv_qed_co_create(create_options, errp);
+ 
+ fail:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     bdrv_unref(bs);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+diff --git a/block/quorum.c b/block/quorum.c
+index cfe484a..862cea3 100644
+--- a/block/quorum.c
++++ b/block/quorum.c
+@@ -1082,7 +1082,7 @@ static void quorum_refresh_filename(BlockDriverState *bs, QDict *options)
+ 
+     children = qlist_new();
+     for (i = 0; i < s->num_children; i++) {
+-        QINCREF(s->children[i]->bs->full_open_options);
++        qobject_ref(s->children[i]->bs->full_open_options);
+         qlist_append(children, s->children[i]->bs->full_open_options);
+     }
+ 
+diff --git a/block/rbd.c b/block/rbd.c
+index c9359d0..a14b42f 100644
+--- a/block/rbd.c
++++ b/block/rbd.c
+@@ -226,7 +226,7 @@ static void qemu_rbd_parse_filename(const char *filename, QDict *options,
+ 
+ done:
+     g_free(buf);
+-    QDECREF(keypairs);
++    qobject_unref(keypairs);
+     return;
+ }
+ 
+@@ -275,17 +275,17 @@ static int qemu_rbd_set_keypairs(rados_t cluster, const char *keypairs_json,
+         key = qstring_get_str(name);
+ 
+         ret = rados_conf_set(cluster, key, qstring_get_str(value));
+-        QDECREF(value);
++        qobject_unref(value);
+         if (ret < 0) {
+             error_setg_errno(errp, -ret, "invalid conf option %s", key);
+-            QDECREF(name);
++            qobject_unref(name);
+             ret = -EINVAL;
+             break;
+         }
+-        QDECREF(name);
++        qobject_unref(name);
+     }
+ 
+-    QDECREF(keypairs);
++    qobject_unref(keypairs);
+     return ret;
+ }
+ 
+@@ -449,7 +449,7 @@ static int coroutine_fn qemu_rbd_co_create_opts(const char *filename,
+     }
+ 
+ exit:
+-    QDECREF(options);
++    qobject_unref(options);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+ }
+@@ -664,7 +664,7 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
+     v = qobject_input_visitor_new_keyval(crumpled);
+     visit_type_BlockdevOptionsRbd(v, NULL, &opts, &local_err);
+     visit_free(v);
+-    qobject_decref(crumpled);
++    qobject_unref(crumpled);
+ 
+     if (local_err) {
+         error_propagate(errp, local_err);
+diff --git a/block/sheepdog.c b/block/sheepdog.c
+index 387f59c..07529f4 100644
+--- a/block/sheepdog.c
++++ b/block/sheepdog.c
+@@ -567,8 +567,8 @@ static SocketAddress *sd_server_config(QDict *options, Error **errp)
+ 
+ done:
+     visit_free(iv);
+-    qobject_decref(crumpled_server);
+-    QDECREF(server);
++    qobject_unref(crumpled_server);
++    qobject_unref(server);
+     return saddr;
+ }
+ 
+@@ -1883,7 +1883,7 @@ static int sd_create_prealloc(BlockdevOptionsSheepdog *location, int64_t size,
+ 
+     if (local_err) {
+         error_propagate(errp, local_err);
+-        qobject_decref(obj);
++        qobject_unref(obj);
+         return -EINVAL;
+     }
+ 
+@@ -1901,7 +1901,7 @@ static int sd_create_prealloc(BlockdevOptionsSheepdog *location, int64_t size,
+     ret = sd_prealloc(bs, 0, size, errp);
+ fail:
+     bdrv_unref(bs);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     return ret;
+ }
+ 
+@@ -2226,7 +2226,7 @@ static int coroutine_fn sd_co_create_opts(const char *filename, QemuOpts *opts,
+     v = qobject_input_visitor_new_keyval(crumpled);
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+-    qobject_decref(crumpled);
++    qobject_unref(crumpled);
+ 
+     if (local_err) {
+         error_propagate(errp, local_err);
+@@ -2252,7 +2252,7 @@ static int coroutine_fn sd_co_create_opts(const char *filename, QemuOpts *opts,
+     ret = sd_co_create(create_options, errp);
+ fail:
+     qapi_free_BlockdevCreateOptions(create_options);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     return ret;
+ }
+ 
+diff --git a/block/snapshot.c b/block/snapshot.c
+index eacc1f1..2953d96 100644
+--- a/block/snapshot.c
++++ b/block/snapshot.c
+@@ -214,7 +214,7 @@ int bdrv_snapshot_goto(BlockDriverState *bs,
+         bdrv_ref(file);
+ 
+         qdict_extract_subqdict(options, &file_options, "file.");
+-        QDECREF(file_options);
++        qobject_unref(file_options);
+         qdict_put_str(options, "file", bdrv_get_node_name(file));
+ 
+         drv->bdrv_close(bs);
+@@ -223,7 +223,7 @@ int bdrv_snapshot_goto(BlockDriverState *bs,
+ 
+         ret = bdrv_snapshot_goto(file, snapshot_id, errp);
+         open_ret = drv->bdrv_open(bs, options, bs->open_flags, &local_err);
+-        QDECREF(options);
++        qobject_unref(options);
+         if (open_ret < 0) {
+             bdrv_unref(file);
+             bs->drv = NULL;
+diff --git a/block/ssh.c b/block/ssh.c
+index ab3acf0..412a1bf 100644
+--- a/block/ssh.c
++++ b/block/ssh.c
+@@ -638,7 +638,7 @@ static BlockdevOptionsSsh *ssh_parse_options(QDict *options, Error **errp)
+     v = qobject_input_visitor_new(crumpled);
+     visit_type_BlockdevOptionsSsh(v, NULL, &result, &local_err);
+     visit_free(v);
+-    qobject_decref(crumpled);
++    qobject_unref(crumpled);
+ 
+     if (local_err) {
+         error_propagate(errp, local_err);
+@@ -917,7 +917,7 @@ static int coroutine_fn ssh_co_create_opts(const char *filename, QemuOpts *opts,
+     ret = ssh_co_create(create_options, errp);
+ 
+  out:
+-    QDECREF(uri_options);
++    qobject_unref(uri_options);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+ }
+diff --git a/block/vdi.c b/block/vdi.c
+index 4a2d1ff..96a22b8 100644
+--- a/block/vdi.c
++++ b/block/vdi.c
+@@ -951,7 +951,7 @@ static int coroutine_fn vdi_co_create_opts(const char *filename, QemuOpts *opts,
+     /* Create the vdi image (format layer) */
+     ret = vdi_co_do_create(create_options, block_size, errp);
+ done:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     qapi_free_BlockdevCreateOptions(create_options);
+     bdrv_unref(bs_file);
+     return ret;
+diff --git a/block/vhdx.c b/block/vhdx.c
+index 6ac0424..c3a4220 100644
+--- a/block/vhdx.c
++++ b/block/vhdx.c
+@@ -2003,7 +2003,7 @@ static int coroutine_fn vhdx_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple(qdict, errp);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+         ret = -EINVAL;
+@@ -2049,7 +2049,7 @@ static int coroutine_fn vhdx_co_create_opts(const char *filename,
+     ret = vhdx_co_create(create_options, errp);
+ 
+ fail:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     bdrv_unref(bs);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+diff --git a/block/vpc.c b/block/vpc.c
+index 44f99a4..0ebfcd3 100644
+--- a/block/vpc.c
++++ b/block/vpc.c
+@@ -1119,7 +1119,7 @@ static int coroutine_fn vpc_co_create_opts(const char *filename,
+     qdict_put_str(qdict, "file", bs->node_name);
+ 
+     qobj = qdict_crumple(qdict, errp);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     qdict = qobject_to(QDict, qobj);
+     if (qdict == NULL) {
+         ret = -EINVAL;
+@@ -1157,7 +1157,7 @@ static int coroutine_fn vpc_co_create_opts(const char *filename,
+     ret = vpc_co_create(create_options, errp);
+ 
+ fail:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     bdrv_unref(bs);
+     qapi_free_BlockdevCreateOptions(create_options);
+     return ret;
+diff --git a/block/vvfat.c b/block/vvfat.c
+index 1569783..662dca0 100644
+--- a/block/vvfat.c
++++ b/block/vvfat.c
+@@ -3179,7 +3179,7 @@ static int enable_write_target(BlockDriverState *bs, Error **errp)
+     qdict_put_str(options, "write-target.driver", "qcow");
+     s->qcow = bdrv_open_child(s->qcow_filename, options, "write-target", bs,
+                               &child_vvfat_qcow, false, errp);
+-    QDECREF(options);
++    qobject_unref(options);
+     if (!s->qcow) {
+         ret = -EINVAL;
+         goto err;
+diff --git a/block/vxhs.c b/block/vxhs.c
+index 68edb51..96e83d9 100644
+--- a/block/vxhs.c
++++ b/block/vxhs.c
+@@ -497,7 +497,7 @@ static int vxhs_open(BlockDriverState *bs, QDict *options,
+ 
+ out:
+     g_free(of_vsa_addr);
+-    QDECREF(backing_options);
++    qobject_unref(backing_options);
+     qemu_opts_del(tcp_opts);
+     qemu_opts_del(opts);
+     g_free(cacert);
+diff --git a/blockdev.c b/blockdev.c
+index 60b37dc..129e444 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -617,7 +617,7 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
+         blk_rs->read_only     = read_only;
+         blk_rs->detect_zeroes = detect_zeroes;
+ 
+-        QDECREF(bs_opts);
++        qobject_unref(bs_opts);
+     } else {
+         if (file && !*file) {
+             file = NULL;
+@@ -673,16 +673,16 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
+ 
+ err_no_bs_opts:
+     qemu_opts_del(opts);
+-    QDECREF(interval_dict);
+-    QDECREF(interval_list);
++    qobject_unref(interval_dict);
++    qobject_unref(interval_list);
+     return blk;
+ 
+ early_err:
+     qemu_opts_del(opts);
+-    QDECREF(interval_dict);
+-    QDECREF(interval_list);
++    qobject_unref(interval_dict);
++    qobject_unref(interval_list);
+ err_no_opts:
+-    QDECREF(bs_opts);
++    qobject_unref(bs_opts);
+     return NULL;
+ }
+ 
+@@ -1171,7 +1171,7 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type)
+ 
+ fail:
+     qemu_opts_del(legacy_opts);
+-    QDECREF(bs_opts);
++    qobject_unref(bs_opts);
+     return dinfo;
+ }
+ 
+@@ -4068,7 +4068,7 @@ void hmp_drive_add_node(Monitor *mon, const char *optstr)
+     qdict = qemu_opts_to_qdict(opts, NULL);
+ 
+     if (!qdict_get_try_str(qdict, "node-name")) {
+-        QDECREF(qdict);
++        qobject_unref(qdict);
+         error_report("'node-name' needs to be specified");
+         goto out;
+     }
+diff --git a/docs/devel/qapi-code-gen.txt b/docs/devel/qapi-code-gen.txt
+index a569d24..b9b6eab 100644
+--- a/docs/devel/qapi-code-gen.txt
++++ b/docs/devel/qapi-code-gen.txt
+@@ -1340,7 +1340,7 @@ Example:
+         emit(EXAMPLE_QAPI_EVENT_MY_EVENT, qmp, &err);
+ 
+         error_propagate(errp, err);
+-        QDECREF(qmp);
++        qobject_unref(qmp);
+     }
+ 
+     const QEnumLookup example_QAPIEvent_lookup = {
+diff --git a/hw/i386/acpi-build.c b/hw/i386/acpi-build.c
+index 976d151..b309a97 100644
+--- a/hw/i386/acpi-build.c
++++ b/hw/i386/acpi-build.c
+@@ -201,21 +201,21 @@ static void acpi_get_pm_info(AcpiPmInfo *pm)
+     } else {
+         pm->s3_disabled = false;
+     }
+-    qobject_decref(o);
++    qobject_unref(o);
+     o = object_property_get_qobject(obj, ACPI_PM_PROP_S4_DISABLED, NULL);
+     if (o) {
+         pm->s4_disabled = qnum_get_uint(qobject_to(QNum, o));
+     } else {
+         pm->s4_disabled = false;
+     }
+-    qobject_decref(o);
++    qobject_unref(o);
+     o = object_property_get_qobject(obj, ACPI_PM_PROP_S4_VAL, NULL);
+     if (o) {
+         pm->s4_val = qnum_get_uint(qobject_to(QNum, o));
+     } else {
+         pm->s4_val = false;
+     }
+-    qobject_decref(o);
++    qobject_unref(o);
+ 
+     pm->pcihp_bridge_en =
+         object_property_get_bool(obj, "acpi-pci-hotplug-with-bridge-support",
+@@ -573,7 +573,7 @@ static void build_append_pci_bus_devices(Aml *parent_scope, PCIBus *bus,
+         }
+     }
+     aml_append(parent_scope, method);
+-    qobject_decref(bsel);
++    qobject_unref(bsel);
+ }
+ 
+ /**
+@@ -2617,12 +2617,12 @@ static bool acpi_get_mcfg(AcpiMcfgInfo *mcfg)
+         return false;
+     }
+     mcfg->mcfg_base = qnum_get_uint(qobject_to(QNum, o));
+-    qobject_decref(o);
++    qobject_unref(o);
+ 
+     o = object_property_get_qobject(pci_host, PCIE_HOST_MCFG_SIZE, NULL);
+     assert(o);
+     mcfg->mcfg_size = qnum_get_uint(qobject_to(QNum, o));
+-    qobject_decref(o);
++    qobject_unref(o);
+     return true;
+ }
+ 
+diff --git a/hw/ppc/spapr_drc.c b/hw/ppc/spapr_drc.c
+index aa25113..8a045d6 100644
+--- a/hw/ppc/spapr_drc.c
++++ b/hw/ppc/spapr_drc.c
+@@ -305,7 +305,7 @@ static void prop_get_fdt(Object *obj, Visitor *v, const char *name,
+ 
+     if (!drc->fdt) {
+         visit_type_null(v, NULL, &null, errp);
+-        QDECREF(null);
++        qobject_unref(null);
+         return;
+     }
+ 
+diff --git a/hw/usb/xen-usb.c b/hw/usb/xen-usb.c
+index 3beeb0d..b3a90c0 100644
+--- a/hw/usb/xen-usb.c
++++ b/hw/usb/xen-usb.c
+@@ -763,7 +763,7 @@ static void usbback_portid_add(struct usbback_info *usbif, unsigned port,
+     if (!usbif->ports[port - 1].dev) {
+         goto err;
+     }
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     speed = usbif->ports[port - 1].dev->speed;
+     switch (speed) {
+     case USB_SPEED_LOW:
+@@ -796,7 +796,7 @@ static void usbback_portid_add(struct usbback_info *usbif, unsigned port,
+     return;
+ 
+ err:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     xen_pv_printf(&usbif->xendev, 0, "device %s could not be opened\n", busid);
+ }
+ 
+diff --git a/include/qapi/qmp/qnull.h b/include/qapi/qmp/qnull.h
+index e8ea2c3..75b29c6 100644
+--- a/include/qapi/qmp/qnull.h
++++ b/include/qapi/qmp/qnull.h
+@@ -23,7 +23,7 @@ extern QNull qnull_;
+ 
+ static inline QNull *qnull(void)
+ {
+-    QINCREF(&qnull_);
++    qobject_ref(&qnull_);
+     return &qnull_;
+ }
+ 
+diff --git a/include/qapi/qmp/qobject.h b/include/qapi/qmp/qobject.h
+index a713c01..e20006f 100644
+--- a/include/qapi/qmp/qobject.h
++++ b/include/qapi/qmp/qobject.h
+@@ -15,17 +15,17 @@
+  * ------------------------------------
+  *
+  *  - Returning references: A function that returns an object may
+- *  return it as either a weak or a strong reference.  If the reference
+- *  is strong, you are responsible for calling QDECREF() on the reference
+- *  when you are done.
++ *  return it as either a weak or a strong reference.  If the
++ *  reference is strong, you are responsible for calling
++ *  qobject_unref() on the reference when you are done.
+  *
+  *  If the reference is weak, the owner of the reference may free it at
+  *  any time in the future.  Before storing the reference anywhere, you
+- *  should call QINCREF() to make the reference strong.
++ *  should call qobject_ref() to make the reference strong.
+  *
+  *  - Transferring ownership: when you transfer ownership of a reference
+  *  by calling a function, you are no longer responsible for calling
+- *  QDECREF() when the reference is no longer needed.  In other words,
++ *  qobject_unref() when the reference is no longer needed.  In other words,
+  *  when the function returns you must behave as if the reference to the
+  *  passed object was weak.
+  */
+@@ -50,14 +50,6 @@ struct QObject {
+     _obj ? container_of(&(_obj)->base, QObject, base) : NULL;   \
+ })
+ 
+-/* High-level interface for qobject_incref() */
+-#define QINCREF(obj)      \
+-    qobject_incref(QOBJECT(obj))
+-
+-/* High-level interface for qobject_decref() */
+-#define QDECREF(obj)              \
+-    qobject_decref(obj ? QOBJECT(obj) : NULL)
+-
+ /* Required for qobject_to() */
+ #define QTYPE_CAST_TO_QNull     QTYPE_QNULL
+ #define QTYPE_CAST_TO_QNum      QTYPE_QNUM
+@@ -80,10 +72,7 @@ static inline void qobject_init(QObject *obj, QType type)
+     obj->base.type = type;
+ }
+ 
+-/**
+- * qobject_incref(): Increment QObject's reference count
+- */
+-static inline void qobject_incref(QObject *obj)
++static inline void qobject_ref_impl(QObject *obj)
+ {
+     if (obj) {
+         obj->base.refcnt++;
+@@ -104,11 +93,7 @@ bool qobject_is_equal(const QObject *x, const QObject *y);
+  */
+ void qobject_destroy(QObject *obj);
+ 
+-/**
+- * qobject_decref(): Decrement QObject's reference count, deallocate
+- * when it reaches zero
+- */
+-static inline void qobject_decref(QObject *obj)
++static inline void qobject_unref_impl(QObject *obj)
+ {
+     assert(!obj || obj->base.refcnt);
+     if (obj && --obj->base.refcnt == 0) {
+@@ -117,6 +102,17 @@ static inline void qobject_decref(QObject *obj)
+ }
+ 
+ /**
++ * qobject_ref(): Increment QObject's reference count
++ */
++#define qobject_ref(obj) qobject_ref_impl(QOBJECT(obj))
++
++/**
++ * qobject_unref(): Decrement QObject's reference count, deallocate
++ * when it reaches zero
++ */
++#define qobject_unref(obj) qobject_unref_impl(QOBJECT(obj))
++
++/**
+  * qobject_type(): Return the QObject's type
+  */
+ static inline QType qobject_type(const QObject *obj)
+diff --git a/migration/migration.c b/migration/migration.c
+index ceb1697..ef4bb42 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -1008,14 +1008,14 @@ void qmp_migrate_set_parameters(MigrateSetParameters *params, Error **errp)
+     /* TODO Rewrite "" to null instead */
+     if (params->has_tls_creds
+         && params->tls_creds->type == QTYPE_QNULL) {
+-        QDECREF(params->tls_creds->u.n);
++        qobject_unref(params->tls_creds->u.n);
+         params->tls_creds->type = QTYPE_QSTRING;
+         params->tls_creds->u.s = strdup("");
+     }
+     /* TODO Rewrite "" to null instead */
+     if (params->has_tls_hostname
+         && params->tls_hostname->type == QTYPE_QNULL) {
+-        QDECREF(params->tls_hostname->u.n);
++        qobject_unref(params->tls_hostname->u.n);
+         params->tls_hostname->type = QTYPE_QSTRING;
+         params->tls_hostname->u.s = strdup("");
+     }
+diff --git a/migration/qjson.c b/migration/qjson.c
+index 9d7f6eb..e9889bd 100644
+--- a/migration/qjson.c
++++ b/migration/qjson.c
+@@ -109,6 +109,6 @@ void qjson_finish(QJSON *json)
+ 
+ void qjson_destroy(QJSON *json)
+ {
+-    QDECREF(json->str);
++    qobject_unref(json->str);
+     g_free(json);
+ }
+diff --git a/monitor.c b/monitor.c
+index 4f595ae..32f72f2 100644
+--- a/monitor.c
++++ b/monitor.c
+@@ -329,8 +329,8 @@ int monitor_read_password(Monitor *mon, ReadLineFunc *readline_func,
+ 
+ static void qmp_request_free(QMPRequest *req)
+ {
+-    qobject_decref(req->id);
+-    qobject_decref(req->req);
++    qobject_unref(req->id);
++    qobject_unref(req->req);
+     g_free(req);
+ }
+ 
+@@ -346,7 +346,7 @@ static void monitor_qmp_cleanup_req_queue_locked(Monitor *mon)
+ static void monitor_qmp_cleanup_resp_queue_locked(Monitor *mon)
+ {
+     while (!g_queue_is_empty(mon->qmp.qmp_responses)) {
+-        qobject_decref(g_queue_pop_head(mon->qmp.qmp_responses));
++        qobject_unref((QObject *)g_queue_pop_head(mon->qmp.qmp_responses));
+     }
+ }
+ 
+@@ -391,14 +391,14 @@ static void monitor_flush_locked(Monitor *mon)
+         rc = qemu_chr_fe_write(&mon->chr, (const uint8_t *) buf, len);
+         if ((rc < 0 && errno != EAGAIN) || (rc == len)) {
+             /* all flushed or error */
+-            QDECREF(mon->outbuf);
++            qobject_unref(mon->outbuf);
+             mon->outbuf = qstring_new();
+             return;
+         }
+         if (rc > 0) {
+             /* partial write */
+             QString *tmp = qstring_from_str(buf + rc);
+-            QDECREF(mon->outbuf);
++            qobject_unref(mon->outbuf);
+             mon->outbuf = tmp;
+         }
+         if (mon->out_watch == 0) {
+@@ -482,7 +482,7 @@ static void monitor_json_emitter_raw(Monitor *mon,
+     qstring_append_chr(json, '\n');
+     monitor_puts(mon, qstring_get_str(json));
+ 
+-    QDECREF(json);
++    qobject_unref(json);
+ }
+ 
+ static void monitor_json_emitter(Monitor *mon, QObject *data)
+@@ -494,9 +494,9 @@ static void monitor_json_emitter(Monitor *mon, QObject *data)
+          * caller won't free the data (which will be finally freed in
+          * responder thread).
+          */
+-        qobject_incref(data);
++        qobject_ref(data);
+         qemu_mutex_lock(&mon->qmp.qmp_queue_lock);
+-        g_queue_push_tail(mon->qmp.qmp_responses, (void *)data);
++        g_queue_push_tail(mon->qmp.qmp_responses, data);
+         qemu_mutex_unlock(&mon->qmp.qmp_queue_lock);
+         qemu_bh_schedule(mon_global.qmp_respond_bh);
+     } else {
+@@ -546,7 +546,7 @@ static void monitor_qmp_bh_responder(void *opaque)
+             break;
+         }
+         monitor_json_emitter_raw(response.mon, response.data);
+-        qobject_decref(response.data);
++        qobject_unref(response.data);
+     }
+ }
+ 
+@@ -613,9 +613,9 @@ monitor_qapi_event_queue(QAPIEvent event, QDict *qdict, Error **errp)
+              * last send.  Store event for sending when timer fires,
+              * replacing a prior stored event if any.
+              */
+-            QDECREF(evstate->qdict);
++            qobject_unref(evstate->qdict);
+             evstate->qdict = qdict;
+-            QINCREF(evstate->qdict);
++            qobject_ref(evstate->qdict);
+         } else {
+             /*
+              * Last send was (at least) evconf->rate ns ago.
+@@ -630,7 +630,7 @@ monitor_qapi_event_queue(QAPIEvent event, QDict *qdict, Error **errp)
+             evstate = g_new(MonitorQAPIEventState, 1);
+             evstate->event = event;
+             evstate->data = data;
+-            QINCREF(evstate->data);
++            qobject_ref(evstate->data);
+             evstate->qdict = NULL;
+             evstate->timer = timer_new_ns(event_clock_type,
+                                           monitor_qapi_event_handler,
+@@ -660,12 +660,12 @@ static void monitor_qapi_event_handler(void *opaque)
+         int64_t now = qemu_clock_get_ns(event_clock_type);
+ 
+         monitor_qapi_event_emit(evstate->event, evstate->qdict);
+-        QDECREF(evstate->qdict);
++        qobject_unref(evstate->qdict);
+         evstate->qdict = NULL;
+         timer_mod_ns(evstate->timer, now + evconf->rate);
+     } else {
+         g_hash_table_remove(monitor_qapi_event_state, evstate);
+-        QDECREF(evstate->data);
++        qobject_unref(evstate->data);
+         timer_free(evstate->timer);
+         g_free(evstate);
+     }
+@@ -747,7 +747,7 @@ static void monitor_data_destroy(Monitor *mon)
+         json_message_parser_destroy(&mon->qmp.parser);
+     }
+     readline_free(mon->rs);
+-    QDECREF(mon->outbuf);
++    qobject_unref(mon->outbuf);
+     qemu_mutex_destroy(&mon->out_lock);
+     qemu_mutex_destroy(&mon->qmp.qmp_queue_lock);
+     monitor_qmp_cleanup_req_queue_locked(mon);
+@@ -3380,7 +3380,7 @@ static QDict *monitor_parse_arguments(Monitor *mon,
+     return qdict;
+ 
+ fail:
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     g_free(key);
+     return NULL;
+ }
+@@ -3405,7 +3405,7 @@ static void handle_hmp_command(Monitor *mon, const char *cmdline)
+     }
+ 
+     cmd->cmd(mon, qdict);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ }
+ 
+ static void cmd_completion(Monitor *mon, const char *name, const char *list)
+@@ -4067,15 +4067,15 @@ static void monitor_qmp_respond(Monitor *mon, QObject *rsp,
+     if (rsp) {
+         if (id) {
+             /* This is for the qdict below. */
+-            qobject_incref(id);
++            qobject_ref(id);
+             qdict_put_obj(qobject_to(QDict, rsp), "id", id);
+         }
+ 
+         monitor_json_emitter(mon, rsp);
+     }
+ 
+-    qobject_decref(id);
+-    qobject_decref(rsp);
++    qobject_unref(id);
++    qobject_unref(rsp);
+ }
+ 
+ /*
+@@ -4098,7 +4098,7 @@ static void monitor_qmp_dispatch_one(QMPRequest *req_obj)
+     if (trace_event_get_state_backends(TRACE_HANDLE_QMP_COMMAND)) {
+         QString *req_json = qobject_to_json(req);
+         trace_handle_qmp_command(mon, qstring_get_str(req_json));
+-        QDECREF(req_json);
++        qobject_unref(req_json);
+     }
+ 
+     old_mon = cur_mon;
+@@ -4116,7 +4116,7 @@ static void monitor_qmp_dispatch_one(QMPRequest *req_obj)
+         monitor_resume(mon);
+     }
+ 
+-    qobject_decref(req);
++    qobject_unref(req);
+ }
+ 
+ /*
+@@ -4208,7 +4208,7 @@ static void handle_qmp_command(JSONMessageParser *parser, GQueue *tokens)
+         goto err;
+     }
+ 
+-    qobject_incref(id);
++    qobject_ref(id);
+     qdict_del(qdict, "id");
+ 
+     req_obj = g_new0(QMPRequest, 1);
+@@ -4263,7 +4263,7 @@ static void handle_qmp_command(JSONMessageParser *parser, GQueue *tokens)
+ 
+ err:
+     monitor_qmp_respond(mon, NULL, err, NULL);
+-    qobject_decref(req);
++    qobject_unref(req);
+ }
+ 
+ static void monitor_qmp_read(void *opaque, const uint8_t *buf, int size)
+@@ -4382,7 +4382,7 @@ static void monitor_qmp_event(void *opaque, int event)
+         monitor_qmp_caps_reset(mon);
+         data = get_qmp_greeting(mon);
+         monitor_json_emitter(mon, data);
+-        qobject_decref(data);
++        qobject_unref(data);
+         mon_refcount++;
+         break;
+     case CHR_EVENT_CLOSED:
+diff --git a/qapi/qapi-dealloc-visitor.c b/qapi/qapi-dealloc-visitor.c
+index fd23803..6b24afd 100644
+--- a/qapi/qapi-dealloc-visitor.c
++++ b/qapi/qapi-dealloc-visitor.c
+@@ -99,7 +99,7 @@ static void qapi_dealloc_type_anything(Visitor *v, const char *name,
+                                        QObject **obj, Error **errp)
+ {
+     if (obj) {
+-        qobject_decref(*obj);
++        qobject_unref(*obj);
+     }
+ }
+ 
+@@ -107,7 +107,7 @@ static void qapi_dealloc_type_null(Visitor *v, const char *name,
+                                    QNull **obj, Error **errp)
+ {
+     if (obj) {
+-        QDECREF(*obj);
++        qobject_unref(*obj);
+     }
+ }
+ 
+diff --git a/qapi/qmp-dispatch.c b/qapi/qmp-dispatch.c
+index dd05907..f9377b2 100644
+--- a/qapi/qmp-dispatch.c
++++ b/qapi/qmp-dispatch.c
+@@ -105,7 +105,7 @@ static QObject *do_qmp_dispatch(QmpCommandList *cmds, QObject *request,
+         args = qdict_new();
+     } else {
+         args = qdict_get_qdict(dict, "arguments");
+-        QINCREF(args);
++        qobject_ref(args);
+     }
+ 
+     cmd->fn(args, &ret, &local_err);
+@@ -117,7 +117,7 @@ static QObject *do_qmp_dispatch(QmpCommandList *cmds, QObject *request,
+         ret = QOBJECT(qdict_new());
+     }
+ 
+-    QDECREF(args);
++    qobject_unref(args);
+ 
+     return ret;
+ }
+@@ -166,7 +166,7 @@ QObject *qmp_dispatch(QmpCommandList *cmds, QObject *request)
+     } else if (ret) {
+         qdict_put_obj(rsp, "return", ret);
+     } else {
+-        QDECREF(rsp);
++        qobject_unref(rsp);
+         return NULL;
+     }
+ 
+diff --git a/qapi/qobject-input-visitor.c b/qapi/qobject-input-visitor.c
+index a7569d5..7a290c4 100644
+--- a/qapi/qobject-input-visitor.c
++++ b/qapi/qobject-input-visitor.c
+@@ -588,7 +588,7 @@ static void qobject_input_type_any(Visitor *v, const char *name, QObject **obj,
+         return;
+     }
+ 
+-    qobject_incref(qobj);
++    qobject_ref(qobj);
+     *obj = qobj;
+ }
+ 
+@@ -652,7 +652,7 @@ static void qobject_input_free(Visitor *v)
+         qobject_input_stack_object_free(tos);
+     }
+ 
+-    qobject_decref(qiv->root);
++    qobject_unref(qiv->root);
+     if (qiv->errname) {
+         g_string_free(qiv->errname, TRUE);
+     }
+@@ -678,7 +678,7 @@ static QObjectInputVisitor *qobject_input_visitor_base_new(QObject *obj)
+     v->visitor.free = qobject_input_free;
+ 
+     v->root = obj;
+-    qobject_incref(obj);
++    qobject_ref(obj);
+ 
+     return v;
+ }
+@@ -744,7 +744,7 @@ Visitor *qobject_input_visitor_new_str(const char *str,
+         }
+         v = qobject_input_visitor_new_keyval(QOBJECT(args));
+     }
+-    QDECREF(args);
++    qobject_unref(args);
+ 
+     return v;
+ }
+diff --git a/qapi/qobject-output-visitor.c b/qapi/qobject-output-visitor.c
+index 877e37e..3a933b4 100644
+--- a/qapi/qobject-output-visitor.c
++++ b/qapi/qobject-output-visitor.c
+@@ -188,7 +188,7 @@ static void qobject_output_type_any(Visitor *v, const char *name,
+                                     QObject **obj, Error **errp)
+ {
+     QObjectOutputVisitor *qov = to_qov(v);
+-    qobject_incref(*obj);
++    qobject_ref(*obj);
+     qobject_output_add_obj(qov, name, *obj);
+ }
+ 
+@@ -201,7 +201,7 @@ static void qobject_output_type_null(Visitor *v, const char *name,
+ 
+ /* Finish building, and return the root object.
+  * The root object is never null. The caller becomes the object's
+- * owner, and should use qobject_decref() when done with it.  */
++ * owner, and should use qobject_unref() when done with it.  */
+ static void qobject_output_complete(Visitor *v, void *opaque)
+ {
+     QObjectOutputVisitor *qov = to_qov(v);
+@@ -210,7 +210,7 @@ static void qobject_output_complete(Visitor *v, void *opaque)
+     assert(qov->root && QSLIST_EMPTY(&qov->stack));
+     assert(opaque == qov->result);
+ 
+-    qobject_incref(qov->root);
++    qobject_ref(qov->root);
+     *qov->result = qov->root;
+     qov->result = NULL;
+ }
+@@ -226,7 +226,7 @@ static void qobject_output_free(Visitor *v)
+         g_free(e);
+     }
+ 
+-    qobject_decref(qov->root);
++    qobject_unref(qov->root);
+     g_free(qov);
+ }
+ 
+diff --git a/qemu-img.c b/qemu-img.c
+index 8320887..62b29e7 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -279,7 +279,7 @@ static BlockBackend *img_open_opts(const char *optstr,
+         if (qdict_haskey(options, BDRV_OPT_FORCE_SHARE)
+             && !qdict_get_bool(options, BDRV_OPT_FORCE_SHARE)) {
+             error_report("--force-share/-U conflicts with image options");
+-            QDECREF(options);
++            qobject_unref(options);
+             return NULL;
+         }
+         qdict_put_bool(options, BDRV_OPT_FORCE_SHARE, true);
+@@ -561,9 +561,9 @@ static void dump_json_image_check(ImageCheck *check, bool quiet)
+     str = qobject_to_json_pretty(obj);
+     assert(str != NULL);
+     qprintf(quiet, "%s\n", qstring_get_str(str));
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     visit_free(v);
+-    QDECREF(str);
++    qobject_unref(str);
+ }
+ 
+ static void dump_human_image_check(ImageCheck *check, bool quiet)
+@@ -2384,9 +2384,9 @@ static void dump_json_image_info_list(ImageInfoList *list)
+     str = qobject_to_json_pretty(obj);
+     assert(str != NULL);
+     printf("%s\n", qstring_get_str(str));
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     visit_free(v);
+-    QDECREF(str);
++    qobject_unref(str);
+ }
+ 
+ static void dump_json_image_info(ImageInfo *info)
+@@ -2400,9 +2400,9 @@ static void dump_json_image_info(ImageInfo *info)
+     str = qobject_to_json_pretty(obj);
+     assert(str != NULL);
+     printf("%s\n", qstring_get_str(str));
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     visit_free(v);
+-    QDECREF(str);
++    qobject_unref(str);
+ }
+ 
+ static void dump_human_image_info_list(ImageInfoList *list)
+@@ -4488,9 +4488,9 @@ static void dump_json_block_measure_info(BlockMeasureInfo *info)
+     str = qobject_to_json_pretty(obj);
+     assert(str != NULL);
+     printf("%s\n", qstring_get_str(str));
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     visit_free(v);
+-    QDECREF(str);
++    qobject_unref(str);
+ }
+ 
+ static int img_measure(int argc, char **argv)
+diff --git a/qemu-io.c b/qemu-io.c
+index e692c55..72fee0d 100644
+--- a/qemu-io.c
++++ b/qemu-io.c
+@@ -86,7 +86,7 @@ static int openfile(char *name, int flags, bool writethrough, bool force_share,
+ 
+     if (qemuio_blk) {
+         error_report("file open already, try 'help close'");
+-        QDECREF(opts);
++        qobject_unref(opts);
+         return 1;
+     }
+ 
+@@ -97,7 +97,7 @@ static int openfile(char *name, int flags, bool writethrough, bool force_share,
+         if (qdict_haskey(opts, BDRV_OPT_FORCE_SHARE)
+             && !qdict_get_bool(opts, BDRV_OPT_FORCE_SHARE)) {
+             error_report("-U conflicts with image options");
+-            QDECREF(opts);
++            qobject_unref(opts);
+             return 1;
+         }
+         qdict_put_bool(opts, BDRV_OPT_FORCE_SHARE, true);
+@@ -243,7 +243,7 @@ static int open_f(BlockBackend *blk, int argc, char **argv)
+     } else if (optind == argc) {
+         openfile(NULL, flags, writethrough, force_share, opts);
+     } else {
+-        QDECREF(opts);
++        qobject_unref(opts);
+         qemuio_command_usage(&open_cmd);
+     }
+     return 0;
+diff --git a/qga/main.c b/qga/main.c
+index df1888e..1e1cec7 100644
+--- a/qga/main.c
++++ b/qga/main.c
+@@ -563,7 +563,7 @@ static int send_response(GAState *s, QObject *payload)
+         response_qstr = qstring_new();
+         qstring_append_chr(response_qstr, QGA_SENTINEL_BYTE);
+         qstring_append(response_qstr, qstring_get_str(payload_qstr));
+-        QDECREF(payload_qstr);
++        qobject_unref(payload_qstr);
+     } else {
+         response_qstr = payload_qstr;
+     }
+@@ -571,7 +571,7 @@ static int send_response(GAState *s, QObject *payload)
+     qstring_append_chr(response_qstr, '\n');
+     buf = qstring_get_str(response_qstr);
+     status = ga_channel_write_all(s->channel, buf, strlen(buf));
+-    QDECREF(response_qstr);
++    qobject_unref(response_qstr);
+     if (status != G_IO_STATUS_NORMAL) {
+         return -EIO;
+     }
+@@ -592,7 +592,7 @@ static void process_command(GAState *s, QDict *req)
+         if (ret < 0) {
+             g_warning("error sending response: %s", strerror(-ret));
+         }
+-        qobject_decref(rsp);
++        qobject_unref(rsp);
+     }
+ }
+ 
+@@ -609,7 +609,7 @@ static void process_event(JSONMessageParser *parser, GQueue *tokens)
+     g_debug("process_event: called");
+     qdict = qobject_to(QDict, json_parser_parse_err(tokens, NULL, &err));
+     if (err || !qdict) {
+-        QDECREF(qdict);
++        qobject_unref(qdict);
+         qdict = qdict_new();
+         if (!err) {
+             g_warning("failed to parse event: unknown error");
+@@ -626,7 +626,7 @@ static void process_event(JSONMessageParser *parser, GQueue *tokens)
+         process_command(s, qdict);
+     } else {
+         if (!qdict_haskey(qdict, "error")) {
+-            QDECREF(qdict);
++            qobject_unref(qdict);
+             qdict = qdict_new();
+             g_warning("unrecognized payload format");
+             error_setg(&err, QERR_UNSUPPORTED);
+@@ -639,7 +639,7 @@ static void process_event(JSONMessageParser *parser, GQueue *tokens)
+         }
+     }
+ 
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ }
+ 
+ /* false return signals GAChannel to close the current client connection */
+diff --git a/qmp.c b/qmp.c
+index f722616..9e95b88 100644
+--- a/qmp.c
++++ b/qmp.c
+@@ -710,7 +710,7 @@ void qmp_object_add(const char *type, const char *id,
+             error_setg(errp, QERR_INVALID_PARAMETER_TYPE, "props", "dict");
+             return;
+         }
+-        QINCREF(pdict);
++        qobject_ref(pdict);
+     } else {
+         pdict = qdict_new();
+     }
+@@ -721,7 +721,7 @@ void qmp_object_add(const char *type, const char *id,
+     if (obj) {
+         object_unref(obj);
+     }
+-    QDECREF(pdict);
++    qobject_unref(pdict);
+ }
+ 
+ void qmp_object_del(const char *id, Error **errp)
+diff --git a/qobject/json-parser.c b/qobject/json-parser.c
+index 769b960..a5aa790 100644
+--- a/qobject/json-parser.c
++++ b/qobject/json-parser.c
+@@ -222,7 +222,7 @@ static QString *qstring_from_escaped_str(JSONParserContext *ctxt,
+     return str;
+ 
+ out:
+-    QDECREF(str);
++    qobject_unref(str);
+     return NULL;
+ }
+ 
+@@ -311,12 +311,12 @@ static int parse_pair(JSONParserContext *ctxt, QDict *dict, va_list *ap)
+ 
+     qdict_put_obj(dict, qstring_get_str(key), value);
+ 
+-    QDECREF(key);
++    qobject_unref(key);
+ 
+     return 0;
+ 
+ out:
+-    QDECREF(key);
++    qobject_unref(key);
+ 
+     return -1;
+ }
+@@ -371,7 +371,7 @@ static QObject *parse_object(JSONParserContext *ctxt, va_list *ap)
+     return QOBJECT(dict);
+ 
+ out:
+-    QDECREF(dict);
++    qobject_unref(dict);
+     return NULL;
+ }
+ 
+@@ -435,7 +435,7 @@ static QObject *parse_array(JSONParserContext *ctxt, va_list *ap)
+     return QOBJECT(list);
+ 
+ out:
+-    QDECREF(list);
++    qobject_unref(list);
+     return NULL;
+ }
+ 
+diff --git a/qobject/qdict.c b/qobject/qdict.c
+index d1997a0..2e9bd53 100644
+--- a/qobject/qdict.c
++++ b/qobject/qdict.c
+@@ -123,7 +123,7 @@ void qdict_put_obj(QDict *qdict, const char *key, QObject *value)
+     entry = qdict_find(qdict, key, bucket);
+     if (entry) {
+         /* replace key's value */
+-        qobject_decref(entry->value);
++        qobject_unref(entry->value);
+         entry->value = value;
+     } else {
+         /* allocate a new entry */
+@@ -373,7 +373,7 @@ QDict *qdict_clone_shallow(const QDict *src)
+ 
+     for (i = 0; i < QDICT_BUCKET_MAX; i++) {
+         QLIST_FOREACH(entry, &src->table[i], next) {
+-            qobject_incref(entry->value);
++            qobject_ref(entry->value);
+             qdict_put_obj(dest, entry->key, entry->value);
+         }
+     }
+@@ -390,7 +390,7 @@ static void qentry_destroy(QDictEntry *e)
+     assert(e->key != NULL);
+     assert(e->value != NULL);
+ 
+-    qobject_decref(e->value);
++    qobject_unref(e->value);
+     g_free(e->key);
+     g_free(e);
+ }
+@@ -480,7 +480,7 @@ void qdict_copy_default(QDict *dst, QDict *src, const char *key)
+ 
+     val = qdict_get(src, key);
+     if (val) {
+-        qobject_incref(val);
++        qobject_ref(val);
+         qdict_put_obj(dst, key, val);
+     }
+ }
+@@ -526,7 +526,7 @@ static void qdict_flatten_qlist(QList *qlist, QDict *target, const char *prefix)
+             qdict_flatten_qlist(qobject_to(QList, value), target, new_key);
+         } else {
+             /* All other types are moved to the target unchanged. */
+-            qobject_incref(value);
++            qobject_ref(value);
+             qdict_put_obj(target, new_key, value);
+         }
+ 
+@@ -566,7 +566,7 @@ static void qdict_flatten_qdict(QDict *qdict, QDict *target, const char *prefix)
+             delete = true;
+         } else if (prefix) {
+             /* All other objects are moved to the target unchanged. */
+-            qobject_incref(value);
++            qobject_ref(value);
+             qdict_put_obj(target, new_key, value);
+             delete = true;
+         }
+@@ -610,7 +610,7 @@ void qdict_extract_subqdict(QDict *src, QDict **dst, const char *start)
+     while (entry != NULL) {
+         next = qdict_next(src, entry);
+         if (strstart(entry->key, start, &p)) {
+-            qobject_incref(entry->value);
++            qobject_ref(entry->value);
+             qdict_put_obj(*dst, p, entry->value);
+             qdict_del(src, entry->key);
+         }
+@@ -684,7 +684,7 @@ void qdict_array_split(QDict *src, QList **dst)
+             qdict_extract_subqdict(src, &subqdict, prefix);
+             assert(qdict_size(subqdict) > 0);
+         } else {
+-            qobject_incref(subqobj);
++            qobject_ref(subqobj);
+             qdict_del(src, indexstr);
+         }
+ 
+@@ -894,7 +894,7 @@ QObject *qdict_crumple(const QDict *src, Error **errp)
+                 qdict_put_obj(two_level, prefix, QOBJECT(child_dict));
+             }
+ 
+-            qobject_incref(ent->value);
++            qobject_ref(ent->value);
+             qdict_put_obj(child_dict, suffix, ent->value);
+         } else {
+             if (child) {
+@@ -902,7 +902,7 @@ QObject *qdict_crumple(const QDict *src, Error **errp)
+                            prefix);
+                 goto error;
+             }
+-            qobject_incref(ent->value);
++            qobject_ref(ent->value);
+             qdict_put_obj(two_level, prefix, ent->value);
+         }
+ 
+@@ -924,11 +924,11 @@ QObject *qdict_crumple(const QDict *src, Error **errp)
+ 
+             qdict_put_obj(multi_level, ent->key, child);
+         } else {
+-            qobject_incref(ent->value);
++            qobject_ref(ent->value);
+             qdict_put_obj(multi_level, ent->key, ent->value);
+         }
+     }
+-    QDECREF(two_level);
++    qobject_unref(two_level);
+     two_level = NULL;
+ 
+     /* Step 3: detect if we need to turn our dict into list */
+@@ -951,10 +951,10 @@ QObject *qdict_crumple(const QDict *src, Error **errp)
+                 goto error;
+             }
+ 
+-            qobject_incref(child);
++            qobject_ref(child);
+             qlist_append_obj(qobject_to(QList, dst), child);
+         }
+-        QDECREF(multi_level);
++        qobject_unref(multi_level);
+         multi_level = NULL;
+     } else {
+         dst = QOBJECT(multi_level);
+@@ -964,9 +964,9 @@ QObject *qdict_crumple(const QDict *src, Error **errp)
+ 
+  error:
+     g_free(prefix);
+-    QDECREF(multi_level);
+-    QDECREF(two_level);
+-    qobject_decref(dst);
++    qobject_unref(multi_level);
++    qobject_unref(two_level);
++    qobject_unref(dst);
+     return NULL;
+ }
+ 
+@@ -1055,7 +1055,7 @@ void qdict_join(QDict *dest, QDict *src, bool overwrite)
+         next = qdict_next(src, entry);
+ 
+         if (overwrite || !qdict_haskey(dest, entry->key)) {
+-            qobject_incref(entry->value);
++            qobject_ref(entry->value);
+             qdict_put_obj(dest, entry->key, entry->value);
+             qdict_del(src, entry->key);
+         }
+@@ -1088,7 +1088,7 @@ bool qdict_rename_keys(QDict *qdict, const QDictRenames *renames, Error **errp)
+             }
+ 
+             qobj = qdict_get(qdict, renames->from);
+-            qobject_incref(qobj);
++            qobject_ref(qobj);
+             qdict_put_obj(qdict, renames->to, qobj);
+             qdict_del(qdict, renames->from);
+         }
+diff --git a/qobject/qjson.c b/qobject/qjson.c
+index 655d38a..9816a65 100644
+--- a/qobject/qjson.c
++++ b/qobject/qjson.c
+@@ -104,7 +104,7 @@ static void to_json_dict_iter(const char *key, QObject *obj, void *opaque)
+ 
+     qkey = qstring_from_str(key);
+     to_json(QOBJECT(qkey), s->str, s->pretty, s->indent);
+-    QDECREF(qkey);
++    qobject_unref(qkey);
+ 
+     qstring_append(s->str, ": ");
+     to_json(obj, s->str, s->pretty, s->indent);
+diff --git a/qobject/qlist.c b/qobject/qlist.c
+index 954fe98..37c1c16 100644
+--- a/qobject/qlist.c
++++ b/qobject/qlist.c
+@@ -39,7 +39,7 @@ static void qlist_copy_elem(QObject *obj, void *opaque)
+ {
+     QList *dst = opaque;
+ 
+-    qobject_incref(obj);
++    qobject_ref(obj);
+     qlist_append_obj(dst, obj);
+ }
+ 
+@@ -196,7 +196,7 @@ void qlist_destroy_obj(QObject *obj)
+ 
+     QTAILQ_FOREACH_SAFE(entry, &qlist->head, next, next_entry) {
+         QTAILQ_REMOVE(&qlist->head, entry, next);
+-        qobject_decref(entry->value);
++        qobject_unref(entry->value);
+         g_free(entry);
+     }
+ 
+diff --git a/qom/object.c b/qom/object.c
+index 4677951..76a89af 100644
+--- a/qom/object.c
++++ b/qom/object.c
+@@ -1129,7 +1129,7 @@ void object_property_set_str(Object *obj, const char *value,
+     QString *qstr = qstring_from_str(value);
+     object_property_set_qobject(obj, QOBJECT(qstr), name, errp);
+ 
+-    QDECREF(qstr);
++    qobject_unref(qstr);
+ }
+ 
+ char *object_property_get_str(Object *obj, const char *name,
+@@ -1147,7 +1147,7 @@ char *object_property_get_str(Object *obj, const char *name,
+         error_setg(errp, QERR_INVALID_PARAMETER_TYPE, name, "string");
+     }
+ 
+-    qobject_decref(ret);
++    qobject_unref(ret);
+     return retval;
+ }
+ 
+@@ -1187,7 +1187,7 @@ void object_property_set_bool(Object *obj, bool value,
+     QBool *qbool = qbool_from_bool(value);
+     object_property_set_qobject(obj, QOBJECT(qbool), name, errp);
+ 
+-    QDECREF(qbool);
++    qobject_unref(qbool);
+ }
+ 
+ bool object_property_get_bool(Object *obj, const char *name,
+@@ -1208,7 +1208,7 @@ bool object_property_get_bool(Object *obj, const char *name,
+         retval = qbool_get_bool(qbool);
+     }
+ 
+-    qobject_decref(ret);
++    qobject_unref(ret);
+     return retval;
+ }
+ 
+@@ -1218,7 +1218,7 @@ void object_property_set_int(Object *obj, int64_t value,
+     QNum *qnum = qnum_from_int(value);
+     object_property_set_qobject(obj, QOBJECT(qnum), name, errp);
+ 
+-    QDECREF(qnum);
++    qobject_unref(qnum);
+ }
+ 
+ int64_t object_property_get_int(Object *obj, const char *name,
+@@ -1238,7 +1238,7 @@ int64_t object_property_get_int(Object *obj, const char *name,
+         retval = -1;
+     }
+ 
+-    qobject_decref(ret);
++    qobject_unref(ret);
+     return retval;
+ }
+ 
+@@ -1248,7 +1248,7 @@ void object_property_set_uint(Object *obj, uint64_t value,
+     QNum *qnum = qnum_from_uint(value);
+ 
+     object_property_set_qobject(obj, QOBJECT(qnum), name, errp);
+-    QDECREF(qnum);
++    qobject_unref(qnum);
+ }
+ 
+ uint64_t object_property_get_uint(Object *obj, const char *name,
+@@ -1267,7 +1267,7 @@ uint64_t object_property_get_uint(Object *obj, const char *name,
+         retval = 0;
+     }
+ 
+-    qobject_decref(ret);
++    qobject_unref(ret);
+     return retval;
+ }
+ 
+diff --git a/qom/object_interfaces.c b/qom/object_interfaces.c
+index 2f76e1f..980ffc2 100644
+--- a/qom/object_interfaces.c
++++ b/qom/object_interfaces.c
+@@ -140,7 +140,7 @@ Object *user_creatable_add_opts(QemuOpts *opts, Error **errp)
+     qemu_opts_set_id(opts, (char *) id);
+     qemu_opt_set(opts, "qom-type", type, &error_abort);
+     g_free(type);
+-    QDECREF(pdict);
++    qobject_unref(pdict);
+     return obj;
+ }
+ 
+diff --git a/scripts/coccinelle/qobject.cocci b/scripts/coccinelle/qobject.cocci
+index 47bcafe..9fee9c0 100644
+--- a/scripts/coccinelle/qobject.cocci
++++ b/scripts/coccinelle/qobject.cocci
+@@ -3,11 +3,11 @@
+ expression Obj, Key, E;
+ @@
+ (
+-- qobject_incref(QOBJECT(E));
+-+ QINCREF(E);
++- qobject_ref(QOBJECT(E));
+++ qobject_ref(E);
+ |
+-- qobject_decref(QOBJECT(E));
+-+ QDECREF(E);
++- qobject_unref(QOBJECT(E));
+++ qobject_unref(E);
+ |
+ - qdict_put_obj(Obj, Key, QOBJECT(E));
+ + qdict_put(Obj, Key, E);
+diff --git a/scripts/qapi/events.py b/scripts/qapi/events.py
+index 3dc523c..4426861 100644
+--- a/scripts/qapi/events.py
++++ b/scripts/qapi/events.py
+@@ -142,7 +142,7 @@ out:
+ ''')
+     ret += mcgen('''
+     error_propagate(errp, err);
+-    QDECREF(qmp);
++    qobject_unref(qmp);
+ }
+ ''')
+     return ret
+diff --git a/target/ppc/translate_init.c b/target/ppc/translate_init.c
+index 391b94b..17b06c7 100644
+--- a/target/ppc/translate_init.c
++++ b/target/ppc/translate_init.c
+@@ -8351,7 +8351,7 @@ static void getset_compat_deprecated(Object *obj, Visitor *v, const char *name,
+                      "use max-cpu-compat machine property instead");
+     }
+     visit_type_null(v, name, &null, NULL);
+-    QDECREF(null);
++    qobject_unref(null);
+ }
+ 
+ static const PropertyInfo ppc_compat_deprecated_propinfo = {
+diff --git a/target/s390x/cpu_models.c b/target/s390x/cpu_models.c
+index c4016e0..70b23bf 100644
+--- a/target/s390x/cpu_models.c
++++ b/target/s390x/cpu_models.c
+@@ -554,7 +554,7 @@ static void cpu_info_from_model(CpuModelInfo *info, const S390CPUModel *model,
+     }
+ 
+     if (!qdict_size(qdict)) {
+-        QDECREF(qdict);
++        qobject_unref(qdict);
+     } else {
+         info->props = QOBJECT(qdict);
+         info->has_props = true;
+diff --git a/tests/ahci-test.c b/tests/ahci-test.c
+index fb3cd84..1a7b761 100644
+--- a/tests/ahci-test.c
++++ b/tests/ahci-test.c
+@@ -1566,7 +1566,7 @@ static void atapi_wait_tray(bool open)
+     } else {
+         g_assert(!qdict_get_bool(data, "tray-open"));
+     }
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ }
+ 
+ static void test_atapi_tray(void)
+@@ -1596,7 +1596,7 @@ static void test_atapi_tray(void)
+                "'arguments': {'id': 'cd0'}}");
+     atapi_wait_tray(true);
+     rsp = qmp_receive();
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     qmp_discard_response("{'execute': 'blockdev-remove-medium', "
+                          "'arguments': {'id': 'cd0'}}");
+@@ -1623,7 +1623,7 @@ static void test_atapi_tray(void)
+                "'arguments': {'id': 'cd0'}}");
+     atapi_wait_tray(false);
+     rsp = qmp_receive();
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     /* Now, to convince ATAPI we understand the media has changed... */
+     ahci_atapi_test_ready(ahci, port, false, SENSE_NOT_READY);
+diff --git a/tests/check-qdict.c b/tests/check-qdict.c
+index 07bb8f4..eba5d35 100644
+--- a/tests/check-qdict.c
++++ b/tests/check-qdict.c
+@@ -34,7 +34,7 @@ static void qdict_new_test(void)
+     g_assert(qdict->base.refcnt == 1);
+     g_assert(qobject_type(QOBJECT(qdict)) == QTYPE_QDICT);
+ 
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ }
+ 
+ static void qdict_put_obj_test(void)
+@@ -54,7 +54,7 @@ static void qdict_put_obj_test(void)
+     qn = qobject_to(QNum, ent->value);
+     g_assert_cmpint(qnum_get_int(qn), ==, num);
+ 
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ }
+ 
+ static void qdict_destroy_simple_test(void)
+@@ -65,7 +65,7 @@ static void qdict_destroy_simple_test(void)
+     qdict_put_int(qdict, "num", 0);
+     qdict_put_str(qdict, "str", "foo");
+ 
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ }
+ 
+ static void qdict_get_test(void)
+@@ -84,7 +84,7 @@ static void qdict_get_test(void)
+     qn = qobject_to(QNum, obj);
+     g_assert_cmpint(qnum_get_int(qn), ==, value);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_get_int_test(void)
+@@ -99,7 +99,7 @@ static void qdict_get_int_test(void)
+     ret = qdict_get_int(tests_dict, key);
+     g_assert(ret == value);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_get_try_int_test(void)
+@@ -121,7 +121,7 @@ static void qdict_get_try_int_test(void)
+     ret = qdict_get_try_int(tests_dict, "string", -42);
+     g_assert_cmpuint(ret, ==, -42);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_get_str_test(void)
+@@ -137,7 +137,7 @@ static void qdict_get_str_test(void)
+     g_assert(p != NULL);
+     g_assert(strcmp(p, str) == 0);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_get_try_str_test(void)
+@@ -153,7 +153,7 @@ static void qdict_get_try_str_test(void)
+     g_assert(p != NULL);
+     g_assert(strcmp(p, str) == 0);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_defaults_test(void)
+@@ -174,8 +174,8 @@ static void qdict_defaults_test(void)
+     qdict_copy_default(copy, dict, "bar");
+     g_assert_cmpstr(qdict_get_str(copy, "bar"), ==, "xyz");
+ 
+-    QDECREF(copy);
+-    QDECREF(dict);
++    qobject_unref(copy);
++    qobject_unref(dict);
+ }
+ 
+ static void qdict_haskey_not_test(void)
+@@ -183,7 +183,7 @@ static void qdict_haskey_not_test(void)
+     QDict *tests_dict = qdict_new();
+     g_assert(qdict_haskey(tests_dict, "test") == 0);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_haskey_test(void)
+@@ -194,7 +194,7 @@ static void qdict_haskey_test(void)
+     qdict_put_int(tests_dict, key, 0);
+     g_assert(qdict_haskey(tests_dict, key) == 1);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_del_test(void)
+@@ -210,7 +210,7 @@ static void qdict_del_test(void)
+     g_assert(qdict_size(tests_dict) == 0);
+     g_assert(qdict_haskey(tests_dict, key) == 0);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qobject_to_qdict_test(void)
+@@ -218,7 +218,7 @@ static void qobject_to_qdict_test(void)
+     QDict *tests_dict = qdict_new();
+     g_assert(qobject_to(QDict, QOBJECT(tests_dict)) == tests_dict);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_iterapi_test(void)
+@@ -250,7 +250,7 @@ static void qdict_iterapi_test(void)
+ 
+     g_assert(count == qdict_size(tests_dict));
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_flatten_test(void)
+@@ -325,7 +325,7 @@ static void qdict_flatten_test(void)
+ 
+     g_assert(qdict_size(dict3) == 8);
+ 
+-    QDECREF(dict3);
++    qobject_unref(dict3);
+ }
+ 
+ static void qdict_array_split_test(void)
+@@ -390,31 +390,31 @@ static void qdict_array_split_test(void)
+     g_assert(int1);
+     g_assert(qlist_empty(test_list));
+ 
+-    QDECREF(test_list);
++    qobject_unref(test_list);
+ 
+     g_assert(qdict_get_int(dict1, "a") == 42);
+     g_assert(qdict_get_int(dict1, "b") == 23);
+ 
+     g_assert(qdict_size(dict1) == 2);
+ 
+-    QDECREF(dict1);
++    qobject_unref(dict1);
+ 
+     g_assert(qdict_get_int(dict2, "x") == 0);
+ 
+     g_assert(qdict_size(dict2) == 1);
+ 
+-    QDECREF(dict2);
++    qobject_unref(dict2);
+ 
+     g_assert_cmpint(qnum_get_int(int1), ==, 66);
+ 
+-    QDECREF(int1);
++    qobject_unref(int1);
+ 
+     g_assert(qdict_get_int(test_dict, "4.y") == 1);
+     g_assert(qdict_get_int(test_dict, "o.o") == 7);
+ 
+     g_assert(qdict_size(test_dict) == 2);
+ 
+-    QDECREF(test_dict);
++    qobject_unref(test_dict);
+ 
+     /*
+      * Test the split of
+@@ -455,18 +455,18 @@ static void qdict_array_split_test(void)
+     g_assert(int1);
+     g_assert(qlist_empty(test_list));
+ 
+-    QDECREF(test_list);
++    qobject_unref(test_list);
+ 
+     g_assert_cmpint(qnum_get_int(int1), ==, 42);
+ 
+-    QDECREF(int1);
++    qobject_unref(int1);
+ 
+     g_assert(qdict_get_int(test_dict, "1") == 23);
+     g_assert(qdict_get_int(test_dict, "1.x") == 84);
+ 
+     g_assert(qdict_size(test_dict) == 2);
+ 
+-    QDECREF(test_dict);
++    qobject_unref(test_dict);
+ }
+ 
+ static void qdict_array_entries_test(void)
+@@ -493,7 +493,7 @@ static void qdict_array_entries_test(void)
+     g_assert_cmpint(qdict_array_entries(dict, "foo."), ==, 3);
+     g_assert_cmpint(qdict_array_entries(dict, ""), ==, -EINVAL);
+ 
+-    QDECREF(dict);
++    qobject_unref(dict);
+ 
+     dict = qdict_new();
+     qdict_put_int(dict, "1", 0);
+@@ -509,7 +509,7 @@ static void qdict_array_entries_test(void)
+     qdict_put_int(dict, "2.c", 0);
+     g_assert_cmpint(qdict_array_entries(dict, ""), ==, 3);
+ 
+-    QDECREF(dict);
++    qobject_unref(dict);
+ }
+ 
+ static void qdict_join_test(void)
+@@ -587,8 +587,8 @@ static void qdict_join_test(void)
+     }
+     while (overwrite ^= true);
+ 
+-    QDECREF(dict1);
+-    QDECREF(dict2);
++    qobject_unref(dict1);
++    qobject_unref(dict2);
+ }
+ 
+ static void qdict_crumple_test_recursive(void)
+@@ -634,21 +634,21 @@ static void qdict_crumple_test_recursive(void)
+     g_assert_cmpint(qdict_size(rule), ==, 2);
+     g_assert_cmpstr("fred", ==, qdict_get_str(rule, "match"));
+     g_assert_cmpstr("allow", ==, qdict_get_str(rule, "policy"));
+-    QDECREF(rule);
++    qobject_unref(rule);
+ 
+     rule = qobject_to(QDict, qlist_pop(rules));
+     g_assert(rule);
+     g_assert_cmpint(qdict_size(rule), ==, 2);
+     g_assert_cmpstr("bob", ==, qdict_get_str(rule, "match"));
+     g_assert_cmpstr("deny", ==, qdict_get_str(rule, "policy"));
+-    QDECREF(rule);
++    qobject_unref(rule);
+ 
+     /* With recursive crumpling, we should see all names unescaped */
+     g_assert_cmpstr("acl0", ==, qdict_get_str(vnc, "acl.name"));
+     g_assert_cmpstr("acl0", ==, qdict_get_str(acl, "rule.name"));
+ 
+-    QDECREF(src);
+-    QDECREF(dst);
++    qobject_unref(src);
++    qobject_unref(dst);
+ }
+ 
+ static void qdict_crumple_test_empty(void)
+@@ -661,8 +661,8 @@ static void qdict_crumple_test_empty(void)
+ 
+     g_assert_cmpint(qdict_size(dst), ==, 0);
+ 
+-    QDECREF(src);
+-    QDECREF(dst);
++    qobject_unref(src);
++    qobject_unref(dst);
+ }
+ 
+ static int qdict_count_entries(QDict *dict)
+@@ -704,7 +704,7 @@ static void qdict_rename_keys_test(void)
+     g_assert(qobject_type(qdict_get(copy, "nothing")) == QTYPE_QNULL);
+     g_assert_cmpint(qdict_count_entries(copy), ==, 5);
+ 
+-    QDECREF(copy);
++    qobject_unref(copy);
+ 
+     /* Simple rename of all entries */
+     renames = (QDictRenames[]) {
+@@ -731,7 +731,7 @@ static void qdict_rename_keys_test(void)
+     g_assert(qobject_type(qdict_get(copy, "null")) == QTYPE_QNULL);
+     g_assert_cmpint(qdict_count_entries(copy), ==, 5);
+ 
+-    QDECREF(copy);
++    qobject_unref(copy);
+ 
+     /* Renames are processed top to bottom */
+     renames = (QDictRenames[]) {
+@@ -754,7 +754,7 @@ static void qdict_rename_keys_test(void)
+     g_assert(!qdict_haskey(copy, "tmp"));
+     g_assert_cmpint(qdict_count_entries(copy), ==, 5);
+ 
+-    QDECREF(copy);
++    qobject_unref(copy);
+ 
+     /* Conflicting rename */
+     renames = (QDictRenames[]) {
+@@ -775,7 +775,7 @@ static void qdict_rename_keys_test(void)
+     g_assert(qobject_type(qdict_get(copy, "nothing")) == QTYPE_QNULL);
+     g_assert_cmpint(qdict_count_entries(copy), ==, 5);
+ 
+-    QDECREF(copy);
++    qobject_unref(copy);
+ 
+     /* Renames in an empty dict */
+     renames = (QDictRenames[]) {
+@@ -783,13 +783,13 @@ static void qdict_rename_keys_test(void)
+         { NULL , NULL }
+     };
+ 
+-    QDECREF(dict);
++    qobject_unref(dict);
+     dict = qdict_new();
+ 
+     qdict_rename_keys(dict, renames, &error_abort);
+     g_assert(qdict_first(dict) == NULL);
+ 
+-    QDECREF(dict);
++    qobject_unref(dict);
+ }
+ 
+ static void qdict_crumple_test_bad_inputs(void)
+@@ -806,7 +806,7 @@ static void qdict_crumple_test_bad_inputs(void)
+     g_assert(error != NULL);
+     error_free(error);
+     error = NULL;
+-    QDECREF(src);
++    qobject_unref(src);
+ 
+     src = qdict_new();
+     /* rule can't be both a list and a dict */
+@@ -817,7 +817,7 @@ static void qdict_crumple_test_bad_inputs(void)
+     g_assert(error != NULL);
+     error_free(error);
+     error = NULL;
+-    QDECREF(src);
++    qobject_unref(src);
+ 
+     src = qdict_new();
+     /* The input should be flat, ie no dicts or lists */
+@@ -828,7 +828,7 @@ static void qdict_crumple_test_bad_inputs(void)
+     g_assert(error != NULL);
+     error_free(error);
+     error = NULL;
+-    QDECREF(src);
++    qobject_unref(src);
+ 
+     src = qdict_new();
+     /* List indexes must not have gaps */
+@@ -839,7 +839,7 @@ static void qdict_crumple_test_bad_inputs(void)
+     g_assert(error != NULL);
+     error_free(error);
+     error = NULL;
+-    QDECREF(src);
++    qobject_unref(src);
+ 
+     src = qdict_new();
+     /* List indexes must be in %zu format */
+@@ -850,7 +850,7 @@ static void qdict_crumple_test_bad_inputs(void)
+     g_assert(error != NULL);
+     error_free(error);
+     error = NULL;
+-    QDECREF(src);
++    qobject_unref(src);
+ }
+ 
+ /*
+@@ -871,7 +871,7 @@ static void qdict_put_exists_test(void)
+ 
+     g_assert(qdict_size(tests_dict) == 1);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ static void qdict_get_not_exists_test(void)
+@@ -879,7 +879,7 @@ static void qdict_get_not_exists_test(void)
+     QDict *tests_dict = qdict_new();
+     g_assert(qdict_get(tests_dict, "foo") == NULL);
+ 
+-    QDECREF(tests_dict);
++    qobject_unref(tests_dict);
+ }
+ 
+ /*
+@@ -951,7 +951,7 @@ static void qdict_stress_test(void)
+ 
+         g_assert(strcmp(str1, str2) == 0);
+ 
+-        QDECREF(value);
++        qobject_unref(value);
+     }
+ 
+     // Delete everything
+@@ -962,14 +962,14 @@ static void qdict_stress_test(void)
+             break;
+ 
+         qdict_del(qdict, key);
+-        QDECREF(value);
++        qobject_unref(value);
+ 
+         g_assert(qdict_haskey(qdict, key) == 0);
+     }
+     fclose(test_file);
+ 
+     g_assert(qdict_size(qdict) == 0);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/check-qjson.c b/tests/check-qjson.c
+index 997f4d3..da582df 100644
+--- a/tests/check-qjson.c
++++ b/tests/check-qjson.c
+@@ -67,10 +67,10 @@ static void escaped_string(void)
+         if (test_cases[i].skip == 0) {
+             str = qobject_to_json(obj);
+             g_assert_cmpstr(qstring_get_str(str), ==, test_cases[i].encoded);
+-            qobject_decref(obj);
++            qobject_unref(obj);
+         }
+ 
+-        QDECREF(str);
++        qobject_unref(str);
+     }
+ }
+ 
+@@ -99,9 +99,9 @@ static void simple_string(void)
+         str = qobject_to_json(obj);
+         g_assert(strcmp(qstring_get_str(str), test_cases[i].encoded) == 0);
+ 
+-        qobject_decref(obj);
++        qobject_unref(obj);
+         
+-        QDECREF(str);
++        qobject_unref(str);
+     }
+ }
+ 
+@@ -127,7 +127,7 @@ static void single_quote_string(void)
+         g_assert(str);
+         g_assert(strcmp(qstring_get_str(str), test_cases[i].decoded) == 0);
+ 
+-        QDECREF(str);
++        qobject_unref(str);
+     }
+ }
+ 
+@@ -823,7 +823,7 @@ static void utf8_string(void)
+         } else {
+             g_assert(!obj);
+         }
+-        qobject_decref(obj);
++        qobject_unref(obj);
+ 
+         obj = QOBJECT(qstring_from_str(utf8_in));
+         str = qobject_to_json(obj);
+@@ -833,8 +833,8 @@ static void utf8_string(void)
+         } else {
+             g_assert(!str);
+         }
+-        QDECREF(str);
+-        qobject_decref(obj);
++        qobject_unref(str);
++        qobject_unref(obj);
+ 
+         /*
+          * Disabled, because qobject_from_json() is buggy, and I can't
+@@ -869,7 +869,7 @@ static void vararg_string(void)
+         g_assert(str);
+         g_assert(strcmp(qstring_get_str(str), test_cases[i].decoded) == 0);
+ 
+-        QDECREF(str);
++        qobject_unref(str);
+     }
+ }
+ 
+@@ -904,10 +904,10 @@ static void simple_number(void)
+ 
+             str = qobject_to_json(QOBJECT(qnum));
+             g_assert(strcmp(qstring_get_str(str), test_cases[i].encoded) == 0);
+-            QDECREF(str);
++            qobject_unref(str);
+         }
+ 
+-        QDECREF(qnum);
++        qobject_unref(qnum);
+     }
+ }
+ 
+@@ -928,8 +928,8 @@ static void large_number(void)
+ 
+     str = qobject_to_json(QOBJECT(qnum));
+     g_assert_cmpstr(qstring_get_str(str), ==, maxu64);
+-    QDECREF(str);
+-    QDECREF(qnum);
++    qobject_unref(str);
++    qobject_unref(qnum);
+ 
+     qnum = qobject_to(QNum, qobject_from_json(gtu64, &error_abort));
+     g_assert(qnum);
+@@ -939,8 +939,8 @@ static void large_number(void)
+ 
+     str = qobject_to_json(QOBJECT(qnum));
+     g_assert_cmpstr(qstring_get_str(str), ==, gtu64);
+-    QDECREF(str);
+-    QDECREF(qnum);
++    qobject_unref(str);
++    qobject_unref(qnum);
+ 
+     qnum = qobject_to(QNum, qobject_from_json(lti64, &error_abort));
+     g_assert(qnum);
+@@ -950,8 +950,8 @@ static void large_number(void)
+ 
+     str = qobject_to_json(QOBJECT(qnum));
+     g_assert_cmpstr(qstring_get_str(str), ==, "-9223372036854775808");
+-    QDECREF(str);
+-    QDECREF(qnum);
++    qobject_unref(str);
++    qobject_unref(qnum);
+ }
+ 
+ static void float_number(void)
+@@ -983,10 +983,10 @@ static void float_number(void)
+ 
+             str = qobject_to_json(obj);
+             g_assert(strcmp(qstring_get_str(str), test_cases[i].encoded) == 0);
+-            QDECREF(str);
++            qobject_unref(str);
+         }
+ 
+-        QDECREF(qnum);
++        qobject_unref(qnum);
+     }
+ }
+ 
+@@ -1001,16 +1001,16 @@ static void vararg_number(void)
+     qnum = qobject_to(QNum, qobject_from_jsonf("%d", value));
+     g_assert(qnum_get_try_int(qnum, &val));
+     g_assert_cmpint(val, ==, value);
+-    QDECREF(qnum);
++    qobject_unref(qnum);
+ 
+     qnum = qobject_to(QNum, qobject_from_jsonf("%lld", value_ll));
+     g_assert(qnum_get_try_int(qnum, &val));
+     g_assert_cmpint(val, ==, value_ll);
+-    QDECREF(qnum);
++    qobject_unref(qnum);
+ 
+     qnum = qobject_to(QNum, qobject_from_jsonf("%f", valuef));
+     g_assert(qnum_get_double(qnum) == valuef);
+-    QDECREF(qnum);
++    qobject_unref(qnum);
+ }
+ 
+ static void keyword_literal(void)
+@@ -1027,9 +1027,9 @@ static void keyword_literal(void)
+ 
+     str = qobject_to_json(obj);
+     g_assert(strcmp(qstring_get_str(str), "true") == 0);
+-    QDECREF(str);
++    qobject_unref(str);
+ 
+-    QDECREF(qbool);
++    qobject_unref(qbool);
+ 
+     obj = qobject_from_json("false", &error_abort);
+     qbool = qobject_to(QBool, obj);
+@@ -1038,20 +1038,20 @@ static void keyword_literal(void)
+ 
+     str = qobject_to_json(obj);
+     g_assert(strcmp(qstring_get_str(str), "false") == 0);
+-    QDECREF(str);
++    qobject_unref(str);
+ 
+-    QDECREF(qbool);
++    qobject_unref(qbool);
+ 
+     qbool = qobject_to(QBool, qobject_from_jsonf("%i", false));
+     g_assert(qbool);
+     g_assert(qbool_get_bool(qbool) == false);
+-    QDECREF(qbool);
++    qobject_unref(qbool);
+ 
+     /* Test that non-zero values other than 1 get collapsed to true */
+     qbool = qobject_to(QBool, qobject_from_jsonf("%i", 2));
+     g_assert(qbool);
+     g_assert(qbool_get_bool(qbool) == true);
+-    QDECREF(qbool);
++    qobject_unref(qbool);
+ 
+     obj = qobject_from_json("null", &error_abort);
+     g_assert(obj != NULL);
+@@ -1060,8 +1060,8 @@ static void keyword_literal(void)
+     null = qnull();
+     g_assert(QOBJECT(null) == obj);
+ 
+-    qobject_decref(obj);
+-    QDECREF(null);
++    qobject_unref(obj);
++    qobject_unref(null);
+ }
+ 
+ static void simple_dict(void)
+@@ -1101,12 +1101,12 @@ static void simple_dict(void)
+         g_assert(qlit_equal_qobject(&test_cases[i].decoded, obj));
+ 
+         str = qobject_to_json(obj);
+-        qobject_decref(obj);
++        qobject_unref(obj);
+ 
+         obj = qobject_from_json(qstring_get_str(str), &error_abort);
+         g_assert(qlit_equal_qobject(&test_cases[i].decoded, obj));
+-        qobject_decref(obj);
+-        QDECREF(str);
++        qobject_unref(obj);
++        qobject_unref(str);
+     }
+ }
+ 
+@@ -1158,7 +1158,7 @@ static void large_dict(void)
+     obj = qobject_from_json(gstr->str, &error_abort);
+     g_assert(obj != NULL);
+ 
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     g_string_free(gstr, true);
+ }
+ 
+@@ -1210,12 +1210,12 @@ static void simple_list(void)
+         g_assert(qlit_equal_qobject(&test_cases[i].decoded, obj));
+ 
+         str = qobject_to_json(obj);
+-        qobject_decref(obj);
++        qobject_unref(obj);
+ 
+         obj = qobject_from_json(qstring_get_str(str), &error_abort);
+         g_assert(qlit_equal_qobject(&test_cases[i].decoded, obj));
+-        qobject_decref(obj);
+-        QDECREF(str);
++        qobject_unref(obj);
++        qobject_unref(str);
+     }
+ }
+ 
+@@ -1272,13 +1272,13 @@ static void simple_whitespace(void)
+         g_assert(qlit_equal_qobject(&test_cases[i].decoded, obj));
+ 
+         str = qobject_to_json(obj);
+-        qobject_decref(obj);
++        qobject_unref(obj);
+ 
+         obj = qobject_from_json(qstring_get_str(str), &error_abort);
+         g_assert(qlit_equal_qobject(&test_cases[i].decoded, obj));
+ 
+-        qobject_decref(obj);
+-        QDECREF(str);
++        qobject_unref(obj);
++        qobject_unref(str);
+     }
+ }
+ 
+@@ -1301,7 +1301,7 @@ static void simple_varargs(void)
+     obj = qobject_from_jsonf("[%d, 2, %p]", 1, embedded_obj);
+     g_assert(qlit_equal_qobject(&decoded, obj));
+ 
+-    qobject_decref(obj);
++    qobject_unref(obj);
+ }
+ 
+ static void empty_input(void)
+@@ -1410,7 +1410,7 @@ static void limits_nesting(void)
+ 
+     obj = qobject_from_json(make_nest(buf, max_nesting), &error_abort);
+     g_assert(obj != NULL);
+-    qobject_decref(obj);
++    qobject_unref(obj);
+ 
+     obj = qobject_from_json(make_nest(buf, max_nesting + 1), &err);
+     error_free_or_abort(&err);
+diff --git a/tests/check-qlist.c b/tests/check-qlist.c
+index a1c69ed..ece83e2 100644
+--- a/tests/check-qlist.c
++++ b/tests/check-qlist.c
+@@ -29,7 +29,7 @@ static void qlist_new_test(void)
+     g_assert(qlist->base.refcnt == 1);
+     g_assert(qobject_type(QOBJECT(qlist)) == QTYPE_QLIST);
+ 
+-    QDECREF(qlist);
++    qobject_unref(qlist);
+ }
+ 
+ static void qlist_append_test(void)
+@@ -47,7 +47,7 @@ static void qlist_append_test(void)
+     g_assert(entry != NULL);
+     g_assert(entry->value == QOBJECT(qi));
+ 
+-    QDECREF(qlist);
++    qobject_unref(qlist);
+ }
+ 
+ static void qobject_to_qlist_test(void)
+@@ -58,7 +58,7 @@ static void qobject_to_qlist_test(void)
+ 
+     g_assert(qobject_to(QList, QOBJECT(qlist)) == qlist);
+ 
+-    QDECREF(qlist);
++    qobject_unref(qlist);
+ }
+ 
+ static int iter_called;
+@@ -96,7 +96,7 @@ static void qlist_iter_test(void)
+ 
+     g_assert(iter_called == iter_max);
+ 
+-    QDECREF(qlist);
++    qobject_unref(qlist);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/check-qlit.c b/tests/check-qlit.c
+index 96bbb06..bd6798d 100644
+--- a/tests/check-qlit.c
++++ b/tests/check-qlit.c
+@@ -62,7 +62,7 @@ static void qlit_equal_qobject_test(void)
+     qdict_put(qobject_to(QDict, qobj), "bee", qlist_new());
+     g_assert(!qlit_equal_qobject(&qlit, qobj));
+ 
+-    qobject_decref(qobj);
++    qobject_unref(qobj);
+ }
+ 
+ static void qobject_from_qlit_test(void)
+@@ -79,15 +79,15 @@ static void qobject_from_qlit_test(void)
+     bee = qdict_get_qlist(qdict, "bee");
+     obj = qlist_pop(bee);
+     g_assert_cmpint(qnum_get_int(qobject_to(QNum, obj)), ==, 43);
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     obj = qlist_pop(bee);
+     g_assert_cmpint(qnum_get_int(qobject_to(QNum, obj)), ==, 44);
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     obj = qlist_pop(bee);
+     g_assert(qbool_get_bool(qobject_to(QBool, obj)));
+-    qobject_decref(obj);
++    qobject_unref(obj);
+ 
+-    qobject_decref(qobj);
++    qobject_unref(qobj);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/check-qnull.c b/tests/check-qnull.c
+index afa4400..ebf21db 100644
+--- a/tests/check-qnull.c
++++ b/tests/check-qnull.c
+@@ -30,7 +30,7 @@ static void qnull_ref_test(void)
+     g_assert(obj == QOBJECT(&qnull_));
+     g_assert(qnull_.base.refcnt == 2);
+     g_assert(qobject_type(obj) == QTYPE_QNULL);
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     g_assert(qnull_.base.refcnt == 1);
+ }
+ 
+@@ -49,10 +49,10 @@ static void qnull_visit_test(void)
+     g_assert(qnull_.base.refcnt == 1);
+     obj = QOBJECT(qnull());
+     v = qobject_input_visitor_new(obj);
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     visit_type_null(v, NULL, &null, &error_abort);
+     g_assert(obj == QOBJECT(&qnull_));
+-    QDECREF(null);
++    qobject_unref(null);
+     visit_free(v);
+ 
+     null = NULL;
+@@ -60,8 +60,8 @@ static void qnull_visit_test(void)
+     visit_type_null(v, NULL, &null, &error_abort);
+     visit_complete(v, &obj);
+     g_assert(obj == QOBJECT(&qnull_));
+-    QDECREF(null);
+-    qobject_decref(obj);
++    qobject_unref(null);
++    qobject_unref(obj);
+     visit_free(v);
+ 
+     g_assert(qnull_.base.refcnt == 1);
+diff --git a/tests/check-qnum.c b/tests/check-qnum.c
+index 9187da7..4105015 100644
+--- a/tests/check-qnum.c
++++ b/tests/check-qnum.c
+@@ -35,7 +35,7 @@ static void qnum_from_int_test(void)
+     g_assert_cmpint(qn->base.refcnt, ==, 1);
+     g_assert_cmpint(qobject_type(QOBJECT(qn)), ==, QTYPE_QNUM);
+ 
+-    QDECREF(qn);
++    qobject_unref(qn);
+ }
+ 
+ static void qnum_from_uint_test(void)
+@@ -50,7 +50,7 @@ static void qnum_from_uint_test(void)
+     g_assert(qn->base.refcnt == 1);
+     g_assert(qobject_type(QOBJECT(qn)) == QTYPE_QNUM);
+ 
+-    QDECREF(qn);
++    qobject_unref(qn);
+ }
+ 
+ static void qnum_from_double_test(void)
+@@ -65,7 +65,7 @@ static void qnum_from_double_test(void)
+     g_assert_cmpint(qn->base.refcnt, ==, 1);
+     g_assert_cmpint(qobject_type(QOBJECT(qn)), ==, QTYPE_QNUM);
+ 
+-    QDECREF(qn);
++    qobject_unref(qn);
+ }
+ 
+ static void qnum_from_int64_test(void)
+@@ -76,7 +76,7 @@ static void qnum_from_int64_test(void)
+     qn = qnum_from_int(value);
+     g_assert_cmpint((int64_t) qn->u.i64, ==, value);
+ 
+-    QDECREF(qn);
++    qobject_unref(qn);
+ }
+ 
+ static void qnum_get_int_test(void)
+@@ -87,7 +87,7 @@ static void qnum_get_int_test(void)
+     qn = qnum_from_int(value);
+     g_assert_cmpint(qnum_get_int(qn), ==, value);
+ 
+-    QDECREF(qn);
++    qobject_unref(qn);
+ }
+ 
+ static void qnum_get_uint_test(void)
+@@ -100,25 +100,25 @@ static void qnum_get_uint_test(void)
+     qn = qnum_from_uint(value);
+     g_assert(qnum_get_try_uint(qn, &val));
+     g_assert_cmpuint(val, ==, value);
+-    QDECREF(qn);
++    qobject_unref(qn);
+ 
+     qn = qnum_from_int(value);
+     g_assert(qnum_get_try_uint(qn, &val));
+     g_assert_cmpuint(val, ==, value);
+-    QDECREF(qn);
++    qobject_unref(qn);
+ 
+     /* invalid cases */
+     qn = qnum_from_int(-1);
+     g_assert(!qnum_get_try_uint(qn, &val));
+-    QDECREF(qn);
++    qobject_unref(qn);
+ 
+     qn = qnum_from_uint(-1ULL);
+     g_assert(!qnum_get_try_int(qn, &ival));
+-    QDECREF(qn);
++    qobject_unref(qn);
+ 
+     qn = qnum_from_double(0.42);
+     g_assert(!qnum_get_try_uint(qn, &val));
+-    QDECREF(qn);
++    qobject_unref(qn);
+ }
+ 
+ static void qobject_to_qnum_test(void)
+@@ -127,11 +127,11 @@ static void qobject_to_qnum_test(void)
+ 
+     qn = qnum_from_int(0);
+     g_assert(qobject_to(QNum, QOBJECT(qn)) == qn);
+-    QDECREF(qn);
++    qobject_unref(qn);
+ 
+     qn = qnum_from_double(0);
+     g_assert(qobject_to(QNum, QOBJECT(qn)) == qn);
+-    QDECREF(qn);
++    qobject_unref(qn);
+ }
+ 
+ static void qnum_to_string_test(void)
+@@ -143,13 +143,13 @@ static void qnum_to_string_test(void)
+     tmp = qnum_to_string(qn);
+     g_assert_cmpstr(tmp, ==, "123456");
+     g_free(tmp);
+-    QDECREF(qn);
++    qobject_unref(qn);
+ 
+     qn = qnum_from_double(0.42);
+     tmp = qnum_to_string(qn);
+     g_assert_cmpstr(tmp, ==, "0.42");
+     g_free(tmp);
+-    QDECREF(qn);
++    qobject_unref(qn);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/check-qobject.c b/tests/check-qobject.c
+index 7629b80..5cb08fc 100644
+--- a/tests/check-qobject.c
++++ b/tests/check-qobject.c
+@@ -80,7 +80,7 @@ static void do_free_all(int _, ...)
+ 
+     va_start(ap, _);
+     while ((obj = va_arg(ap, QObject *)) != NULL) {
+-        qobject_decref(obj);
++        qobject_unref(obj);
+     }
+     va_end(ap);
+ }
+diff --git a/tests/check-qstring.c b/tests/check-qstring.c
+index 9c4dd3f..f11a7a8 100644
+--- a/tests/check-qstring.c
++++ b/tests/check-qstring.c
+@@ -31,7 +31,7 @@ static void qstring_from_str_test(void)
+     g_assert(strcmp(str, qstring->string) == 0);
+     g_assert(qobject_type(QOBJECT(qstring)) == QTYPE_QSTRING);
+ 
+-    QDECREF(qstring);
++    qobject_unref(qstring);
+ }
+ 
+ static void qstring_get_str_test(void)
+@@ -44,7 +44,7 @@ static void qstring_get_str_test(void)
+     ret_str = qstring_get_str(qstring);
+     g_assert(strcmp(ret_str, str) == 0);
+ 
+-    QDECREF(qstring);
++    qobject_unref(qstring);
+ }
+ 
+ static void qstring_append_chr_test(void)
+@@ -59,7 +59,7 @@ static void qstring_append_chr_test(void)
+         qstring_append_chr(qstring, str[i]);
+ 
+     g_assert(strcmp(str, qstring_get_str(qstring)) == 0);
+-    QDECREF(qstring);
++    qobject_unref(qstring);
+ }
+ 
+ static void qstring_from_substr_test(void)
+@@ -70,7 +70,7 @@ static void qstring_from_substr_test(void)
+     g_assert(qs != NULL);
+     g_assert(strcmp(qstring_get_str(qs), "tualiza") == 0);
+ 
+-    QDECREF(qs);
++    qobject_unref(qs);
+ }
+ 
+ 
+@@ -81,7 +81,7 @@ static void qobject_to_qstring_test(void)
+     qstring = qstring_from_str("foo");
+     g_assert(qobject_to(QString, QOBJECT(qstring)) == qstring);
+ 
+-    QDECREF(qstring);
++    qobject_unref(qstring);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/cpu-plug-test.c b/tests/cpu-plug-test.c
+index 112869b..48b8d09 100644
+--- a/tests/cpu-plug-test.c
++++ b/tests/cpu-plug-test.c
+@@ -42,7 +42,7 @@ static void test_plug_with_cpu_add(gconstpointer data)
+                        "  'arguments': { 'id': %d } }", i);
+         g_assert(response);
+         g_assert(!qdict_haskey(response, "error"));
+-        QDECREF(response);
++        qobject_unref(response);
+     }
+ 
+     qtest_end();
+@@ -66,7 +66,7 @@ static void test_plug_without_cpu_add(gconstpointer data)
+                    s->sockets * s->cores * s->threads);
+     g_assert(response);
+     g_assert(qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     qtest_end();
+     g_free(args);
+diff --git a/tests/device-introspect-test.c b/tests/device-introspect-test.c
+index a01321a..0b4f221 100644
+--- a/tests/device-introspect-test.c
++++ b/tests/device-introspect-test.c
+@@ -40,8 +40,8 @@ static QList *qom_list_types(const char *implements, bool abstract)
+                " 'arguments': %p }", args);
+     g_assert(qdict_haskey(resp, "return"));
+     ret = qdict_get_qlist(resp, "return");
+-    QINCREF(ret);
+-    QDECREF(resp);
++    qobject_ref(ret);
++    qobject_unref(resp);
+     return ret;
+ }
+ 
+@@ -54,7 +54,7 @@ static QDict *qom_type_index(QList *types)
+     QLIST_FOREACH_ENTRY(types, e) {
+         QDict *d = qobject_to(QDict, qlist_entry_obj(e));
+         const char *name = qdict_get_str(d, "name");
+-        QINCREF(d);
++        qobject_ref(d);
+         qdict_put(index, name, d);
+     }
+     return index;
+@@ -108,7 +108,7 @@ static void test_one_device(const char *type)
+     resp = qmp("{'execute': 'device-list-properties',"
+                " 'arguments': {'typename': %s}}",
+                type);
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     help = hmp("device_add \"%s,help\"", type);
+     g_free(help);
+@@ -129,7 +129,7 @@ static void test_device_intro_list(void)
+     qtest_start(common_args);
+ 
+     types = device_type_list(true);
+-    QDECREF(types);
++    qobject_unref(types);
+ 
+     help = hmp("device_add help");
+     g_free(help);
+@@ -157,8 +157,8 @@ static void test_qom_list_parents(const char *parent)
+         g_assert(qom_has_parent(index, name, parent));
+     }
+ 
+-    QDECREF(types);
+-    QDECREF(index);
++    qobject_unref(types);
++    qobject_unref(index);
+ }
+ 
+ static void test_qom_list_fields(void)
+@@ -187,8 +187,8 @@ static void test_qom_list_fields(void)
+     test_qom_list_parents("device");
+     test_qom_list_parents("sys-bus-device");
+ 
+-    QDECREF(all_types);
+-    QDECREF(non_abstract);
++    qobject_unref(all_types);
++    qobject_unref(non_abstract);
+     qtest_end();
+ }
+ 
+@@ -222,7 +222,7 @@ static void test_device_intro_concrete(void)
+         test_one_device(type);
+     }
+ 
+-    QDECREF(types);
++    qobject_unref(types);
+     qtest_end();
+ }
+ 
+@@ -255,8 +255,8 @@ static void test_abstract_interfaces(void)
+         g_assert(qdict_haskey(d, "abstract") && qdict_get_bool(d, "abstract"));
+     }
+ 
+-    QDECREF(all_types);
+-    QDECREF(index);
++    qobject_unref(all_types);
++    qobject_unref(index);
+     qtest_end();
+ }
+ 
+diff --git a/tests/drive_del-test.c b/tests/drive_del-test.c
+index 313030a..852fefc 100644
+--- a/tests/drive_del-test.c
++++ b/tests/drive_del-test.c
+@@ -41,7 +41,7 @@ static void device_del(void)
+     response = qmp_receive();
+     g_assert(response);
+     g_assert(qdict_haskey(response, "return"));
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ static void test_drive_without_dev(void)
+@@ -78,7 +78,7 @@ static void test_after_failed_device_add(void)
+     g_assert(response);
+     error = qdict_get_qdict(response, "error");
+     g_assert_cmpstr(qdict_get_try_str(error, "class"), ==, "GenericError");
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     /* Delete the drive */
+     drive_del();
+diff --git a/tests/libqos/libqos.c b/tests/libqos/libqos.c
+index 5124e98..013ca68 100644
+--- a/tests/libqos/libqos.c
++++ b/tests/libqos/libqos.c
+@@ -100,14 +100,14 @@ void migrate(QOSState *from, QOSState *to, const char *uri)
+     sub = qdict_get_qdict(rsp, "return");
+     g_assert(qdict_haskey(sub, "running"));
+     running = qdict_get_bool(sub, "running");
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     /* Issue the migrate command. */
+     rsp = qtest_qmp(from->qts,
+                     "{ 'execute': 'migrate', 'arguments': { 'uri': %s }}",
+                     uri);
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     /* Wait for STOP event, but only if we were running: */
+     if (running) {
+@@ -132,12 +132,12 @@ void migrate(QOSState *from, QOSState *to, const char *uri)
+ 
+         /* "setup", "active", "completed", "failed", "cancelled" */
+         if (strcmp(st, "completed") == 0) {
+-            QDECREF(rsp);
++            qobject_unref(rsp);
+             break;
+         }
+ 
+         if ((strcmp(st, "setup") == 0) || (strcmp(st, "active") == 0)) {
+-            QDECREF(rsp);
++            qobject_unref(rsp);
+             g_usleep(5000);
+             continue;
+         }
+diff --git a/tests/libqos/pci-pc.c b/tests/libqos/pci-pc.c
+index a2daf61..a780330 100644
+--- a/tests/libqos/pci-pc.c
++++ b/tests/libqos/pci-pc.c
+@@ -170,7 +170,7 @@ void qpci_unplug_acpi_device_test(const char *id, uint8_t slot)
+     g_free(cmd);
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     outb(ACPI_PCIHP_ADDR + PCI_EJ_BASE, 1 << slot);
+ 
+diff --git a/tests/libqtest.c b/tests/libqtest.c
+index 6f33a37..43fb97e 100644
+--- a/tests/libqtest.c
++++ b/tests/libqtest.c
+@@ -517,8 +517,8 @@ void qmp_fd_sendv(int fd, const char *fmt, va_list ap)
+         /* Send QMP request */
+         socket_send(fd, str, qstring_get_length(qstr));
+ 
+-        QDECREF(qstr);
+-        qobject_decref(qobj);
++        qobject_unref(qstr);
++        qobject_unref(qobj);
+     }
+ }
+ 
+@@ -585,7 +585,7 @@ void qtest_async_qmp(QTestState *s, const char *fmt, ...)
+ void qtest_qmpv_discard_response(QTestState *s, const char *fmt, va_list ap)
+ {
+     QDict *response = qtest_qmpv(s, fmt, ap);
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ void qtest_qmp_discard_response(QTestState *s, const char *fmt, ...)
+@@ -596,7 +596,7 @@ void qtest_qmp_discard_response(QTestState *s, const char *fmt, ...)
+     va_start(ap, fmt);
+     response = qtest_qmpv(s, fmt, ap);
+     va_end(ap);
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ QDict *qtest_qmp_eventwait_ref(QTestState *s, const char *event)
+@@ -609,7 +609,7 @@ QDict *qtest_qmp_eventwait_ref(QTestState *s, const char *event)
+             (strcmp(qdict_get_str(response, "event"), event) == 0)) {
+             return response;
+         }
+-        QDECREF(response);
++        qobject_unref(response);
+     }
+ }
+ 
+@@ -618,7 +618,7 @@ void qtest_qmp_eventwait(QTestState *s, const char *event)
+     QDict *response;
+ 
+     response = qtest_qmp_eventwait_ref(s, event);
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ char *qtest_hmpv(QTestState *s, const char *fmt, va_list ap)
+@@ -634,12 +634,12 @@ char *qtest_hmpv(QTestState *s, const char *fmt, va_list ap)
+     ret = g_strdup(qdict_get_try_str(resp, "return"));
+     while (ret == NULL && qdict_get_try_str(resp, "event")) {
+         /* Ignore asynchronous QMP events */
+-        QDECREF(resp);
++        qobject_unref(resp);
+         resp = qtest_qmp_receive(s);
+         ret = g_strdup(qdict_get_try_str(resp, "return"));
+     }
+     g_assert(ret);
+-    QDECREF(resp);
++    qobject_unref(resp);
+     g_free(cmd);
+     return ret;
+ }
+@@ -1021,7 +1021,7 @@ void qtest_cb_for_every_machine(void (*cb)(const char *machine))
+     }
+ 
+     qtest_end();
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ /*
+@@ -1050,7 +1050,7 @@ void qtest_qmp_device_add(const char *driver, const char *id, const char *fmt,
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "event")); /* We don't expect any events */
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ /*
+@@ -1095,6 +1095,6 @@ void qtest_qmp_device_del(const char *id)
+     g_assert(event);
+     g_assert_cmpstr(qdict_get_str(event, "event"), ==, "DEVICE_DELETED");
+ 
+-    QDECREF(response1);
+-    QDECREF(response2);
++    qobject_unref(response1);
++    qobject_unref(response2);
+ }
+diff --git a/tests/machine-none-test.c b/tests/machine-none-test.c
+index efdd4be..f286557 100644
+--- a/tests/machine-none-test.c
++++ b/tests/machine-none-test.c
+@@ -88,7 +88,7 @@ static void test_machine_cpu_cli(void)
+ 
+     response = qmp("{ 'execute': 'quit' }");
+     g_assert(qdict_haskey(response, "return"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     qtest_quit(global_qtest);
+ }
+diff --git a/tests/migration-test.c b/tests/migration-test.c
+index 422bf1a..0acd715 100644
+--- a/tests/migration-test.c
++++ b/tests/migration-test.c
+@@ -193,7 +193,7 @@ static QDict *wait_command(QTestState *who, const char *command)
+         if (!strcmp(event_string, "STOP")) {
+             got_stop = true;
+         }
+-        QDECREF(response);
++        qobject_unref(response);
+         response = qtest_qmp_receive(who);
+     }
+     return response;
+@@ -219,7 +219,7 @@ static uint64_t get_migration_pass(QTestState *who)
+         rsp_ram = qdict_get_qdict(rsp_return, "ram");
+         result = qdict_get_try_int(rsp_ram, "dirty-sync-count", 0);
+     }
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+     return result;
+ }
+ 
+@@ -235,7 +235,7 @@ static void wait_for_migration_complete(QTestState *who)
+         status = qdict_get_str(rsp_return, "status");
+         completed = strcmp(status, "completed") == 0;
+         g_assert_cmpstr(status, !=,  "failed");
+-        QDECREF(rsp);
++        qobject_unref(rsp);
+         if (completed) {
+             return;
+         }
+@@ -322,7 +322,7 @@ static void migrate_check_parameter(QTestState *who, const char *parameter,
+                              qdict_get_try_int(rsp_return,  parameter, -1));
+     g_assert_cmpstr(result, ==, value);
+     g_free(result);
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ }
+ 
+ static void migrate_set_parameter(QTestState *who, const char *parameter,
+@@ -337,7 +337,7 @@ static void migrate_set_parameter(QTestState *who, const char *parameter,
+     rsp = qtest_qmp(who, cmd);
+     g_free(cmd);
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+     migrate_check_parameter(who, parameter, value);
+ }
+ 
+@@ -355,7 +355,7 @@ static void migrate_set_capability(QTestState *who, const char *capability,
+     rsp = qtest_qmp(who, cmd);
+     g_free(cmd);
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ }
+ 
+ static void migrate(QTestState *who, const char *uri)
+@@ -369,7 +369,7 @@ static void migrate(QTestState *who, const char *uri)
+     rsp = qtest_qmp(who, cmd);
+     g_free(cmd);
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ }
+ 
+ static void migrate_start_postcopy(QTestState *who)
+@@ -378,7 +378,7 @@ static void migrate_start_postcopy(QTestState *who)
+ 
+     rsp = wait_command(who, "{ 'execute': 'migrate-start-postcopy' }");
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ }
+ 
+ static void test_migrate_start(QTestState **from, QTestState **to,
+@@ -491,7 +491,7 @@ static void deprecated_set_downtime(QTestState *who, const double value)
+     rsp = qtest_qmp(who, cmd);
+     g_free(cmd);
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+     result_int = value * 1000L;
+     expected = g_strdup_printf("%" PRId64, result_int);
+     migrate_check_parameter(who, "downtime-limit", expected);
+@@ -508,7 +508,7 @@ static void deprecated_set_speed(QTestState *who, const char *value)
+     rsp = qtest_qmp(who, cmd);
+     g_free(cmd);
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+     migrate_check_parameter(who, "max-bandwidth", value);
+ }
+ 
+@@ -581,7 +581,7 @@ static void test_baddest(void)
+ 
+         g_assert(!strcmp(status, "setup") || !(strcmp(status, "failed")));
+         failed = !strcmp(status, "failed");
+-        QDECREF(rsp);
++        qobject_unref(rsp);
+     } while (!failed);
+ 
+     /* Is the machine currently running? */
+@@ -590,7 +590,7 @@ static void test_baddest(void)
+     rsp_return = qdict_get_qdict(rsp, "return");
+     g_assert(qdict_haskey(rsp_return, "running"));
+     g_assert(qdict_get_bool(rsp_return, "running"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     test_migrate_end(from, to, false);
+ }
+diff --git a/tests/numa-test.c b/tests/numa-test.c
+index 0f861d8..169213f 100644
+--- a/tests/numa-test.c
++++ b/tests/numa-test.c
+@@ -111,10 +111,10 @@ static void test_query_cpus(const void *data)
+         } else {
+             g_assert_cmpint(node, ==, 1);
+         }
+-        qobject_decref(e);
++        qobject_unref(e);
+     }
+ 
+-    QDECREF(resp);
++    qobject_unref(resp);
+     qtest_end();
+     g_free(cli);
+ }
+@@ -164,10 +164,10 @@ static void pc_numa_cpu(const void *data)
+         } else {
+             g_assert(false);
+         }
+-        qobject_decref(e);
++        qobject_unref(e);
+     }
+ 
+-    QDECREF(resp);
++    qobject_unref(resp);
+     qtest_end();
+     g_free(cli);
+ }
+@@ -209,10 +209,10 @@ static void spapr_numa_cpu(const void *data)
+         } else {
+             g_assert(false);
+         }
+-        qobject_decref(e);
++        qobject_unref(e);
+     }
+ 
+-    QDECREF(resp);
++    qobject_unref(resp);
+     qtest_end();
+     g_free(cli);
+ }
+@@ -252,10 +252,10 @@ static void aarch64_numa_cpu(const void *data)
+         } else {
+             g_assert(false);
+         }
+-        qobject_decref(e);
++        qobject_unref(e);
+     }
+ 
+-    QDECREF(resp);
++    qobject_unref(resp);
+     qtest_end();
+     g_free(cli);
+ }
+diff --git a/tests/pvpanic-test.c b/tests/pvpanic-test.c
+index ebdf32c..7461a72 100644
+--- a/tests/pvpanic-test.c
++++ b/tests/pvpanic-test.c
+@@ -28,7 +28,7 @@ static void test_panic(void)
+     data = qdict_get_qdict(response, "data");
+     g_assert(qdict_haskey(data, "action"));
+     g_assert_cmpstr(qdict_get_str(data, "action"), ==, "pause");
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/q35-test.c b/tests/q35-test.c
+index 3eaedf4..7ea7acc 100644
+--- a/tests/q35-test.c
++++ b/tests/q35-test.c
+@@ -109,7 +109,7 @@ static void test_smram_lock(void)
+     response = qmp("{'execute': 'system_reset', 'arguments': {} }");
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     /* check open is settable again */
+     smram_set_bit(pcidev, MCH_HOST_BRIDGE_SMRAM_D_OPEN, false);
+diff --git a/tests/qmp-test.c b/tests/qmp-test.c
+index f34428e..3a5c42e 100644
+--- a/tests/qmp-test.c
++++ b/tests/qmp-test.c
+@@ -52,27 +52,27 @@ static void test_malformed(QTestState *qts)
+     /* Not even a dictionary */
+     resp = qtest_qmp(qts, "null");
+     g_assert_cmpstr(get_error_class(resp), ==, "GenericError");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* No "execute" key */
+     resp = qtest_qmp(qts, "{}");
+     g_assert_cmpstr(get_error_class(resp), ==, "GenericError");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* "execute" isn't a string */
+     resp = qtest_qmp(qts, "{ 'execute': true }");
+     g_assert_cmpstr(get_error_class(resp), ==, "GenericError");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* "arguments" isn't a dictionary */
+     resp = qtest_qmp(qts, "{ 'execute': 'no-such-cmd', 'arguments': [] }");
+     g_assert_cmpstr(get_error_class(resp), ==, "GenericError");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* extra key */
+     resp = qtest_qmp(qts, "{ 'execute': 'no-such-cmd', 'extra': true }");
+     g_assert_cmpstr(get_error_class(resp), ==, "GenericError");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ }
+ 
+ static void test_qmp_protocol(void)
+@@ -90,12 +90,12 @@ static void test_qmp_protocol(void)
+     test_version(qdict_get(q, "version"));
+     capabilities = qdict_get_qlist(q, "capabilities");
+     g_assert(capabilities && qlist_empty(capabilities));
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* Test valid command before handshake */
+     resp = qtest_qmp(qts, "{ 'execute': 'query-version' }");
+     g_assert_cmpstr(get_error_class(resp), ==, "CommandNotFound");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* Test malformed commands before handshake */
+     test_malformed(qts);
+@@ -104,17 +104,17 @@ static void test_qmp_protocol(void)
+     resp = qtest_qmp(qts, "{ 'execute': 'qmp_capabilities' }");
+     ret = qdict_get_qdict(resp, "return");
+     g_assert(ret && !qdict_size(ret));
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* Test repeated handshake */
+     resp = qtest_qmp(qts, "{ 'execute': 'qmp_capabilities' }");
+     g_assert_cmpstr(get_error_class(resp), ==, "CommandNotFound");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* Test valid command */
+     resp = qtest_qmp(qts, "{ 'execute': 'query-version' }");
+     test_version(qdict_get(resp, "return"));
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* Test malformed commands */
+     test_malformed(qts);
+@@ -124,13 +124,13 @@ static void test_qmp_protocol(void)
+     ret = qdict_get_qdict(resp, "return");
+     g_assert(ret);
+     g_assert_cmpstr(qdict_get_try_str(resp, "id"), ==, "cookie#1");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* Test command failure with 'id' */
+     resp = qtest_qmp(qts, "{ 'execute': 'human-monitor-command', 'id': 2 }");
+     g_assert_cmpstr(get_error_class(resp), ==, "GenericError");
+     g_assert_cmpint(qdict_get_int(resp, "id"), ==, 2);
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     qtest_quit(qts);
+ }
+@@ -159,21 +159,21 @@ static void test_qmp_oob(void)
+     qstr = qobject_to(QString, entry->value);
+     g_assert(qstr);
+     g_assert_cmpstr(qstring_get_str(qstr), ==, "oob");
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* Try a fake capability, it should fail. */
+     resp = qtest_qmp(qts,
+                      "{ 'execute': 'qmp_capabilities', "
+                      "  'arguments': { 'enable': [ 'cap-does-not-exist' ] } }");
+     g_assert(qdict_haskey(resp, "error"));
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /* Now, enable OOB in current QMP session, it should succeed. */
+     resp = qtest_qmp(qts,
+                      "{ 'execute': 'qmp_capabilities', "
+                      "  'arguments': { 'enable': [ 'oob' ] } }");
+     g_assert(qdict_haskey(resp, "return"));
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /*
+      * Try any command that does not support OOB but with OOB flag. We
+@@ -183,7 +183,7 @@ static void test_qmp_oob(void)
+                      "{ 'execute': 'query-cpus',"
+                      "  'control': { 'run-oob': true } }");
+     g_assert(qdict_haskey(resp, "error"));
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     /*
+      * First send the "x-oob-test" command with lock=true and
+@@ -210,7 +210,7 @@ static void test_qmp_oob(void)
+             !g_strcmp0(cmd_id, "unlock-cmd")) {
+             acks++;
+         }
+-        QDECREF(resp);
++        qobject_unref(resp);
+     }
+ 
+     qtest_quit(qts);
+@@ -274,7 +274,7 @@ static void test_query(const void *data)
+                                         -1, &error_abort),
+                         ==, expected_error_class);
+     }
+-    QDECREF(resp);
++    qobject_unref(resp);
+ 
+     qtest_end();
+ }
+@@ -324,7 +324,7 @@ static void qmp_schema_init(QmpSchema *schema)
+     visit_type_SchemaInfoList(qiv, NULL, &schema->list, &error_abort);
+     visit_free(qiv);
+ 
+-    QDECREF(resp);
++    qobject_unref(resp);
+     qtest_end();
+ 
+     schema->hash = g_hash_table_new(g_str_hash, g_str_equal);
+diff --git a/tests/qom-test.c b/tests/qom-test.c
+index db0d3ab..5bf3921 100644
+--- a/tests/qom-test.c
++++ b/tests/qom-test.c
+@@ -59,7 +59,7 @@ static void test_properties(const char *path, bool recurse)
+     g_assert(response);
+ 
+     if (!recurse) {
+-        QDECREF(response);
++        qobject_unref(response);
+         return;
+     }
+ 
+@@ -84,10 +84,10 @@ static void test_properties(const char *path, bool recurse)
+                       path, prop);
+             /* qom-get may fail but should not, e.g., segfault. */
+             g_assert(tmp);
+-            QDECREF(tmp);
++            qobject_unref(tmp);
+         }
+     }
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ static void test_machine(gconstpointer data)
+@@ -103,7 +103,7 @@ static void test_machine(gconstpointer data)
+ 
+     response = qmp("{ 'execute': 'quit' }");
+     g_assert(qdict_haskey(response, "return"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     qtest_end();
+     g_free(args);
+diff --git a/tests/tco-test.c b/tests/tco-test.c
+index aee17af..9945fb8 100644
+--- a/tests/tco-test.c
++++ b/tests/tco-test.c
+@@ -241,8 +241,8 @@ static QDict *get_watchdog_action(void)
+     QDict *data;
+ 
+     data = qdict_get_qdict(ev, "data");
+-    QINCREF(data);
+-    QDECREF(ev);
++    qobject_ref(data);
++    qobject_unref(ev);
+     return data;
+ }
+ 
+@@ -265,7 +265,7 @@ static void test_tco_second_timeout_pause(void)
+     clock_step(ticks * TCO_TICK_NSEC * 2);
+     ad = get_watchdog_action();
+     g_assert(!strcmp(qdict_get_str(ad, "action"), "pause"));
+-    QDECREF(ad);
++    qobject_unref(ad);
+ 
+     stop_tco(&td);
+     test_end(&td);
+@@ -290,7 +290,7 @@ static void test_tco_second_timeout_reset(void)
+     clock_step(ticks * TCO_TICK_NSEC * 2);
+     ad = get_watchdog_action();
+     g_assert(!strcmp(qdict_get_str(ad, "action"), "reset"));
+-    QDECREF(ad);
++    qobject_unref(ad);
+ 
+     stop_tco(&td);
+     test_end(&td);
+@@ -315,7 +315,7 @@ static void test_tco_second_timeout_shutdown(void)
+     clock_step(ticks * TCO_TICK_NSEC * 2);
+     ad = get_watchdog_action();
+     g_assert(!strcmp(qdict_get_str(ad, "action"), "shutdown"));
+-    QDECREF(ad);
++    qobject_unref(ad);
+ 
+     stop_tco(&td);
+     test_end(&td);
+@@ -340,7 +340,7 @@ static void test_tco_second_timeout_none(void)
+     clock_step(ticks * TCO_TICK_NSEC * 2);
+     ad = get_watchdog_action();
+     g_assert(!strcmp(qdict_get_str(ad, "action"), "none"));
+-    QDECREF(ad);
++    qobject_unref(ad);
+ 
+     stop_tco(&td);
+     test_end(&td);
+diff --git a/tests/test-char.c b/tests/test-char.c
+index 306c728..1880d36 100644
+--- a/tests/test-char.c
++++ b/tests/test-char.c
+@@ -322,7 +322,7 @@ static void char_socket_test_common(Chardev *chr)
+     qdict = qobject_to(QDict, addr);
+     port = qdict_get_str(qdict, "port");
+     tmp = g_strdup_printf("tcp:127.0.0.1:%s", port);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     qemu_chr_fe_init(&be, chr, &error_abort);
+     qemu_chr_fe_set_handlers(&be, socket_can_read, socket_read,
+diff --git a/tests/test-keyval.c b/tests/test-keyval.c
+index 029f052..63cb146 100644
+--- a/tests/test-keyval.c
++++ b/tests/test-keyval.c
+@@ -30,7 +30,7 @@ static void test_keyval_parse(void)
+     /* Nothing */
+     qdict = keyval_parse("", NULL, &error_abort);
+     g_assert_cmpuint(qdict_size(qdict), ==, 0);
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Empty key (qemu_opts_parse() accepts this) */
+     qdict = keyval_parse("=val", NULL, &err);
+@@ -70,7 +70,7 @@ static void test_keyval_parse(void)
+     qdict = keyval_parse(params + 2, NULL, &error_abort);
+     g_assert_cmpuint(qdict_size(qdict), ==, 1);
+     g_assert_cmpstr(qdict_get_try_str(qdict, long_key + 1), ==, "v");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Long key fragment */
+     qdict = keyval_parse(params, NULL, &error_abort);
+@@ -79,7 +79,7 @@ static void test_keyval_parse(void)
+     g_assert(sub_qdict);
+     g_assert_cmpuint(qdict_size(sub_qdict), ==, 1);
+     g_assert_cmpstr(qdict_get_try_str(sub_qdict, long_key + 1), ==, "v");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     g_free(params);
+ 
+     /* Crap after valid key */
+@@ -92,13 +92,13 @@ static void test_keyval_parse(void)
+     g_assert_cmpuint(qdict_size(qdict), ==, 2);
+     g_assert_cmpstr(qdict_get_try_str(qdict, "a"), ==, "3");
+     g_assert_cmpstr(qdict_get_try_str(qdict, "b"), ==, "2,x");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Even when it doesn't in qemu_opts_parse() */
+     qdict = keyval_parse("id=foo,id=bar", NULL, &error_abort);
+     g_assert_cmpuint(qdict_size(qdict), ==, 1);
+     g_assert_cmpstr(qdict_get_try_str(qdict, "id"), ==, "bar");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Dotted keys */
+     qdict = keyval_parse("a.b.c=1,a.b.c=2,d=3", NULL, &error_abort);
+@@ -111,7 +111,7 @@ static void test_keyval_parse(void)
+     g_assert_cmpuint(qdict_size(sub_qdict), ==, 1);
+     g_assert_cmpstr(qdict_get_try_str(sub_qdict, "c"), ==, "2");
+     g_assert_cmpstr(qdict_get_try_str(qdict, "d"), ==, "3");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Inconsistent dotted keys */
+     qdict = keyval_parse("a.b=1,a=2", NULL, &err);
+@@ -125,7 +125,7 @@ static void test_keyval_parse(void)
+     qdict = keyval_parse("x=y,", NULL, &error_abort);
+     g_assert_cmpuint(qdict_size(qdict), ==, 1);
+     g_assert_cmpstr(qdict_get_try_str(qdict, "x"), ==, "y");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Except when it isn't */
+     qdict = keyval_parse(",", NULL, &err);
+@@ -136,13 +136,13 @@ static void test_keyval_parse(void)
+     qdict = keyval_parse("x=,,id=bar", NULL, &error_abort);
+     g_assert_cmpuint(qdict_size(qdict), ==, 1);
+     g_assert_cmpstr(qdict_get_try_str(qdict, "x"), ==, ",id=bar");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Anti-social ID is left to caller (qemu_opts_parse() rejects it) */
+     qdict = keyval_parse("id=666", NULL, &error_abort);
+     g_assert_cmpuint(qdict_size(qdict), ==, 1);
+     g_assert_cmpstr(qdict_get_try_str(qdict, "id"), ==, "666");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Implied value not supported (unlike qemu_opts_parse()) */
+     qdict = keyval_parse("an,noaus,noaus=", NULL, &err);
+@@ -160,7 +160,7 @@ static void test_keyval_parse(void)
+     g_assert_cmpstr(qdict_get_try_str(qdict, "implied"), ==, "an");
+     g_assert_cmpstr(qdict_get_try_str(qdict, "aus"), ==, "off");
+     g_assert_cmpstr(qdict_get_try_str(qdict, "noaus"), ==, "");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Implied dotted key */
+     qdict = keyval_parse("val", "eins.zwei", &error_abort);
+@@ -169,7 +169,7 @@ static void test_keyval_parse(void)
+     g_assert(sub_qdict);
+     g_assert_cmpuint(qdict_size(sub_qdict), ==, 1);
+     g_assert_cmpstr(qdict_get_try_str(sub_qdict, "zwei"), ==, "val");
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Implied key with empty value (qemu_opts_parse() accepts this) */
+     qdict = keyval_parse(",", "implied", &err);
+@@ -198,7 +198,7 @@ static void check_list012(QList *qlist)
+         qstr = qobject_to(QString, qlist_pop(qlist));
+         g_assert(qstr);
+         g_assert_cmpstr(qstring_get_str(qstr), ==, expected[i]);
+-        QDECREF(qstr);
++        qobject_unref(qstr);
+     }
+     g_assert(qlist_empty(qlist));
+ }
+@@ -218,14 +218,14 @@ static void test_keyval_parse_list(void)
+                          NULL, &error_abort);
+     g_assert_cmpint(qdict_size(qdict), ==, 1);
+     check_list012(qdict_get_qlist(qdict, "list"));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Multiple indexes, last one wins */
+     qdict = keyval_parse("list.1=goner,list.0=null,list.01=eins,list.2=zwei",
+                          NULL, &error_abort);
+     g_assert_cmpint(qdict_size(qdict), ==, 1);
+     check_list012(qdict_get_qlist(qdict, "list"));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* List at deeper nesting */
+     qdict = keyval_parse("a.list.1=eins,a.list.00=null,a.list.2=zwei",
+@@ -234,7 +234,7 @@ static void test_keyval_parse_list(void)
+     sub_qdict = qdict_get_qdict(qdict, "a");
+     g_assert_cmpint(qdict_size(sub_qdict), ==, 1);
+     check_list012(qdict_get_qlist(sub_qdict, "list"));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+ 
+     /* Inconsistent dotted keys: both list and dictionary */
+     qdict = keyval_parse("a.b.c=1,a.b.0=2", NULL, &err);
+@@ -262,7 +262,7 @@ static void test_keyval_visit_bool(void)
+ 
+     qdict = keyval_parse("bool1=on,bool2=off", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_bool(v, "bool1", &b, &error_abort);
+     g_assert(b);
+@@ -274,7 +274,7 @@ static void test_keyval_visit_bool(void)
+ 
+     qdict = keyval_parse("bool1=offer", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_bool(v, "bool1", &b, &err);
+     error_free_or_abort(&err);
+@@ -292,7 +292,7 @@ static void test_keyval_visit_number(void)
+     /* Lower limit zero */
+     qdict = keyval_parse("number1=0", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_uint64(v, "number1", &u, &error_abort);
+     g_assert_cmpuint(u, ==, 0);
+@@ -304,7 +304,7 @@ static void test_keyval_visit_number(void)
+     qdict = keyval_parse("number1=18446744073709551615,number2=-1",
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_uint64(v, "number1", &u, &error_abort);
+     g_assert_cmphex(u, ==, UINT64_MAX);
+@@ -318,7 +318,7 @@ static void test_keyval_visit_number(void)
+     qdict = keyval_parse("number1=18446744073709551616",
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_uint64(v, "number1", &u, &err);
+     error_free_or_abort(&err);
+@@ -329,7 +329,7 @@ static void test_keyval_visit_number(void)
+     qdict = keyval_parse("number1=-18446744073709551616",
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_uint64(v, "number1", &u, &err);
+     error_free_or_abort(&err);
+@@ -340,7 +340,7 @@ static void test_keyval_visit_number(void)
+     qdict = keyval_parse("number1=0x2a,number2=052",
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_uint64(v, "number1", &u, &error_abort);
+     g_assert_cmpuint(u, ==, 42);
+@@ -354,7 +354,7 @@ static void test_keyval_visit_number(void)
+     qdict = keyval_parse("number1=3.14,number2=08",
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_uint64(v, "number1", &u, &err);
+     error_free_or_abort(&err);
+@@ -374,7 +374,7 @@ static void test_keyval_visit_size(void)
+     /* Lower limit zero */
+     qdict = keyval_parse("sz1=0", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_size(v, "sz1", &sz, &error_abort);
+     g_assert_cmpuint(sz, ==, 0);
+@@ -390,7 +390,7 @@ static void test_keyval_visit_size(void)
+                          "sz3=9007199254740993",
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_size(v, "sz1", &sz, &error_abort);
+     g_assert_cmphex(sz, ==, 0x1fffffffffffff);
+@@ -407,7 +407,7 @@ static void test_keyval_visit_size(void)
+                          "sz2=9223372036854775295", /* 7ffffffffffffdff */
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_size(v, "sz1", &sz, &error_abort);
+     g_assert_cmphex(sz, ==, 0x7ffffffffffffc00);
+@@ -422,7 +422,7 @@ static void test_keyval_visit_size(void)
+                          "sz2=18446744073709550591", /* fffffffffffffbff */
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_size(v, "sz1", &sz, &error_abort);
+     g_assert_cmphex(sz, ==, 0xfffffffffffff800);
+@@ -437,7 +437,7 @@ static void test_keyval_visit_size(void)
+                          "sz2=18446744073709550592", /* fffffffffffffc00 */
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_size(v, "sz1", &sz, &err);
+     error_free_or_abort(&err);
+@@ -450,7 +450,7 @@ static void test_keyval_visit_size(void)
+     qdict = keyval_parse("sz1=8b,sz2=1.5k,sz3=2M,sz4=0.1G,sz5=16777215T",
+                          NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_size(v, "sz1", &sz, &error_abort);
+     g_assert_cmpuint(sz, ==, 8);
+@@ -469,7 +469,7 @@ static void test_keyval_visit_size(void)
+     /* Beyond limit with suffix */
+     qdict = keyval_parse("sz1=16777216T", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_size(v, "sz1", &sz, &err);
+     error_free_or_abort(&err);
+@@ -479,7 +479,7 @@ static void test_keyval_visit_size(void)
+     /* Trailing crap */
+     qdict = keyval_parse("sz1=16E,sz2=16Gi", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_size(v, "sz1", &sz, &err);
+     error_free_or_abort(&err);
+@@ -498,7 +498,7 @@ static void test_keyval_visit_dict(void)
+ 
+     qdict = keyval_parse("a.b.c=1,a.b.c=2,d=3", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_start_struct(v, "a", NULL, 0, &error_abort);
+     visit_start_struct(v, "b", NULL, 0, &error_abort);
+@@ -516,7 +516,7 @@ static void test_keyval_visit_dict(void)
+ 
+     qdict = keyval_parse("a.b=", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_start_struct(v, "a", NULL, 0, &error_abort);
+     visit_type_int(v, "c", &i, &err);   /* a.c missing */
+@@ -539,7 +539,7 @@ static void test_keyval_visit_list(void)
+     qdict = keyval_parse("a.0=,a.1=I,a.2.0=II", NULL, &error_abort);
+     /* TODO empty list */
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_start_list(v, "a", NULL, 0, &error_abort);
+     visit_type_str(v, NULL, &s, &error_abort);
+@@ -562,7 +562,7 @@ static void test_keyval_visit_list(void)
+ 
+     qdict = keyval_parse("a.0=,b.0.0=head", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_start_list(v, "a", NULL, 0, &error_abort);
+     visit_check_list(v, &err);  /* a[0] unexpected */
+@@ -591,7 +591,7 @@ static void test_keyval_visit_optional(void)
+ 
+     qdict = keyval_parse("a.b=1", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_optional(v, "b", &present);
+     g_assert(!present);         /* b missing */
+@@ -627,7 +627,7 @@ static void test_keyval_visit_alternate(void)
+      */
+     qdict = keyval_parse("a=1,b=2,c=on", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_AltStrObj(v, "a", &aso, &error_abort);
+     g_assert_cmpint(aso->type, ==, QTYPE_QSTRING);
+@@ -651,19 +651,19 @@ static void test_keyval_visit_any(void)
+ 
+     qdict = keyval_parse("a.0=null,a.1=1", NULL, &error_abort);
+     v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
+-    QDECREF(qdict);
++    qobject_unref(qdict);
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_any(v, "a", &any, &error_abort);
+     qlist = qobject_to(QList, any);
+     g_assert(qlist);
+     qstr = qobject_to(QString, qlist_pop(qlist));
+     g_assert_cmpstr(qstring_get_str(qstr), ==, "null");
+-    QDECREF(qstr);
++    qobject_unref(qstr);
+     qstr = qobject_to(QString, qlist_pop(qlist));
+     g_assert_cmpstr(qstring_get_str(qstr), ==, "1");
+     g_assert(qlist_empty(qlist));
+-    QDECREF(qstr);
+-    qobject_decref(any);
++    qobject_unref(qstr);
++    qobject_unref(any);
+     visit_check_struct(v, &error_abort);
+     visit_end_struct(v, NULL);
+     visit_free(v);
+diff --git a/tests/test-netfilter.c b/tests/test-netfilter.c
+index 95f7839..e47075d 100644
+--- a/tests/test-netfilter.c
++++ b/tests/test-netfilter.c
+@@ -29,7 +29,7 @@ static void add_one_netfilter(void)
+ 
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     response = qmp("{'execute': 'object-del',"
+                    " 'arguments': {"
+@@ -37,7 +37,7 @@ static void add_one_netfilter(void)
+                    "}}");
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ /* add a netfilter to a netdev and then remove the netdev */
+@@ -57,7 +57,7 @@ static void remove_netdev_with_one_netfilter(void)
+ 
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     response = qmp("{'execute': 'netdev_del',"
+                    " 'arguments': {"
+@@ -65,7 +65,7 @@ static void remove_netdev_with_one_netfilter(void)
+                    "}}");
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     /* add back the netdev */
+     response = qmp("{'execute': 'netdev_add',"
+@@ -75,7 +75,7 @@ static void remove_netdev_with_one_netfilter(void)
+                    "}}");
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ /* add multi(2) netfilters to a netdev and then remove them */
+@@ -95,7 +95,7 @@ static void add_multi_netfilter(void)
+ 
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     response = qmp("{'execute': 'object-add',"
+                    " 'arguments': {"
+@@ -109,7 +109,7 @@ static void add_multi_netfilter(void)
+ 
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     response = qmp("{'execute': 'object-del',"
+                    " 'arguments': {"
+@@ -117,7 +117,7 @@ static void add_multi_netfilter(void)
+                    "}}");
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     response = qmp("{'execute': 'object-del',"
+                    " 'arguments': {"
+@@ -125,7 +125,7 @@ static void add_multi_netfilter(void)
+                    "}}");
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ /* add multi(2) netfilters to a netdev and then remove the netdev */
+@@ -145,7 +145,7 @@ static void remove_netdev_with_multi_netfilter(void)
+ 
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     response = qmp("{'execute': 'object-add',"
+                    " 'arguments': {"
+@@ -159,7 +159,7 @@ static void remove_netdev_with_multi_netfilter(void)
+ 
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     response = qmp("{'execute': 'netdev_del',"
+                    " 'arguments': {"
+@@ -167,7 +167,7 @@ static void remove_netdev_with_multi_netfilter(void)
+                    "}}");
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ 
+     /* add back the netdev */
+     response = qmp("{'execute': 'netdev_add',"
+@@ -177,7 +177,7 @@ static void remove_netdev_with_multi_netfilter(void)
+                    "}}");
+     g_assert(response);
+     g_assert(!qdict_haskey(response, "error"));
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/test-qemu-opts.c b/tests/test-qemu-opts.c
+index 2c422ab..77dd72b 100644
+--- a/tests/test-qemu-opts.c
++++ b/tests/test-qemu-opts.c
+@@ -887,7 +887,7 @@ static void test_opts_to_qdict_basic(void)
+     g_assert_cmpstr(qdict_get_str(dict, "number1"), ==, "42");
+     g_assert_false(qdict_haskey(dict, "number2"));
+ 
+-    QDECREF(dict);
++    qobject_unref(dict);
+     qemu_opts_del(opts);
+ }
+ 
+@@ -914,7 +914,7 @@ static void test_opts_to_qdict_filtered(void)
+     g_assert_cmpstr(qdict_get_str(dict, "number1"), ==, "42");
+     g_assert_false(qdict_haskey(dict, "number2"));
+     g_assert_false(qdict_haskey(dict, "bool1"));
+-    QDECREF(dict);
++    qobject_unref(dict);
+ 
+     dict = qemu_opts_to_qdict_filtered(opts, NULL, &opts_list_02, false);
+     g_assert(dict != NULL);
+@@ -924,7 +924,7 @@ static void test_opts_to_qdict_filtered(void)
+     g_assert_false(qdict_haskey(dict, "str3"));
+     g_assert_false(qdict_haskey(dict, "number1"));
+     g_assert_false(qdict_haskey(dict, "number2"));
+-    QDECREF(dict);
++    qobject_unref(dict);
+ 
+     /* Now delete converted options from opts */
+     dict = qemu_opts_to_qdict_filtered(opts, NULL, &opts_list_01, true);
+@@ -935,7 +935,7 @@ static void test_opts_to_qdict_filtered(void)
+     g_assert_cmpstr(qdict_get_str(dict, "number1"), ==, "42");
+     g_assert_false(qdict_haskey(dict, "number2"));
+     g_assert_false(qdict_haskey(dict, "bool1"));
+-    QDECREF(dict);
++    qobject_unref(dict);
+ 
+     dict = qemu_opts_to_qdict_filtered(opts, NULL, &opts_list_02, true);
+     g_assert(dict != NULL);
+@@ -945,7 +945,7 @@ static void test_opts_to_qdict_filtered(void)
+     g_assert_false(qdict_haskey(dict, "str3"));
+     g_assert_false(qdict_haskey(dict, "number1"));
+     g_assert_false(qdict_haskey(dict, "number2"));
+-    QDECREF(dict);
++    qobject_unref(dict);
+ 
+     g_assert_true(QTAILQ_EMPTY(&opts->head));
+ 
+@@ -978,13 +978,13 @@ static void test_opts_to_qdict_duplicates(void)
+     dict = qemu_opts_to_qdict(opts, NULL);
+     g_assert(dict != NULL);
+     g_assert_cmpstr(qdict_get_str(dict, "foo"), ==, "b");
+-    QDECREF(dict);
++    qobject_unref(dict);
+ 
+     /* The last one still wins if entries are deleted, and both are deleted */
+     dict = qemu_opts_to_qdict_filtered(opts, NULL, NULL, true);
+     g_assert(dict != NULL);
+     g_assert_cmpstr(qdict_get_str(dict, "foo"), ==, "b");
+-    QDECREF(dict);
++    qobject_unref(dict);
+ 
+     g_assert_true(QTAILQ_EMPTY(&opts->head));
+ 
+diff --git a/tests/test-qga.c b/tests/test-qga.c
+index e6ab788..18e63cb 100644
+--- a/tests/test-qga.c
++++ b/tests/test-qga.c
+@@ -180,7 +180,7 @@ static void test_qga_sync_delimited(gconstpointer fix)
+     v = qdict_get_int(ret, "return");
+     g_assert_cmpint(r, ==, v);
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_sync(gconstpointer fix)
+@@ -212,7 +212,7 @@ static void test_qga_sync(gconstpointer fix)
+     v = qdict_get_int(ret, "return");
+     g_assert_cmpint(r, ==, v);
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_ping(gconstpointer fix)
+@@ -224,7 +224,7 @@ static void test_qga_ping(gconstpointer fix)
+     g_assert_nonnull(ret);
+     qmp_assert_no_error(ret);
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_invalid_args(gconstpointer fix)
+@@ -244,7 +244,7 @@ static void test_qga_invalid_args(gconstpointer fix)
+     g_assert_cmpstr(class, ==, "GenericError");
+     g_assert_cmpstr(desc, ==, "Parameter 'foo' is unexpected");
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_invalid_cmd(gconstpointer fix)
+@@ -263,7 +263,7 @@ static void test_qga_invalid_cmd(gconstpointer fix)
+     g_assert_cmpstr(class, ==, "CommandNotFound");
+     g_assert_cmpint(strlen(desc), >, 0);
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_info(gconstpointer fix)
+@@ -280,7 +280,7 @@ static void test_qga_info(gconstpointer fix)
+     version = qdict_get_try_str(val, "version");
+     g_assert_cmpstr(version, ==, QEMU_VERSION);
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_get_vcpus(gconstpointer fix)
+@@ -300,7 +300,7 @@ static void test_qga_get_vcpus(gconstpointer fix)
+     g_assert(qdict_haskey(qobject_to(QDict, entry->value), "online"));
+     g_assert(qdict_haskey(qobject_to(QDict, entry->value), "logical-id"));
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_get_fsinfo(gconstpointer fix)
+@@ -324,7 +324,7 @@ static void test_qga_get_fsinfo(gconstpointer fix)
+         g_assert(qdict_haskey(qobject_to(QDict, entry->value), "disk"));
+     }
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_get_memory_block_info(gconstpointer fix)
+@@ -344,7 +344,7 @@ static void test_qga_get_memory_block_info(gconstpointer fix)
+         g_assert_cmpint(size, >, 0);
+     }
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_get_memory_blocks(gconstpointer fix)
+@@ -369,7 +369,7 @@ static void test_qga_get_memory_blocks(gconstpointer fix)
+         }
+     }
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_network_get_interfaces(gconstpointer fix)
+@@ -388,7 +388,7 @@ static void test_qga_network_get_interfaces(gconstpointer fix)
+     entry = qlist_first(list);
+     g_assert(qdict_haskey(qobject_to(QDict, entry->value), "name"));
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_file_ops(gconstpointer fix)
+@@ -410,7 +410,7 @@ static void test_qga_file_ops(gconstpointer fix)
+     g_assert_nonnull(ret);
+     qmp_assert_no_error(ret);
+     id = qdict_get_int(ret, "return");
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     enc = g_base64_encode(helloworld, sizeof(helloworld));
+     /* write */
+@@ -426,7 +426,7 @@ static void test_qga_file_ops(gconstpointer fix)
+     eof = qdict_get_bool(val, "eof");
+     g_assert_cmpint(count, ==, sizeof(helloworld));
+     g_assert_cmpint(eof, ==, 0);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* flush */
+@@ -434,7 +434,7 @@ static void test_qga_file_ops(gconstpointer fix)
+                           " 'arguments': {'handle': %" PRId64 "} }",
+                           id);
+     ret = qmp_fd(fixture->fd, cmd);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* close */
+@@ -442,7 +442,7 @@ static void test_qga_file_ops(gconstpointer fix)
+                           " 'arguments': {'handle': %" PRId64 "} }",
+                           id);
+     ret = qmp_fd(fixture->fd, cmd);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* check content */
+@@ -462,7 +462,7 @@ static void test_qga_file_ops(gconstpointer fix)
+     g_assert_nonnull(ret);
+     qmp_assert_no_error(ret);
+     id = qdict_get_int(ret, "return");
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     /* read */
+     cmd = g_strdup_printf("{'execute': 'guest-file-read',"
+@@ -477,7 +477,7 @@ static void test_qga_file_ops(gconstpointer fix)
+     g_assert(eof);
+     g_assert_cmpstr(b64, ==, enc);
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+     g_free(enc);
+ 
+@@ -493,7 +493,7 @@ static void test_qga_file_ops(gconstpointer fix)
+     g_assert_cmpint(count, ==, 0);
+     g_assert(eof);
+     g_assert_cmpstr(b64, ==, "");
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* seek */
+@@ -508,7 +508,7 @@ static void test_qga_file_ops(gconstpointer fix)
+     eof = qdict_get_bool(val, "eof");
+     g_assert_cmpint(count, ==, 6);
+     g_assert(!eof);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* partial read */
+@@ -527,7 +527,7 @@ static void test_qga_file_ops(gconstpointer fix)
+     g_assert_cmpmem(dec, count, helloworld + 6, sizeof(helloworld) - 6);
+     g_free(dec);
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* close */
+@@ -535,7 +535,7 @@ static void test_qga_file_ops(gconstpointer fix)
+                           " 'arguments': {'handle': %" PRId64 "} }",
+                           id);
+     ret = qmp_fd(fixture->fd, cmd);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ }
+ 
+@@ -555,7 +555,7 @@ static void test_qga_file_write_read(gconstpointer fix)
+     g_assert_nonnull(ret);
+     qmp_assert_no_error(ret);
+     id = qdict_get_int(ret, "return");
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     enc = g_base64_encode(helloworld, sizeof(helloworld));
+     /* write */
+@@ -571,7 +571,7 @@ static void test_qga_file_write_read(gconstpointer fix)
+     eof = qdict_get_bool(val, "eof");
+     g_assert_cmpint(count, ==, sizeof(helloworld));
+     g_assert_cmpint(eof, ==, 0);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* read (check implicit flush) */
+@@ -586,7 +586,7 @@ static void test_qga_file_write_read(gconstpointer fix)
+     g_assert_cmpint(count, ==, 0);
+     g_assert(eof);
+     g_assert_cmpstr(b64, ==, "");
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* seek to 0 */
+@@ -601,7 +601,7 @@ static void test_qga_file_write_read(gconstpointer fix)
+     eof = qdict_get_bool(val, "eof");
+     g_assert_cmpint(count, ==, 0);
+     g_assert(!eof);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ 
+     /* read */
+@@ -616,7 +616,7 @@ static void test_qga_file_write_read(gconstpointer fix)
+     g_assert_cmpint(count, ==, sizeof(helloworld));
+     g_assert(eof);
+     g_assert_cmpstr(b64, ==, enc);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+     g_free(enc);
+ 
+@@ -625,7 +625,7 @@ static void test_qga_file_write_read(gconstpointer fix)
+                           " 'arguments': {'handle': %" PRId64 "} }",
+                           id);
+     ret = qmp_fd(fixture->fd, cmd);
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(cmd);
+ }
+ 
+@@ -642,7 +642,7 @@ static void test_qga_get_time(gconstpointer fix)
+     time = qdict_get_int(ret, "return");
+     g_assert_cmpint(time, >, 0);
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_blacklist(gconstpointer data)
+@@ -661,7 +661,7 @@ static void test_qga_blacklist(gconstpointer data)
+     desc = qdict_get_try_str(error, "desc");
+     g_assert_cmpstr(class, ==, "GenericError");
+     g_assert_nonnull(g_strstr_len(desc, -1, "has been disabled"));
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     ret = qmp_fd(fix.fd, "{'execute': 'guest-get-time'}");
+     g_assert_nonnull(ret);
+@@ -670,12 +670,12 @@ static void test_qga_blacklist(gconstpointer data)
+     desc = qdict_get_try_str(error, "desc");
+     g_assert_cmpstr(class, ==, "GenericError");
+     g_assert_nonnull(g_strstr_len(desc, -1, "has been disabled"));
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     /* check something work */
+     ret = qmp_fd(fix.fd, "{'execute': 'guest-get-fsinfo'}");
+     qmp_assert_no_error(ret);
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     fixture_tear_down(&fix, NULL);
+ }
+@@ -772,7 +772,7 @@ static void test_qga_fsfreeze_status(gconstpointer fix)
+     status = qdict_get_try_str(ret, "return");
+     g_assert_cmpstr(status, ==, "thawed");
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_guest_exec(gconstpointer fix)
+@@ -795,7 +795,7 @@ static void test_qga_guest_exec(gconstpointer fix)
+     val = qdict_get_qdict(ret, "return");
+     pid = qdict_get_int(val, "pid");
+     g_assert_cmpint(pid, >, 0);
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     /* wait for completion */
+     now = g_get_monotonic_time();
+@@ -807,7 +807,7 @@ static void test_qga_guest_exec(gconstpointer fix)
+         val = qdict_get_qdict(ret, "return");
+         exited = qdict_get_bool(val, "exited");
+         if (!exited) {
+-            QDECREF(ret);
++            qobject_unref(ret);
+         }
+     } while (!exited &&
+              g_get_monotonic_time() < now + 5 * G_TIME_SPAN_SECOND);
+@@ -822,7 +822,7 @@ static void test_qga_guest_exec(gconstpointer fix)
+     g_assert_cmpint(len, ==, 12);
+     g_assert_cmpstr((char *)decoded, ==, "\" test_str \"");
+     g_free(decoded);
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_guest_exec_invalid(gconstpointer fix)
+@@ -841,7 +841,7 @@ static void test_qga_guest_exec_invalid(gconstpointer fix)
+     desc = qdict_get_str(error, "desc");
+     g_assert_cmpstr(class, ==, "GenericError");
+     g_assert_cmpint(strlen(desc), >, 0);
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     /* invalid pid */
+     ret = qmp_fd(fixture->fd, "{'execute': 'guest-exec-status',"
+@@ -853,7 +853,7 @@ static void test_qga_guest_exec_invalid(gconstpointer fix)
+     desc = qdict_get_str(error, "desc");
+     g_assert_cmpstr(class, ==, "GenericError");
+     g_assert_cmpint(strlen(desc), >, 0);
+-    QDECREF(ret);
++    qobject_unref(ret);
+ }
+ 
+ static void test_qga_guest_get_osinfo(gconstpointer data)
+@@ -905,7 +905,7 @@ static void test_qga_guest_get_osinfo(gconstpointer data)
+     g_assert_nonnull(str);
+     g_assert_cmpstr(str, ==, "unit-test");
+ 
+-    QDECREF(ret);
++    qobject_unref(ret);
+     g_free(env[0]);
+     fixture_tear_down(&fixture, NULL);
+ }
+diff --git a/tests/test-qmp-cmds.c b/tests/test-qmp-cmds.c
+index db690cc..e0ed461 100644
+--- a/tests/test-qmp-cmds.c
++++ b/tests/test-qmp-cmds.c
+@@ -106,8 +106,8 @@ static void test_dispatch_cmd(void)
+     assert(resp != NULL);
+     assert(!qdict_haskey(qobject_to(QDict, resp), "error"));
+ 
+-    qobject_decref(resp);
+-    QDECREF(req);
++    qobject_unref(resp);
++    qobject_unref(req);
+ }
+ 
+ /* test commands that return an error due to invalid parameters */
+@@ -123,8 +123,8 @@ static void test_dispatch_cmd_failure(void)
+     assert(resp != NULL);
+     assert(qdict_haskey(qobject_to(QDict, resp), "error"));
+ 
+-    qobject_decref(resp);
+-    QDECREF(req);
++    qobject_unref(resp);
++    qobject_unref(req);
+ 
+     /* check that with extra arguments it throws an error */
+     req = qdict_new();
+@@ -137,8 +137,8 @@ static void test_dispatch_cmd_failure(void)
+     assert(resp != NULL);
+     assert(qdict_haskey(qobject_to(QDict, resp), "error"));
+ 
+-    qobject_decref(resp);
+-    QDECREF(req);
++    qobject_unref(resp);
++    qobject_unref(req);
+ }
+ 
+ static QObject *test_qmp_dispatch(QDict *req)
+@@ -153,8 +153,8 @@ static QObject *test_qmp_dispatch(QDict *req)
+     assert(resp && !qdict_haskey(resp, "error"));
+     ret = qdict_get(resp, "return");
+     assert(ret);
+-    qobject_incref(ret);
+-    qobject_decref(resp_obj);
++    qobject_ref(ret);
++    qobject_unref(resp_obj);
+     return ret;
+ }
+ 
+@@ -195,7 +195,7 @@ static void test_dispatch_cmd_io(void)
+     assert(qdict_get_int(ret_dict_dict2_userdef, "integer") == 422);
+     assert(!strcmp(qdict_get_str(ret_dict_dict2_userdef, "string"), "hello2"));
+     assert(!strcmp(qdict_get_str(ret_dict_dict2, "string"), "blah4"));
+-    QDECREF(ret);
++    qobject_unref(ret);
+ 
+     qdict_put_int(args3, "a", 66);
+     qdict_put(req, "arguments", args3);
+@@ -204,9 +204,9 @@ static void test_dispatch_cmd_io(void)
+     ret3 = qobject_to(QNum, test_qmp_dispatch(req));
+     g_assert(qnum_get_try_int(ret3, &val));
+     g_assert_cmpint(val, ==, 66);
+-    QDECREF(ret3);
++    qobject_unref(ret3);
+ 
+-    QDECREF(req);
++    qobject_unref(req);
+ }
+ 
+ /* test generated dealloc functions for generated types */
+@@ -257,7 +257,7 @@ static void test_dealloc_partial(void)
+         v = qobject_input_visitor_new(QOBJECT(ud2_dict));
+         visit_type_UserDefTwo(v, NULL, &ud2, &err);
+         visit_free(v);
+-        QDECREF(ud2_dict);
++        qobject_unref(ud2_dict);
+     }
+ 
+     /* verify that visit_type_XXX() cleans up properly on error */
+diff --git a/tests/test-qmp-event.c b/tests/test-qmp-event.c
+index bb10366..3a7c227 100644
+--- a/tests/test-qmp-event.c
++++ b/tests/test-qmp-event.c
+@@ -133,7 +133,7 @@ static void event_prepare(TestEventData *data,
+ static void event_teardown(TestEventData *data,
+                            const void *unused)
+ {
+-    QDECREF(data->expect);
++    qobject_unref(data->expect);
+     test_event_data = NULL;
+ 
+     g_mutex_unlock(&test_event_lock);
+diff --git a/tests/test-qobject-input-visitor.c b/tests/test-qobject-input-visitor.c
+index 6dc59c6..0f4d234 100644
+--- a/tests/test-qobject-input-visitor.c
++++ b/tests/test-qobject-input-visitor.c
+@@ -35,7 +35,7 @@ typedef struct TestInputVisitorData {
+ static void visitor_input_teardown(TestInputVisitorData *data,
+                                    const void *unused)
+ {
+-    qobject_decref(data->obj);
++    qobject_unref(data->obj);
+     data->obj = NULL;
+ 
+     if (data->qiv) {
+@@ -483,7 +483,7 @@ static void test_visitor_in_any(TestInputVisitorData *data,
+     g_assert(qnum);
+     g_assert(qnum_get_try_int(qnum, &val));
+     g_assert_cmpint(val, ==, -42);
+-    qobject_decref(res);
++    qobject_unref(res);
+ 
+     v = visitor_input_test_init(data, "{ 'integer': -42, 'boolean': true, 'string': 'foo' }");
+     visit_type_any(v, NULL, &res, &error_abort);
+@@ -505,7 +505,7 @@ static void test_visitor_in_any(TestInputVisitorData *data,
+     qstring = qobject_to(QString, qobj);
+     g_assert(qstring);
+     g_assert_cmpstr(qstring_get_str(qstring), ==, "foo");
+-    qobject_decref(res);
++    qobject_unref(res);
+ }
+ 
+ static void test_visitor_in_null(TestInputVisitorData *data,
+@@ -530,7 +530,7 @@ static void test_visitor_in_null(TestInputVisitorData *data,
+     visit_start_struct(v, NULL, NULL, 0, &error_abort);
+     visit_type_null(v, "a", &null, &error_abort);
+     g_assert(qobject_type(QOBJECT(null)) == QTYPE_QNULL);
+-    QDECREF(null);
++    qobject_unref(null);
+     visit_type_null(v, "b", &null, &err);
+     error_free_or_abort(&err);
+     g_assert(!null);
+@@ -1262,7 +1262,7 @@ static void do_test_visitor_in_qmp_introspect(TestInputVisitorData *data,
+     g_assert(schema);
+ 
+     qapi_free_SchemaInfoList(schema);
+-    qobject_decref(obj);
++    qobject_unref(obj);
+     visit_free(v);
+ }
+ 
+diff --git a/tests/test-qobject-output-visitor.c b/tests/test-qobject-output-visitor.c
+index ecf21c0..be63585 100644
+--- a/tests/test-qobject-output-visitor.c
++++ b/tests/test-qobject-output-visitor.c
+@@ -40,7 +40,7 @@ static void visitor_output_teardown(TestOutputVisitorData *data,
+ {
+     visit_free(data->ov);
+     data->ov = NULL;
+-    qobject_decref(data->obj);
++    qobject_unref(data->obj);
+     data->obj = NULL;
+ }
+ 
+@@ -346,7 +346,7 @@ static void test_visitor_out_any(TestOutputVisitorData *data,
+     g_assert(qnum);
+     g_assert(qnum_get_try_int(qnum, &val));
+     g_assert_cmpint(val, ==, -42);
+-    qobject_decref(qobj);
++    qobject_unref(qobj);
+ 
+     visitor_reset(data);
+     qdict = qdict_new();
+@@ -355,7 +355,7 @@ static void test_visitor_out_any(TestOutputVisitorData *data,
+     qdict_put_str(qdict, "string", "foo");
+     qobj = QOBJECT(qdict);
+     visit_type_any(data->ov, NULL, &qobj, &error_abort);
+-    qobject_decref(qobj);
++    qobject_unref(qobj);
+     qdict = qobject_to(QDict, visitor_get(data));
+     g_assert(qdict);
+     qnum = qobject_to(QNum, qdict_get(qdict, "integer"));
+@@ -630,7 +630,7 @@ static void check_native_list(QObject *qobj,
+             qvalue = qobject_to(QNum, tmp);
+             g_assert(qnum_get_try_uint(qvalue, &val));
+             g_assert_cmpint(val, ==, i);
+-            qobject_decref(qlist_pop(qlist));
++            qobject_unref(qlist_pop(qlist));
+         }
+         break;
+ 
+@@ -654,7 +654,7 @@ static void check_native_list(QObject *qobj,
+             qvalue = qobject_to(QNum, tmp);
+             g_assert(qnum_get_try_int(qvalue, &val));
+             g_assert_cmpint(val, ==, i);
+-            qobject_decref(qlist_pop(qlist));
++            qobject_unref(qlist_pop(qlist));
+         }
+         break;
+     case USER_DEF_NATIVE_LIST_UNION_KIND_BOOLEAN:
+@@ -665,7 +665,7 @@ static void check_native_list(QObject *qobj,
+             g_assert(tmp);
+             qvalue = qobject_to(QBool, tmp);
+             g_assert_cmpint(qbool_get_bool(qvalue), ==, i % 3 == 0);
+-            qobject_decref(qlist_pop(qlist));
++            qobject_unref(qlist_pop(qlist));
+         }
+         break;
+     case USER_DEF_NATIVE_LIST_UNION_KIND_STRING:
+@@ -678,7 +678,7 @@ static void check_native_list(QObject *qobj,
+             qvalue = qobject_to(QString, tmp);
+             sprintf(str, "%d", i);
+             g_assert_cmpstr(qstring_get_str(qvalue), ==, str);
+-            qobject_decref(qlist_pop(qlist));
++            qobject_unref(qlist_pop(qlist));
+         }
+         break;
+     case USER_DEF_NATIVE_LIST_UNION_KIND_NUMBER:
+@@ -695,7 +695,7 @@ static void check_native_list(QObject *qobj,
+             g_string_printf(double_actual, "%.6f", qnum_get_double(qvalue));
+             g_assert_cmpstr(double_actual->str, ==, double_expected->str);
+ 
+-            qobject_decref(qlist_pop(qlist));
++            qobject_unref(qlist_pop(qlist));
+             g_string_free(double_expected, true);
+             g_string_free(double_actual, true);
+         }
+@@ -703,7 +703,7 @@ static void check_native_list(QObject *qobj,
+     default:
+         g_assert_not_reached();
+     }
+-    QDECREF(qlist);
++    qobject_unref(qlist);
+ }
+ 
+ static void test_native_list(TestOutputVisitorData *data,
+diff --git a/tests/test-visitor-serialization.c b/tests/test-visitor-serialization.c
+index d18d90d..1c5a8b9 100644
+--- a/tests/test-visitor-serialization.c
++++ b/tests/test-visitor-serialization.c
+@@ -1036,10 +1036,10 @@ static void qmp_deserialize(void **native_out, void *datap,
+     output_json = qobject_to_json(obj_orig);
+     obj = qobject_from_json(qstring_get_str(output_json), &error_abort);
+ 
+-    QDECREF(output_json);
++    qobject_unref(output_json);
+     d->qiv = qobject_input_visitor_new(obj);
+-    qobject_decref(obj_orig);
+-    qobject_decref(obj);
++    qobject_unref(obj_orig);
++    qobject_unref(obj);
+     visit(d->qiv, native_out, errp);
+ }
+ 
+diff --git a/tests/test-x86-cpuid-compat.c b/tests/test-x86-cpuid-compat.c
+index 9e4a508..c1ee197 100644
+--- a/tests/test-x86-cpuid-compat.c
++++ b/tests/test-x86-cpuid-compat.c
+@@ -19,7 +19,7 @@ static char *get_cpu0_qom_path(void)
+ 
+     cpu0 = qobject_to(QDict, qlist_peek(ret));
+     path = g_strdup(qdict_get_str(cpu0, "qom_path"));
+-    QDECREF(resp);
++    qobject_unref(resp);
+     return path;
+ }
+ 
+@@ -30,8 +30,8 @@ static QObject *qom_get(const char *path, const char *prop)
+                       "                 'property': %s } }",
+                       path, prop);
+     QObject *ret = qdict_get(resp, "return");
+-    qobject_incref(ret);
+-    QDECREF(resp);
++    qobject_ref(ret);
++    qobject_unref(resp);
+     return ret;
+ }
+ 
+@@ -41,7 +41,7 @@ static bool qom_get_bool(const char *path, const char *prop)
+     QBool *value = qobject_to(QBool, qom_get(path, prop));
+     bool b = qbool_get_bool(value);
+ 
+-    QDECREF(value);
++    qobject_unref(value);
+     return b;
+ }
+ #endif
+@@ -66,7 +66,7 @@ static void test_cpuid_prop(const void *data)
+     g_assert_cmpint(val, ==, args->expected_value);
+     qtest_end();
+ 
+-    QDECREF(value);
++    qobject_unref(value);
+     g_free(path);
+ }
+ 
+@@ -142,8 +142,8 @@ static void test_feature_flag(const void *data)
+ 
+     g_assert(!!(value & (1U << args->bitnr)) == args->expected_value);
+ 
+-    QDECREF(present);
+-    QDECREF(filtered);
++    qobject_unref(present);
++    qobject_unref(filtered);
+     g_free(path);
+ }
+ 
+diff --git a/tests/tmp105-test.c b/tests/tmp105-test.c
+index 66c7a01..d093cff 100644
+--- a/tests/tmp105-test.c
++++ b/tests/tmp105-test.c
+@@ -74,7 +74,7 @@ static int qmp_tmp105_get_temperature(const char *id)
+                    "'property': 'temperature' } }", id);
+     g_assert(qdict_haskey(response, "return"));
+     ret = qdict_get_int(response, "return");
+-    QDECREF(response);
++    qobject_unref(response);
+     return ret;
+ }
+ 
+@@ -85,7 +85,7 @@ static void qmp_tmp105_set_temperature(const char *id, int value)
+     response = qmp("{ 'execute': 'qom-set', 'arguments': { 'path': %s, "
+                    "'property': 'temperature', 'value': %d } }", id, value);
+     g_assert(qdict_haskey(response, "return"));
+-    QDECREF(response);
++    qobject_unref(response);
+ }
+ 
+ #define TMP105_PRECISION (1000/16)
+diff --git a/tests/vhost-user-test.c b/tests/vhost-user-test.c
+index 61d9972..bbc8091 100644
+--- a/tests/vhost-user-test.c
++++ b/tests/vhost-user-test.c
+@@ -727,7 +727,7 @@ static void test_migrate(void)
+     rsp = qmp("{ 'execute': 'migrate_set_speed',"
+               "'arguments': { 'value': 10 } }");
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     cmd = g_strdup_printf("{ 'execute': 'migrate',"
+                           "'arguments': { 'uri': '%s' } }",
+@@ -735,7 +735,7 @@ static void test_migrate(void)
+     rsp = qmp(cmd);
+     g_free(cmd);
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     wait_for_log_fd(s);
+ 
+@@ -751,7 +751,7 @@ static void test_migrate(void)
+     rsp = qmp("{ 'execute': 'migrate_set_speed',"
+               "'arguments': { 'value': 0 } }");
+     g_assert(qdict_haskey(rsp, "return"));
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     qmp_eventwait("STOP");
+ 
+diff --git a/tests/virtio-net-test.c b/tests/virtio-net-test.c
+index 0a3c5dd..b285a26 100644
+--- a/tests/virtio-net-test.c
++++ b/tests/virtio-net-test.c
+@@ -173,7 +173,7 @@ static void rx_stop_cont_test(QVirtioDevice *dev,
+     qvirtqueue_kick(dev, vq, free_head);
+ 
+     rsp = qmp("{ 'execute' : 'stop'}");
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     ret = iov_send(socket, iov, 2, 0, sizeof(len) + sizeof(test));
+     g_assert_cmpint(ret, ==, sizeof(test) + sizeof(len));
+@@ -182,9 +182,9 @@ static void rx_stop_cont_test(QVirtioDevice *dev,
+      * ensure the packet data gets queued in QEMU, before we do 'cont'.
+      */
+     rsp = qmp("{ 'execute' : 'query-status'}");
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+     rsp = qmp("{ 'execute' : 'cont'}");
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ 
+     qvirtio_wait_used_elem(dev, vq, free_head, NULL, QVIRTIO_NET_TIMEOUT_US);
+     memread(req_addr + VNET_HDR_SIZE, buffer, sizeof(test));
+diff --git a/tests/vmgenid-test.c b/tests/vmgenid-test.c
+index 2ec274e..8d915c6 100644
+--- a/tests/vmgenid-test.c
++++ b/tests/vmgenid-test.c
+@@ -125,7 +125,7 @@ static void read_guid_from_monitor(QemuUUID *guid)
+         guid_str = qdict_get_str(rsp_ret, "guid");
+         g_assert(qemu_uuid_parse(guid_str, guid) == 0);
+     }
+-    QDECREF(rsp);
++    qobject_unref(rsp);
+ }
+ 
+ static char disk[] = "tests/vmgenid-test-disk-XXXXXX";
+diff --git a/tests/wdt_ib700-test.c b/tests/wdt_ib700-test.c
+index 3b5bbcf..797288d 100644
+--- a/tests/wdt_ib700-test.c
++++ b/tests/wdt_ib700-test.c
+@@ -16,7 +16,7 @@ static void qmp_check_no_event(QTestState *s)
+ {
+     QDict *resp = qtest_qmp(s, "{'execute':'query-status'}");
+     g_assert(qdict_haskey(resp, "return"));
+-    QDECREF(resp);
++    qobject_unref(resp);
+ }
+ 
+ static QDict *ib700_program_and_wait(QTestState *s)
+@@ -48,8 +48,8 @@ static QDict *ib700_program_and_wait(QTestState *s)
+     qtest_clock_step(s, 2 * NANOSECONDS_PER_SECOND);
+     event = qtest_qmp_eventwait_ref(s, "WATCHDOG");
+     data = qdict_get_qdict(event, "data");
+-    QINCREF(data);
+-    QDECREF(event);
++    qobject_ref(data);
++    qobject_unref(event);
+     return data;
+ }
+ 
+@@ -62,7 +62,7 @@ static void ib700_pause(void)
+     qtest_irq_intercept_in(s, "ioapic");
+     d = ib700_program_and_wait(s);
+     g_assert(!strcmp(qdict_get_str(d, "action"), "pause"));
+-    QDECREF(d);
++    qobject_unref(d);
+     qtest_qmp_eventwait(s, "STOP");
+     qtest_quit(s);
+ }
+@@ -75,7 +75,7 @@ static void ib700_reset(void)
+     qtest_irq_intercept_in(s, "ioapic");
+     d = ib700_program_and_wait(s);
+     g_assert(!strcmp(qdict_get_str(d, "action"), "reset"));
+-    QDECREF(d);
++    qobject_unref(d);
+     qtest_qmp_eventwait(s, "RESET");
+     qtest_quit(s);
+ }
+@@ -89,7 +89,7 @@ static void ib700_shutdown(void)
+     qtest_irq_intercept_in(s, "ioapic");
+     d = ib700_program_and_wait(s);
+     g_assert(!strcmp(qdict_get_str(d, "action"), "reset"));
+-    QDECREF(d);
++    qobject_unref(d);
+     qtest_qmp_eventwait(s, "SHUTDOWN");
+     qtest_quit(s);
+ }
+@@ -102,7 +102,7 @@ static void ib700_none(void)
+     qtest_irq_intercept_in(s, "ioapic");
+     d = ib700_program_and_wait(s);
+     g_assert(!strcmp(qdict_get_str(d, "action"), "none"));
+-    QDECREF(d);
++    qobject_unref(d);
+     qtest_quit(s);
+ }
+ 
+diff --git a/util/keyval.c b/util/keyval.c
+index 1c7351a..13def4a 100644
+--- a/util/keyval.c
++++ b/util/keyval.c
+@@ -126,7 +126,7 @@ static int key_to_index(const char *key, const char **end)
+  * Else, fail because we have conflicting needs on how to map
+  * @key_in_cur.
+  * In any case, take over the reference to @value, i.e. if the caller
+- * wants to hold on to a reference, it needs to QINCREF().
++ * wants to hold on to a reference, it needs to qobject_ref().
+  * Use @key up to @key_cursor to identify the key in error messages.
+  * On success, return the mapped value.
+  * On failure, store an error through @errp and return NULL.
+@@ -143,7 +143,7 @@ static QObject *keyval_parse_put(QDict *cur,
+         if (qobject_type(old) != (value ? QTYPE_QSTRING : QTYPE_QDICT)) {
+             error_setg(errp, "Parameters '%.*s.*' used inconsistently",
+                        (int)(key_cursor - key), key);
+-            QDECREF(value);
++            qobject_unref(value);
+             return NULL;
+         }
+         if (!value) {
+@@ -375,10 +375,10 @@ static QObject *keyval_listify(QDict *cur, GSList *key_of_cur, Error **errp)
+             error_setg(errp, "Parameter '%s%d' missing", key, i);
+             g_free(key);
+             g_free(elt);
+-            QDECREF(list);
++            qobject_unref(list);
+             return NULL;
+         }
+-        qobject_incref(elt[i]);
++        qobject_ref(elt[i]);
+         qlist_append_obj(list, elt[i]);
+     }
+ 
+@@ -404,7 +404,7 @@ QDict *keyval_parse(const char *params, const char *implied_key,
+     while (*s) {
+         s = keyval_parse_one(qdict, s, implied_key, errp);
+         if (!s) {
+-            QDECREF(qdict);
++            qobject_unref(qdict);
+             return NULL;
+         }
+         implied_key = NULL;
+@@ -412,7 +412,7 @@ QDict *keyval_parse(const char *params, const char *implied_key,
+ 
+     listified = keyval_listify(qdict, NULL, errp);
+     if (!listified) {
+-        QDECREF(qdict);
++        qobject_unref(qdict);
+         return NULL;
+     }
+     assert(listified == QOBJECT(qdict));
+diff --git a/util/qemu-config.c b/util/qemu-config.c
+index 20f7d14..14d8402 100644
+--- a/util/qemu-config.c
++++ b/util/qemu-config.c
+@@ -562,8 +562,8 @@ static void config_parse_qdict_section(QDict *options, QemuOptsList *opts,
+     }
+ 
+ out:
+-    QDECREF(subqdict);
+-    QDECREF(list);
++    qobject_unref(subqdict);
++    qobject_unref(list);
+ }
+ 
+ void qemu_config_parse_qdict(QDict *options, QemuOptsList **lists,
+-- 
+1.8.3.1
+

@@ -1,0 +1,267 @@
+From f258c5ce8e80d9e21fbca9cc359c06f3ad02bab7 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:46 +0100
+Subject: [PATCH 05/34] block: Require auto-read-only for existing fallbacks
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-5-kwolf@redhat.com>
+Patchwork-id: 83114
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 04/12] block: Require auto-read-only for existing fallbacks
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+Some block drivers have traditionally changed their node to read-only
+mode without asking the user. This behaviour has been marked deprecated
+since 2.11, expecting users to provide an explicit read-only=on option.
+
+Now that we have auto-read-only=on, enable these drivers to make use of
+the option.
+
+This is the only use of bdrv_set_read_only(), so we can make it a bit
+more specific and turn it into a bdrv_apply_auto_read_only() that is
+more convenient for drivers to use.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit eaa2410f1ea864609090c0a5fda9e0ce9499da79)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c               | 42 +++++++++++++++++++++++++++---------------
+ block/bochs.c         | 17 ++++++-----------
+ block/cloop.c         | 16 +++++-----------
+ block/dmg.c           | 16 +++++-----------
+ block/rbd.c           | 15 ++++-----------
+ block/vvfat.c         | 10 ++--------
+ include/block/block.h |  3 ++-
+ 7 files changed, 51 insertions(+), 68 deletions(-)
+
+diff --git a/block.c b/block.c
+index ff3ea92..6e3b574 100644
+--- a/block.c
++++ b/block.c
+@@ -266,29 +266,41 @@ int bdrv_can_set_read_only(BlockDriverState *bs, bool read_only,
+     return 0;
+ }
+ 
+-/* TODO Remove (deprecated since 2.11)
+- * Block drivers are not supposed to automatically change bs->read_only.
+- * Instead, they should just check whether they can provide what the user
+- * explicitly requested and error out if read-write is requested, but they can
+- * only provide read-only access. */
+-int bdrv_set_read_only(BlockDriverState *bs, bool read_only, Error **errp)
++/*
++ * Called by a driver that can only provide a read-only image.
++ *
++ * Returns 0 if the node is already read-only or it could switch the node to
++ * read-only because BDRV_O_AUTO_RDONLY is set.
++ *
++ * Returns -EACCES if the node is read-write and BDRV_O_AUTO_RDONLY is not set
++ * or bdrv_can_set_read_only() forbids making the node read-only. If @errmsg
++ * is not NULL, it is used as the error message for the Error object.
++ */
++int bdrv_apply_auto_read_only(BlockDriverState *bs, const char *errmsg,
++                              Error **errp)
+ {
+     int ret = 0;
+ 
+-    ret = bdrv_can_set_read_only(bs, read_only, false, errp);
+-    if (ret < 0) {
+-        return ret;
++    if (!(bs->open_flags & BDRV_O_RDWR)) {
++        return 0;
++    }
++    if (!(bs->open_flags & BDRV_O_AUTO_RDONLY)) {
++        goto fail;
+     }
+ 
+-    bs->read_only = read_only;
+-
+-    if (read_only) {
+-        bs->open_flags &= ~BDRV_O_RDWR;
+-    } else {
+-        bs->open_flags |= BDRV_O_RDWR;
++    ret = bdrv_can_set_read_only(bs, true, false, NULL);
++    if (ret < 0) {
++        goto fail;
+     }
+ 
++    bs->read_only = true;
++    bs->open_flags &= ~BDRV_O_RDWR;
++
+     return 0;
++
++fail:
++    error_setg(errp, "%s", errmsg ?: "Image is read-only");
++    return -EACCES;
+ }
+ 
+ void bdrv_get_full_backing_filename_from_filename(const char *backed,
+diff --git a/block/bochs.c b/block/bochs.c
+index 50c6300..22e7d44 100644
+--- a/block/bochs.c
++++ b/block/bochs.c
+@@ -105,23 +105,18 @@ static int bochs_open(BlockDriverState *bs, QDict *options, int flags,
+     struct bochs_header bochs;
+     int ret;
+ 
++    /* No write support yet */
++    ret = bdrv_apply_auto_read_only(bs, NULL, errp);
++    if (ret < 0) {
++        return ret;
++    }
++
+     bs->file = bdrv_open_child(NULL, options, "file", bs, &child_file,
+                                false, errp);
+     if (!bs->file) {
+         return -EINVAL;
+     }
+ 
+-    if (!bdrv_is_read_only(bs)) {
+-        error_report("Opening bochs images without an explicit read-only=on "
+-                     "option is deprecated. Future versions will refuse to "
+-                     "open the image instead of automatically marking the "
+-                     "image read-only.");
+-        ret = bdrv_set_read_only(bs, true, errp); /* no write support yet */
+-        if (ret < 0) {
+-            return ret;
+-        }
+-    }
+-
+     ret = bdrv_pread(bs->file, 0, &bochs, sizeof(bochs));
+     if (ret < 0) {
+         return ret;
+diff --git a/block/cloop.c b/block/cloop.c
+index 2be6898..df2b85f 100644
+--- a/block/cloop.c
++++ b/block/cloop.c
+@@ -67,23 +67,17 @@ static int cloop_open(BlockDriverState *bs, QDict *options, int flags,
+     uint32_t offsets_size, max_compressed_block_size = 1, i;
+     int ret;
+ 
++    ret = bdrv_apply_auto_read_only(bs, NULL, errp);
++    if (ret < 0) {
++        return ret;
++    }
++
+     bs->file = bdrv_open_child(NULL, options, "file", bs, &child_file,
+                                false, errp);
+     if (!bs->file) {
+         return -EINVAL;
+     }
+ 
+-    if (!bdrv_is_read_only(bs)) {
+-        error_report("Opening cloop images without an explicit read-only=on "
+-                     "option is deprecated. Future versions will refuse to "
+-                     "open the image instead of automatically marking the "
+-                     "image read-only.");
+-        ret = bdrv_set_read_only(bs, true, errp);
+-        if (ret < 0) {
+-            return ret;
+-        }
+-    }
+-
+     /* read header */
+     ret = bdrv_pread(bs->file, 128, &s->block_size, 4);
+     if (ret < 0) {
+diff --git a/block/dmg.c b/block/dmg.c
+index c9b3c51..1d9283b 100644
+--- a/block/dmg.c
++++ b/block/dmg.c
+@@ -413,23 +413,17 @@ static int dmg_open(BlockDriverState *bs, QDict *options, int flags,
+     int64_t offset;
+     int ret;
+ 
++    ret = bdrv_apply_auto_read_only(bs, NULL, errp);
++    if (ret < 0) {
++        return ret;
++    }
++
+     bs->file = bdrv_open_child(NULL, options, "file", bs, &child_file,
+                                false, errp);
+     if (!bs->file) {
+         return -EINVAL;
+     }
+ 
+-    if (!bdrv_is_read_only(bs)) {
+-        error_report("Opening dmg images without an explicit read-only=on "
+-                     "option is deprecated. Future versions will refuse to "
+-                     "open the image instead of automatically marking the "
+-                     "image read-only.");
+-        ret = bdrv_set_read_only(bs, true, errp);
+-        if (ret < 0) {
+-            return ret;
+-        }
+-    }
+-
+     block_module_load_one("dmg-bz2");
+ 
+     s->n_chunks = 0;
+diff --git a/block/rbd.c b/block/rbd.c
+index 8ce68c8..91ebb8b 100644
+--- a/block/rbd.c
++++ b/block/rbd.c
+@@ -772,17 +772,10 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
+     /* If we are using an rbd snapshot, we must be r/o, otherwise
+      * leave as-is */
+     if (s->snap != NULL) {
+-        if (!bdrv_is_read_only(bs)) {
+-            error_report("Opening rbd snapshots without an explicit "
+-                         "read-only=on option is deprecated. Future versions "
+-                         "will refuse to open the image instead of "
+-                         "automatically marking the image read-only.");
+-            r = bdrv_set_read_only(bs, true, &local_err);
+-            if (r < 0) {
+-                rbd_close(s->image);
+-                error_propagate(errp, local_err);
+-                goto failed_open;
+-            }
++        r = bdrv_apply_auto_read_only(bs, "rbd snapshots are read-only", errp);
++        if (r < 0) {
++            rbd_close(s->image);
++            goto failed_open;
+         }
+     }
+ 
+diff --git a/block/vvfat.c b/block/vvfat.c
+index 3efce9e..a5a3fb9 100644
+--- a/block/vvfat.c
++++ b/block/vvfat.c
+@@ -1262,15 +1262,9 @@ static int vvfat_open(BlockDriverState *bs, QDict *options, int flags,
+                        "Unable to set VVFAT to 'rw' when drive is read-only");
+             goto fail;
+         }
+-    } else  if (!bdrv_is_read_only(bs)) {
+-        error_report("Opening non-rw vvfat images without an explicit "
+-                     "read-only=on option is deprecated. Future versions "
+-                     "will refuse to open the image instead of "
+-                     "automatically marking the image read-only.");
+-        /* read only is the default for safety */
+-        ret = bdrv_set_read_only(bs, true, &local_err);
++    } else {
++        ret = bdrv_apply_auto_read_only(bs, NULL, errp);
+         if (ret < 0) {
+-            error_propagate(errp, local_err);
+             goto fail;
+         }
+     }
+diff --git a/include/block/block.h b/include/block/block.h
+index 6ee8b2a..36a702c 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -433,7 +433,8 @@ int bdrv_is_allocated_above(BlockDriverState *top, BlockDriverState *base,
+ bool bdrv_is_read_only(BlockDriverState *bs);
+ int bdrv_can_set_read_only(BlockDriverState *bs, bool read_only,
+                            bool ignore_allow_rdw, Error **errp);
+-int bdrv_set_read_only(BlockDriverState *bs, bool read_only, Error **errp);
++int bdrv_apply_auto_read_only(BlockDriverState *bs, const char *errmsg,
++                              Error **errp);
+ bool bdrv_is_writable(BlockDriverState *bs);
+ bool bdrv_is_sg(BlockDriverState *bs);
+ bool bdrv_is_inserted(BlockDriverState *bs);
+-- 
+1.8.3.1
+

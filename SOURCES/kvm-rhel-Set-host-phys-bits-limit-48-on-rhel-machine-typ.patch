@@ -1,0 +1,53 @@
+From a402e015f9945358215e63b00d9efae44693ccd5 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Thu, 11 Apr 2019 21:48:46 +0200
+Subject: [PATCH 160/163] rhel: Set host-phys-bits-limit=48 on rhel
+ machine-types
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20190411214846.8816-3-ehabkost@redhat.com>
+Patchwork-id: 85609
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 2/2] rhel: Set host-phys-bits-limit=48 on rhel machine-types
+Bugzilla: 1691519
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+Upstream status: not applicable
+
+Currently we use the host physical address size by default on
+VMs.  This was a good default on most cases, but this is not the
+case on host CPUs supporting 5-level EPT.  On those cases, we
+want VMs to use 4-level EPT by default.
+
+Ensure VMs will use 4-level EPT by default, by limiting physical
+address bits to 48.
+
+Not applicable upstream because upstream doesn't set
+host-phys-bits=on by default.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/hw/i386/pc.h | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/include/hw/i386/pc.h b/include/hw/i386/pc.h
+index 88e5a92..1e9f252 100644
+--- a/include/hw/i386/pc.h
++++ b/include/hw/i386/pc.h
+@@ -963,6 +963,11 @@ extern void igd_passthrough_isa_bridge_create(PCIBus *bus, uint16_t gpu_dev_id);
+             .property = "host-phys-bits",\
+             .value = "on",\
+         },\
++        { /* PC_RHEL_COMPAT */ \
++            .driver = TYPE_X86_CPU,\
++            .property = "host-phys-bits-limit",\
++            .value = "48",\
++        },\
+         { /* PC_RHEL_COMPAT bz 1508330 */ \
+             .driver = "vfio-pci",\
+             .property = "x-no-geforce-quirks",\
+-- 
+1.8.3.1
+

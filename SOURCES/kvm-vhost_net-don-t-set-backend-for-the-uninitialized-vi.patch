@@ -1,0 +1,91 @@
+From 55e77ff717339c63b0408e0b9a1bcd313d6c0c48 Mon Sep 17 00:00:00 2001
+From: Xiao Wang <jasowang@redhat.com>
+Date: Fri, 24 May 2019 12:56:42 +0200
+Subject: [PATCH] vhost_net: don't set backend for the uninitialized virtqueue
+
+RH-Author: Xiao Wang <jasowang@redhat.com>
+Message-id: <1558702602-3677-1-git-send-email-jasowang@redhat.com>
+Patchwork-id: 88204
+O-Subject: [RHEL-7.7 qemu-kvm PATCH] vhost_net: don't set backend for the uninitialized virtqueue
+Bugzilla: 1608226
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Jens Freimann <jfreimann@redhat.com>
+
+We used to set backend unconditionally, this won't work for some
+guests (e.g windows driver) who may not initialize all virtqueues. For
+kernel backend, this will fail since it may try to validate the rings
+during setting backend.
+
+Fixing this by simply skipping the backend set when we find desc is
+not ready.
+
+Reviewed-by: Michael S. Tsirkin<mst@redhat.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+(cherry picked from commit 23bfaf77fa801ba30bb136de7cec47728eb02f4b)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/net/vhost_net.c         | 10 ++++++++++
+ hw/virtio/virtio.c         |  5 +++++
+ include/hw/virtio/virtio.h |  1 +
+ 3 files changed, 16 insertions(+)
+
+diff --git a/hw/net/vhost_net.c b/hw/net/vhost_net.c
+index e037db6..ec22727 100644
+--- a/hw/net/vhost_net.c
++++ b/hw/net/vhost_net.c
+@@ -246,6 +246,11 @@ static int vhost_net_start_one(struct vhost_net *net,
+         qemu_set_fd_handler(net->backend, NULL, NULL, NULL);
+         file.fd = net->backend;
+         for (file.index = 0; file.index < net->dev.nvqs; ++file.index) {
++            if (!virtio_queue_enabled(dev, net->dev.vq_index +
++                                      file.index)) {
++                /* Queue might not be ready for start */
++                continue;
++            }
+             r = vhost_net_set_backend(&net->dev, &file);
+             if (r < 0) {
+                 r = -errno;
+@@ -258,6 +263,11 @@ fail:
+     file.fd = -1;
+     if (net->nc->info->type == NET_CLIENT_DRIVER_TAP) {
+         while (file.index-- > 0) {
++            if (!virtio_queue_enabled(dev, net->dev.vq_index +
++                                      file.index)) {
++                /* Queue might not be ready for start */
++                continue;
++            }
+             int r = vhost_net_set_backend(&net->dev, &file);
+             assert(r >= 0);
+         }
+diff --git a/hw/virtio/virtio.c b/hw/virtio/virtio.c
+index 1c936ad..3492b20 100644
+--- a/hw/virtio/virtio.c
++++ b/hw/virtio/virtio.c
+@@ -2317,6 +2317,11 @@ hwaddr virtio_queue_get_desc_addr(VirtIODevice *vdev, int n)
+     return vdev->vq[n].vring.desc;
+ }
+ 
++bool virtio_queue_enabled(VirtIODevice *vdev, int n)
++{
++    return virtio_queue_get_desc_addr(vdev, n) != 0;
++}
++
+ hwaddr virtio_queue_get_avail_addr(VirtIODevice *vdev, int n)
+ {
+     return vdev->vq[n].vring.avail;
+diff --git a/include/hw/virtio/virtio.h b/include/hw/virtio/virtio.h
+index 96313e8..3029758 100644
+--- a/include/hw/virtio/virtio.h
++++ b/include/hw/virtio/virtio.h
+@@ -268,6 +268,7 @@ typedef struct VirtIORNGConf VirtIORNGConf;
+                       VIRTIO_F_IOMMU_PLATFORM, false)
+ 
+ hwaddr virtio_queue_get_desc_addr(VirtIODevice *vdev, int n);
++bool virtio_queue_enabled(VirtIODevice *vdev, int n);
+ hwaddr virtio_queue_get_avail_addr(VirtIODevice *vdev, int n);
+ hwaddr virtio_queue_get_used_addr(VirtIODevice *vdev, int n);
+ hwaddr virtio_queue_get_desc_size(VirtIODevice *vdev, int n);
+-- 
+1.8.3.1
+

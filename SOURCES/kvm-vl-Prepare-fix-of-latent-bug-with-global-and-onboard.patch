@@ -1,0 +1,113 @@
+From fee69ca995ff34fc343fa3e0f57aab5f0e5f7351 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:08 +0200
+Subject: [PATCH 41/53] vl: Prepare fix of latent bug with -global and onboard
+ devices
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-20-armbru@redhat.com>
+Patchwork-id: 87980
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 19/31] vl: Prepare fix of latent bug with -global and onboard devices
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+main() registers the user's -global only after we create the machine
+object, i.e. too late for devices created in the machine's
+.instance_init().  The next commit is upstream's fix.  To make it
+apply, we need to move machine and accelerator compat property
+creation out of register_global_properties(), so its MachineState
+parameter becomes unused.
+
+Create machine compat props right after select_machine().  Create
+accelerator compat props in accel_init_machine().  In both cases, this
+creates them as early as possible, and exactly where upstream creates
+them since commit 1a3ec8c1564.  Note that their relative order remains
+unchanged; machine compat props still override accelerator compat
+props.
+
+Why not backport commit 1a3ec8c1564 instead?  That commit fixes a
+latent bug in upstream's reorganization of compat properties (merge
+commit 31ed41889e6).  It has a bug fixed up in commit 79b9d4bde7d.  It
+doesn't apply without the reorganization.  This commit reimplements
+enough of the two commits (without fixing any bugs) to make the
+remainder of the upstream series apply cleanly.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ accel/accel.c       | 2 ++
+ hw/core/machine.c   | 3 +--
+ include/hw/boards.h | 2 +-
+ vl.c                | 3 +--
+ 4 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/accel/accel.c b/accel/accel.c
+index 124f957..2e0bff5 100644
+--- a/accel/accel.c
++++ b/accel/accel.c
+@@ -64,6 +64,8 @@ static int accel_init_machine(AccelClass *acc, MachineState *ms)
+         ms->accelerator = NULL;
+         *(acc->allowed) = false;
+         object_unref(OBJECT(accel));
++    } else {
++        accel_register_compat_props(ms->accelerator);
+     }
+     return ret;
+ }
+diff --git a/hw/core/machine.c b/hw/core/machine.c
+index b4804e9..e5b8881 100644
+--- a/hw/core/machine.c
++++ b/hw/core/machine.c
+@@ -839,9 +839,8 @@ static void machine_class_finalize(ObjectClass *klass, void *data)
+     g_free(mc->name);
+ }
+ 
+-void machine_register_compat_props(MachineState *machine)
++void machine_register_compat_props(MachineClass *mc)
+ {
+-    MachineClass *mc = MACHINE_GET_CLASS(machine);
+     int i;
+     GlobalProperty *p;
+ 
+diff --git a/include/hw/boards.h b/include/hw/boards.h
+index a609239..cf24cbf 100644
+--- a/include/hw/boards.h
++++ b/include/hw/boards.h
+@@ -70,7 +70,7 @@ int machine_kvm_shadow_mem(MachineState *machine);
+ int machine_phandle_start(MachineState *machine);
+ bool machine_dump_guest_core(MachineState *machine);
+ bool machine_mem_merge(MachineState *machine);
+-void machine_register_compat_props(MachineState *machine);
++void machine_register_compat_props(MachineClass *mc);
+ HotpluggableCPUList *machine_query_hotpluggable_cpus(MachineState *machine);
+ void machine_set_cpu_numa_node(MachineState *machine,
+                                const CpuInstanceProperties *props,
+diff --git a/vl.c b/vl.c
+index a22da93..72c489f 100644
+--- a/vl.c
++++ b/vl.c
+@@ -3060,8 +3060,6 @@ static void user_register_global_props(void)
+  */
+ static void register_global_properties(MachineState *ms)
+ {
+-    accel_register_compat_props(ms->accelerator);
+-    machine_register_compat_props(ms);
+     user_register_global_props();
+ }
+ 
+@@ -4127,6 +4125,7 @@ int main(int argc, char **argv, char **envp)
+     limit_max_cpus_in_machines();
+ 
+     machine_class = select_machine();
++    machine_register_compat_props(machine_class);
+ 
+     set_memory_options(&ram_slots, &maxram_size, machine_class);
+ 
+-- 
+1.8.3.1
+

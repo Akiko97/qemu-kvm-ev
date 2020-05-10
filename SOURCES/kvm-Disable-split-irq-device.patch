@@ -1,0 +1,40 @@
+From 1055193a52857bd42f7a3961f5f6dcf7edb14cef Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 7 Jun 2018 07:43:10 +0200
+Subject: [PATCH 02/15] Disable split-irq device
+
+RH-Author: Miroslav Rezanina <mrezanin@redhat.com>
+Message-id: <63c6336171256528761f3b4aa22c058d472b048b.1528355911.git.mrezanin@redhat.com>
+Patchwork-id: 80596
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/7] Disable split-irq device
+Bugzilla: 1586357
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+From: Miroslav Rezanina <mrezanin@redhat.com>
+
+There's new split-irq device introduced in QEMU 2.12. We do not want to
+support this device.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/core/Makefile.objs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/core/Makefile.objs b/hw/core/Makefile.objs
+index 2b4491f..e967fb2 100644
+--- a/hw/core/Makefile.objs
++++ b/hw/core/Makefile.objs
+@@ -20,7 +20,7 @@ common-obj-$(CONFIG_SOFTMMU) += qdev-properties-system.o
+ # common-obj-$(CONFIG_SOFTMMU) += register.o
+ # obj-$(CONFIG_SOFTMMU) += generic-loader.o
+ # common-obj-$(CONFIG_SOFTMMU) += or-irq.o
+-common-obj-$(CONFIG_SOFTMMU) += split-irq.o
++#common-obj-$(CONFIG_SOFTMMU) += split-irq.o
+ common-obj-$(CONFIG_PLATFORM_BUS) += platform-bus.o
+ 
+ obj-$(CONFIG_SOFTMMU) += null-machine.o
+-- 
+1.8.3.1
+

@@ -1,0 +1,56 @@
+From 71b082ce48653cb70bf628f753d6e7750f8d03c2 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:55:07 +0200
+Subject: [PATCH 82/89] nbd/server: Silence gcc false positive
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-32-jsnow@redhat.com>
+Patchwork-id: 81425
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 31/35] nbd/server: Silence gcc false positive
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+The code has a while() loop that always initialized 'end', and
+the loop always executes at least once (as evidenced by the assert()
+just prior to the loop).  But some versions of gcc still complain
+that 'end' is used uninitialized, so silence them.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Message-id: 20180622125814.345274-1-eblake@redhat.com
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+(cherry picked from commit 45eb6fb6cea28cdc937764aac6585751047bb294)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 2746046..50ac8bf 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1937,7 +1937,7 @@ static unsigned int bitmap_to_extents(BdrvDirtyBitmap *bitmap, uint64_t offset,
+                                       unsigned int nb_extents,
+                                       bool dont_fragment)
+ {
+-    uint64_t begin = offset, end;
++    uint64_t begin = offset, end = offset;
+     uint64_t overall_end = offset + *length;
+     unsigned int i = 0;
+     BdrvDirtyBitmapIter *it;
+@@ -1977,6 +1977,7 @@ static unsigned int bitmap_to_extents(BdrvDirtyBitmap *bitmap, uint64_t offset,
+ 
+     bdrv_dirty_bitmap_unlock(bitmap);
+ 
++    assert(offset > end);
+     *length = end - offset;
+     return i;
+ }
+-- 
+1.8.3.1
+

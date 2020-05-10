@@ -1,0 +1,60 @@
+From 8403396f05aa1e54198433409a6db7924eb53969 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 5 Jun 2019 13:56:57 +0200
+Subject: [PATCH 09/23] block: Remove error messages in bdrv_make_zero()
+
+RH-Author: Maxim Levitsky <mlevitsk@redhat.com>
+Message-id: <20190605135705.24526-2-mlevitsk@redhat.com>
+Patchwork-id: 88564
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/9] block: Remove error messages in bdrv_make_zero()
+Bugzilla: 1648622
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Kevin Wolf <kwolf@redhat.com>
+
+There is only a single caller of bdrv_make_zero(), which is qemu-img
+convert. If the function fails, we just fall back to a different method
+of zeroing out blocks on the target image. There is no good reason to
+print error messages on stderr when the higher level operation will
+actually succeed.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Acked-by: Eric Blake <eblake@redhat.com>
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1648622
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+(Cherry picked from 48ce986096bb70354b12f0becb253a06bcf9c434)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 7a99f7b..18bf3c2 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -913,8 +913,6 @@ int bdrv_make_zero(BdrvChild *child, BdrvRequestFlags flags)
+         }
+         ret = bdrv_block_status(bs, offset, bytes, &bytes, NULL, NULL);
+         if (ret < 0) {
+-            error_report("error getting block status at offset %" PRId64 ": %s",
+-                         offset, strerror(-ret));
+             return ret;
+         }
+         if (ret & BDRV_BLOCK_ZERO) {
+@@ -923,8 +921,6 @@ int bdrv_make_zero(BdrvChild *child, BdrvRequestFlags flags)
+         }
+         ret = bdrv_pwrite_zeroes(child, offset, bytes, flags);
+         if (ret < 0) {
+-            error_report("error writing zeroes at offset %" PRId64 ": %s",
+-                         offset, strerror(-ret));
+             return ret;
+         }
+         offset += bytes;
+-- 
+1.8.3.1
+

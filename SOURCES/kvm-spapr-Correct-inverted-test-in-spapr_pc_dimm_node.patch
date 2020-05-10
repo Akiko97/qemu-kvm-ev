@@ -1,0 +1,52 @@
+From 300af272a7b1546ccd40face0c3f6d325f81aa49 Mon Sep 17 00:00:00 2001
+From: David Gibson <dgibson@redhat.com>
+Date: Tue, 17 Jul 2018 01:36:38 +0200
+Subject: [PATCH 46/89] spapr: Correct inverted test in spapr_pc_dimm_node()
+
+RH-Author: David Gibson <dgibson@redhat.com>
+Message-id: <20180717013638.11012-1-dgibson@redhat.com>
+Patchwork-id: 81371
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH] spapr: Correct inverted test in spapr_pc_dimm_node()
+Bugzilla: 1598287
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: David Gibson <david@gibson.dropbear.id.au>
+
+This function was introduced between v2.11 and v2.12 to replace obsolete
+ways of specifying the NUMA nodes for DIMMs.  It's used to find the correct
+node for an LMB, by locating which DIMM object it lies within.
+
+Unfortunately, one of the checks is inverted, so we check whether the
+address is less than two different things, rather than actually checking
+a range.  This introduced a regression, meaning that after a reboot qemu
+will advertise incorrect node information for memory to the guest.
+
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+Reviewed-by: Greg Kurz <groug@kaod.org>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+(cherry picked from commit ccc2cef8b3f1dedd059924eb8ec1a87eff8ef607)
+
+Signed-off-by: David Gibson <dgibson@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/spapr.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index a580334..5f26aea 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -659,7 +659,7 @@ static uint32_t spapr_pc_dimm_node(MemoryDeviceInfoList *list, ram_addr_t addr)
+         if (value && value->type == MEMORY_DEVICE_INFO_KIND_DIMM) {
+             PCDIMMDeviceInfo *pcdimm_info = value->u.dimm.data;
+ 
+-            if (pcdimm_info->addr >= addr &&
++            if (addr >= pcdimm_info->addr &&
+                 addr < (pcdimm_info->addr + pcdimm_info->size)) {
+                 return pcdimm_info->node;
+             }
+-- 
+1.8.3.1
+

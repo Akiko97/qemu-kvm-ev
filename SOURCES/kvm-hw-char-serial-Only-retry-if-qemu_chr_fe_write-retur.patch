@@ -1,0 +1,59 @@
+From a7a6995e2a24e9e4c89084acf3241e5640f30f3e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Fri, 20 Jul 2018 12:17:59 +0200
+Subject: [PATCH 87/89] hw/char/serial: Only retry if qemu_chr_fe_write returns
+ 0
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: <20180720121800.18952-2-marcandre.lureau@redhat.com>
+Patchwork-id: 81454
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 1/2] hw/char/serial: Only retry if qemu_chr_fe_write returns 0
+Bugzilla: 1592817
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Sergio Lopez <slp@redhat.com>
+
+Only retry on serial_xmit if qemu_chr_fe_write returns 0, as this is the
+only recoverable error.
+
+Retrying with any other scenario, in addition to being a waste of CPU
+cycles, can compromise the Guest stability if by the vCPU issuing the
+write and the main loop thread are, by chance or explicit pinning,
+running on the same pCPU.
+
+Previous discussion:
+
+https://lists.nongnu.org/archive/html/qemu-devel/2018-05/msg06998.html
+
+Signed-off-by: Sergio Lopez <slp@redhat.com>
+Message-Id: <1528185295-14199-1-git-send-email-slp@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+
+(cherry picked from commit 019288bf137183bf3407c9824655b753bfafc99f)
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/char/serial.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/char/serial.c b/hw/char/serial.c
+index d6d9b18..d4057bf 100644
+--- a/hw/char/serial.c
++++ b/hw/char/serial.c
+@@ -262,7 +262,7 @@ static void serial_xmit(SerialState *s)
+         if (s->mcr & UART_MCR_LOOP) {
+             /* in loopback mode, say that we just received a char */
+             serial_receive1(s, &s->tsr, 1);
+-        } else if (qemu_chr_fe_write(&s->chr, &s->tsr, 1) != 1 &&
++        } else if (qemu_chr_fe_write(&s->chr, &s->tsr, 1) == 0 &&
+                    s->tsr_retry < MAX_XMIT_RETRY) {
+             assert(s->watch_tag == 0);
+             s->watch_tag =
+-- 
+1.8.3.1
+

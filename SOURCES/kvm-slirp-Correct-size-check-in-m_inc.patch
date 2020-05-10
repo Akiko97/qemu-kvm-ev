@@ -1,0 +1,66 @@
+From 44dfd8eea4b562e77587cdd1b2ae6b6decc870f9 Mon Sep 17 00:00:00 2001
+From: Xiao Wang <jasowang@redhat.com>
+Date: Wed, 8 Aug 2018 07:52:57 +0200
+Subject: [PATCH 2/5] slirp: Correct size check in m_inc()
+
+RH-Author: Xiao Wang <jasowang@redhat.com>
+Message-id: <1533714777-24827-3-git-send-email-jasowang@redhat.com>
+Patchwork-id: 81674
+O-Subject: [RHEL-7.6/7.5z qemu-kvm-rhev 2/2] slirp: Correct size check in m_inc()
+Bugzilla: 1586255
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: wexu@redhat.com
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Peter Maydell <peter.maydell@linaro.org>
+
+The data in an mbuf buffer is not necessarily at the start of the
+allocated buffer. (For instance m_adj() allows data to be trimmed
+from the start by just advancing the pointer and reducing the length.)
+This means that the allocated buffer size (m->m_size) and the
+amount of space from the m_data pointer to the end of the
+buffer (M_ROOM(m)) are not necessarily the same.
+
+Commit 864036e251f54c9 tried to change the m_inc() function from
+taking the new allocated-buffer-size to taking the new room-size,
+but forgot to change the initial "do we already have enough space"
+check. This meant that if we were trying to extend a buffer which
+had a leading gap between the buffer start and the data, we might
+incorrectly decide it didn't need to be extended, and then
+overrun the end of the buffer, causing memory corruption and
+an eventual crash.
+
+Change the "already big enough?" condition from checking the
+argument against m->m_size to checking against M_ROOM().
+This only makes a difference for the callsite in m_cat();
+the other three callsites all start with a freshly allocated
+mbuf from m_get(), which will have m->m_size == M_ROOM(m).
+
+Fixes: 864036e251f54c9
+Fixes: https://bugs.launchpad.net/qemu/+bug/1785670
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+Reviewed-by: Samuel Thibault <samuel.thibault@ens-lyon.org>
+Message-id: 20180807114501.12370-1-peter.maydell@linaro.org
+Tested-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit 09b94ac0f29db3b022a77a5aa50dc9e37032689d)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ slirp/mbuf.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/slirp/mbuf.c b/slirp/mbuf.c
+index 0c189e1..1b78683 100644
+--- a/slirp/mbuf.c
++++ b/slirp/mbuf.c
+@@ -154,7 +154,7 @@ m_inc(struct mbuf *m, int size)
+     int datasize;
+ 
+     /* some compilers throw up on gotos.  This one we can fake. */
+-    if (m->m_size > size) {
++    if (M_ROOM(m) > size) {
+         return;
+     }
+ 
+-- 
+1.8.3.1
+

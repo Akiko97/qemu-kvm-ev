@@ -1,0 +1,88 @@
+From 33de34ca77050003d06f36c9228c6408312f4be0 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:26 +0100
+Subject: [PATCH 16/33] dirty-bitmap: switch assert-fails to errors in
+ bdrv_merge_dirty_bitmap
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-7-jsnow@redhat.com>
+Patchwork-id: 84263
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 06/23] dirty-bitmap: switch assert-fails to errors in bdrv_merge_dirty_bitmap
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Move checks from qmp_x_block_dirty_bitmap_merge() to
+bdrv_merge_dirty_bitmap(), to share them with dirty bitmap merge
+transaction action in future commit.
+
+Note: for now, only qmp_x_block_dirty_bitmap_merge() calls
+bdrv_merge_dirty_bitmap().
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 06bf50068a7e952afff8c4f6470ec54a712570f7)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c | 15 +++++++++++++--
+ blockdev.c           | 10 ----------
+ 2 files changed, 13 insertions(+), 12 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index 59027d4..999a40c 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -797,12 +797,23 @@ void bdrv_merge_dirty_bitmap(BdrvDirtyBitmap *dest, const BdrvDirtyBitmap *src,
+ 
+     qemu_mutex_lock(dest->mutex);
+ 
+-    assert(bdrv_dirty_bitmap_enabled(dest));
+-    assert(!bdrv_dirty_bitmap_readonly(dest));
++    if (bdrv_dirty_bitmap_frozen(dest)) {
++        error_setg(errp, "Bitmap '%s' is frozen and cannot be modified",
++                   dest->name);
++        goto out;
++    }
++
++    if (bdrv_dirty_bitmap_readonly(dest)) {
++        error_setg(errp, "Bitmap '%s' is readonly and cannot be modified",
++                   dest->name);
++        goto out;
++    }
+ 
+     if (!hbitmap_merge(dest->bitmap, src->bitmap)) {
+         error_setg(errp, "Bitmaps are incompatible and can't be merged");
++        goto out;
+     }
+ 
++out:
+     qemu_mutex_unlock(dest->mutex);
+ }
+diff --git a/blockdev.c b/blockdev.c
+index 745ed08..cef1bfe 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3113,16 +3113,6 @@ void qmp_x_block_dirty_bitmap_merge(const char *node, const char *dst_name,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_frozen(dst)) {
+-        error_setg(errp, "Bitmap '%s' is frozen and cannot be modified",
+-                   dst_name);
+-        return;
+-    } else if (bdrv_dirty_bitmap_readonly(dst)) {
+-        error_setg(errp, "Bitmap '%s' is readonly and cannot be modified",
+-                   dst_name);
+-        return;
+-    }
+-
+     src = bdrv_find_dirty_bitmap(bs, src_name);
+     if (!src) {
+         error_setg(errp, "Dirty bitmap '%s' not found", src_name);
+-- 
+1.8.3.1
+

@@ -1,0 +1,49 @@
+From a09f5141da57a969a5f7eb89adbf1429680e8ab2 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:49 +0100
+Subject: [PATCH 08/34] curl: Support auto-read-only option
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-8-kwolf@redhat.com>
+Patchwork-id: 83117
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 07/12] curl: Support auto-read-only option
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If read-only=off, but auto-read-only=on is given, just degrade to
+read-only.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 6ceef36acb11819b255732b1de0ca62885da04bd)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/curl.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/block/curl.c b/block/curl.c
+index aa42535..402f21e 100644
+--- a/block/curl.c
++++ b/block/curl.c
+@@ -682,10 +682,10 @@ static int curl_open(BlockDriverState *bs, QDict *options, int flags,
+     const char *protocol_delimiter;
+     int ret;
+ 
+-
+-    if (flags & BDRV_O_RDWR) {
+-        error_setg(errp, "curl block device does not support writes");
+-        return -EROFS;
++    ret = bdrv_apply_auto_read_only(bs, "curl driver does not support writes",
++                                    errp);
++    if (ret < 0) {
++        return ret;
+     }
+ 
+     if (!libcurl_initialized) {
+-- 
+1.8.3.1
+

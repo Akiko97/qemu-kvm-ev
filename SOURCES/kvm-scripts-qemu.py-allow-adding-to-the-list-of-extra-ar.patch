@@ -1,0 +1,53 @@
+From 257036163501f7c59bd54ce6d050563780cd8a98 Mon Sep 17 00:00:00 2001
+From: Yash Mankad <ymankad@redhat.com>
+Date: Tue, 17 Jul 2018 23:38:05 +0200
+Subject: [PATCH 48/89] scripts/qemu.py: allow adding to the list of extra
+ arguments
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Yash Mankad <ymankad@redhat.com>
+Message-id: <4ba44e15a56b1119045859193f7e18d11d4a5ba4.1531870629.git.ymankad@redhat.com>
+Patchwork-id: 81384
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 2/5] scripts/qemu.py: allow adding to the list of extra arguments
+Bugzilla:
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+
+From: Cleber Rosa <crosa@redhat.com>
+
+Tests will often need to add extra arguments to QEMU command
+line arguments.
+
+Signed-off-by: Cleber Rosa <crosa@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-Id: <20180530184156.15634-3-crosa@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Tested-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 572a82438308216fbfc615c924b6e94e4b68dfaa)
+Signed-off-by: Yash Mankad <ymankad@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ scripts/qemu.py | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/scripts/qemu.py b/scripts/qemu.py
+index 08a3e9a..7cd8193 100644
+--- a/scripts/qemu.py
++++ b/scripts/qemu.py
+@@ -359,3 +359,9 @@ class QEMUMachine(object):
+         of the qemu process.
+         '''
+         return self._iolog
++
++    def add_args(self, *args):
++        '''
++        Adds to the list of extra arguments to be given to the QEMU binary
++        '''
++        self._args.extend(args)
+-- 
+1.8.3.1
+

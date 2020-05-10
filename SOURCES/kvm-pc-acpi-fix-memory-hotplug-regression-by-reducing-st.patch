@@ -1,0 +1,101 @@
+From 6d5bc18c3af1969cfcaea9c9bafb5ad0d32bb163 Mon Sep 17 00:00:00 2001
+From: Igor Mammedov <imammedo@redhat.com>
+Date: Tue, 7 Aug 2018 12:33:52 +0200
+Subject: [PATCH 05/13] pc: acpi: fix memory hotplug regression by reducing
+ stub SRAT entry size
+
+RH-Author: Igor Mammedov <imammedo@redhat.com>
+Message-id: <1533645232-98572-1-git-send-email-imammedo@redhat.com>
+Patchwork-id: 81662
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] pc: acpi: fix memory hotplug regression by reducing stub SRAT entry size
+Bugzilla: 1609234
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1609234
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=17640116
+Branch: rhv7/master-2.12.0
+
+ 1: there is no coldplugged dimm in the last numa node
+    but there is a coldplugged dimm in another node
+
+  -m 4096,slots=4,maxmem=32G               \
+  -object memory-backend-ram,id=m0,size=2G \
+  -device pc-dimm,memdev=m0,node=0         \
+  -numa node,nodeid=0                      \
+  -numa node,nodeid=1
+
+ 2: if order of dimms on CLI is:
+       1st plugged dimm in node1
+       2nd plugged dimm in node0
+
+  -m 4096,slots=4,maxmem=32G               \
+  -object memory-backend-ram,size=2G,id=m0 \
+  -device pc-dimm,memdev=m0,node=1         \
+  -object memory-backend-ram,id=m1,size=2G \
+  -device pc-dimm,memdev=m1,node=0         \
+  -numa node,nodeid=0                      \
+  -numa node,nodeid=1
+
+(qemu) object_add memory-backend-ram,id=m2,size=1G
+(qemu) device_add pc-dimm,memdev=m2,node=0
+
+the first DIMM hotplug to any node except the last one
+fails (Windows is unable to online it).
+
+Length reduction of stub hotplug memory SRAT entry,
+fixes issue for some reason.
+
+RHBZ: 1609234
+
+Signed-off-by: Igor Mammedov <imammedo@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+
+(cherry picked from commit 10efd7e1088855dc019e6a248ac7f9b24af8dd26)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/acpi-build.c | 19 ++++++++++---------
+ 1 file changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/hw/i386/acpi-build.c b/hw/i386/acpi-build.c
+index b309a97..683e5f4 100644
+--- a/hw/i386/acpi-build.c
++++ b/hw/i386/acpi-build.c
+@@ -2271,7 +2271,16 @@ static void build_srat_hotpluggable_memory(GArray *table_data, uint64_t base,
+         numamem = acpi_data_push(table_data, sizeof *numamem);
+ 
+         if (!info) {
+-            build_srat_memory(numamem, cur, end - cur, default_node,
++            /*
++             * Entry is required for Windows to enable memory hotplug in OS
++             * and for Linux to enable SWIOTLB when booted with less than
++             * 4G of RAM. Windows works better if the entry sets proximity
++             * to the highest NUMA node in the machine at the end of the
++             * reserved space.
++             * Memory devices may override proximity set by this entry,
++             * providing _PXM method if necessary.
++             */
++            build_srat_memory(numamem, end - 1, 1, default_node,
+                               MEM_AFFINITY_HOTPLUGGABLE | MEM_AFFINITY_ENABLED);
+             break;
+         }
+@@ -2404,14 +2413,6 @@ build_srat(GArray *table_data, BIOSLinker *linker, MachineState *machine)
+         build_srat_memory(numamem, 0, 0, 0, MEM_AFFINITY_NOFLAGS);
+     }
+ 
+-    /*
+-     * Entry is required for Windows to enable memory hotplug in OS
+-     * and for Linux to enable SWIOTLB when booted with less than
+-     * 4G of RAM. Windows works better if the entry sets proximity
+-     * to the highest NUMA node in the machine.
+-     * Memory devices may override proximity set by this entry,
+-     * providing _PXM method if necessary.
+-     */
+     if (hotplugabble_address_space_size) {
+         build_srat_hotpluggable_memory(table_data, pcms->hotplug_memory.base,
+                                        hotplugabble_address_space_size,
+-- 
+1.8.3.1
+

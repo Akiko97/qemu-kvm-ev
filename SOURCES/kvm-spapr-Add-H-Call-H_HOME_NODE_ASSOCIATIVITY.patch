@@ -1,0 +1,123 @@
+From 3e4f22bfb8e4a6a4da948983c96fe60c12c957a3 Mon Sep 17 00:00:00 2001
+From: Laurent Vivier <lvivier@redhat.com>
+Date: Wed, 2 Jan 2019 11:29:48 +0100
+Subject: [PATCH 2/8] spapr: Add H-Call H_HOME_NODE_ASSOCIATIVITY
+
+RH-Author: Laurent Vivier <lvivier@redhat.com>
+Message-id: <20190102112948.18536-3-lvivier@redhat.com>
+Patchwork-id: 83821
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/2] spapr: Add H-Call H_HOME_NODE_ASSOCIATIVITY
+Bugzilla: 1626347
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Serhii Popovych <spopovyc@redhat.com>
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+
+BZ:   https://bugzilla.redhat.com/show_bug.cgi?id=1626347
+
+H_HOME_NODE_ASSOCIATIVITY H-Call returns the associativity domain
+designation associated with the identifier input parameter
+
+This fixes a crash when we try to hotplug a CPU in memory-less and
+CPU-less numa node. In this case, the kernel tries to online the
+node, but without the information provided by this h-call, the node id,
+it cannot and the CPU is started while the node is not onlined.
+
+It also removes the warning message from the kernel:
+  VPHN is not supported. Disabling polling..
+
+Signed-off-by: Laurent Vivier <lvivier@redhat.com>
+Reviewed-by: Greg Kurz <groug@kaod.org>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+(cherry picked from commit c24ba3d0a34f68ad2c6bf1a15bc43770005f6cc0)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/spapr.c         |  1 +
+ hw/ppc/spapr_hcall.c   | 40 ++++++++++++++++++++++++++++++++++++++++
+ include/hw/ppc/spapr.h |  1 +
+ 3 files changed, 42 insertions(+)
+
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index b49f377..76676aa 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -933,6 +933,7 @@ static void spapr_dt_rtas(sPAPRMachineState *spapr, void *fdt)
+     add_str(hypertas, "hcall-sprg0");
+     add_str(hypertas, "hcall-copy");
+     add_str(hypertas, "hcall-debug");
++    add_str(hypertas, "hcall-vphn");
+     add_str(qemu_hypertas, "hcall-memop1");
+ 
+     if (!kvm_enabled() || kvmppc_spapr_use_multitce()) {
+diff --git a/hw/ppc/spapr_hcall.c b/hw/ppc/spapr_hcall.c
+index 16bccdd..9dd5cfd 100644
+--- a/hw/ppc/spapr_hcall.c
++++ b/hw/ppc/spapr_hcall.c
+@@ -1664,6 +1664,42 @@ static target_ulong h_client_architecture_support(PowerPCCPU *cpu,
+     return H_SUCCESS;
+ }
+ 
++static target_ulong h_home_node_associativity(PowerPCCPU *cpu,
++                                              sPAPRMachineState *spapr,
++                                              target_ulong opcode,
++                                              target_ulong *args)
++{
++    target_ulong flags = args[0];
++    target_ulong procno = args[1];
++    PowerPCCPU *tcpu;
++    int idx;
++
++    /* only support procno from H_REGISTER_VPA */
++    if (flags != 0x1) {
++        return H_FUNCTION;
++    }
++
++    tcpu = spapr_find_cpu(procno);
++    if (tcpu == NULL) {
++        return H_P2;
++    }
++
++    /* sequence is the same as in the "ibm,associativity" property */
++
++    idx = 0;
++#define ASSOCIATIVITY(a, b) (((uint64_t)(a) << 32) | \
++                             ((uint64_t)(b) & 0xffffffff))
++    args[idx++] = ASSOCIATIVITY(0, 0);
++    args[idx++] = ASSOCIATIVITY(0, tcpu->node_id);
++    args[idx++] = ASSOCIATIVITY(procno, -1);
++    for ( ; idx < 6; idx++) {
++        args[idx] = -1;
++    }
++#undef ASSOCIATIVITY
++
++    return H_SUCCESS;
++}
++
+ static target_ulong h_get_cpu_characteristics(PowerPCCPU *cpu,
+                                               sPAPRMachineState *spapr,
+                                               target_ulong opcode,
+@@ -1823,6 +1859,10 @@ static void hypercall_register_types(void)
+ 
+     /* ibm,client-architecture-support support */
+     spapr_register_hypercall(KVMPPC_H_CAS, h_client_architecture_support);
++
++    /* Virtual Processor Home Node */
++    spapr_register_hypercall(H_HOME_NODE_ASSOCIATIVITY,
++                             h_home_node_associativity);
+ }
+ 
+ type_init(hypercall_register_types)
+diff --git a/include/hw/ppc/spapr.h b/include/hw/ppc/spapr.h
+index 5118af6..5f1add0 100644
+--- a/include/hw/ppc/spapr.h
++++ b/include/hw/ppc/spapr.h
+@@ -432,6 +432,7 @@ struct sPAPRMachineState {
+ #define H_GET_EM_PARMS          0x2B8
+ #define H_SET_MPP               0x2D0
+ #define H_GET_MPP               0x2D4
++#define H_HOME_NODE_ASSOCIATIVITY 0x2EC
+ #define H_XIRR_X                0x2FC
+ #define H_RANDOM                0x300
+ #define H_SET_MODE              0x31C
+-- 
+1.8.3.1
+

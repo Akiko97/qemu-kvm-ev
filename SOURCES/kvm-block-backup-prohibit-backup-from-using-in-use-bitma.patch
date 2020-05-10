@@ -1,0 +1,62 @@
+From 2b82b7986e02dfe32ed23724d7a6dfaef2c79031 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:35 +0100
+Subject: [PATCH 25/33] block/backup: prohibit backup from using in use bitmaps
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-16-jsnow@redhat.com>
+Patchwork-id: 84268
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 15/23] block/backup: prohibit backup from using in use bitmaps
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+If the bitmap is frozen, we shouldn't touch it.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20181002230218.13949-6-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit b27a6b8b329a8dcbab9dc1af45586f7585f3d47b)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index 9921de6..c9bda43 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3669,10 +3669,10 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
+             bdrv_unref(target_bs);
+             goto out;
+         }
+-        if (bdrv_dirty_bitmap_qmp_locked(bmap)) {
++        if (bdrv_dirty_bitmap_user_locked(bmap)) {
+             error_setg(errp,
+-                       "Bitmap '%s' is currently locked and cannot be used for "
+-                       "backup", backup->bitmap);
++                       "Bitmap '%s' is currently in use by another operation"
++                       " and cannot be used for backup", backup->bitmap);
+             goto out;
+         }
+     }
+@@ -3776,10 +3776,10 @@ BlockJob *do_blockdev_backup(BlockdevBackup *backup, JobTxn *txn,
+             error_setg(errp, "Bitmap '%s' could not be found", backup->bitmap);
+             goto out;
+         }
+-        if (bdrv_dirty_bitmap_qmp_locked(bmap)) {
++        if (bdrv_dirty_bitmap_user_locked(bmap)) {
+             error_setg(errp,
+-                       "Bitmap '%s' is currently locked and cannot be used for "
+-                       "backup", backup->bitmap);
++                       "Bitmap '%s' is currently in use by another operation"
++                       " and cannot be used for backup", backup->bitmap);
+             goto out;
+         }
+     }
+-- 
+1.8.3.1
+

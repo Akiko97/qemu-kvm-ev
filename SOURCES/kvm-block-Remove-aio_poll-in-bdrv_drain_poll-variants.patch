@@ -1,0 +1,62 @@
+From 78a927e7c583a7556604e55b5d27d4c4c082fb64 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:37 +0200
+Subject: [PATCH 46/49] block: Remove aio_poll() in bdrv_drain_poll variants
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-40-kwolf@redhat.com>
+Patchwork-id: 82191
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 39/42] block: Remove aio_poll() in bdrv_drain_poll variants
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+bdrv_drain_poll_top_level() was buggy because it didn't release the
+AioContext lock of the node to be drained before calling aio_poll().
+This way, callbacks called by aio_poll() would possibly take the lock a
+second time and run into a deadlock with a nested AIO_WAIT_WHILE() call.
+
+However, it turns out that the aio_poll() call isn't actually needed any
+more. It was introduced in commit 91af091f923, which is effectively
+reverted by this patch. The cases it was supposed to fix are now covered
+by bdrv_drain_poll(), which waits for block jobs to reach a quiescent
+state.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c | 8 --------
+ 1 file changed, 8 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 19db35e..3313958 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -266,10 +266,6 @@ bool bdrv_drain_poll(BlockDriverState *bs, bool recursive,
+ static bool bdrv_drain_poll_top_level(BlockDriverState *bs, bool recursive,
+                                       BdrvChild *ignore_parent)
+ {
+-    /* Execute pending BHs first and check everything else only after the BHs
+-     * have executed. */
+-    while (aio_poll(bs->aio_context, false));
+-
+     return bdrv_drain_poll(bs, recursive, ignore_parent, false);
+ }
+ 
+@@ -509,10 +505,6 @@ static bool bdrv_drain_all_poll(void)
+     BlockDriverState *bs = NULL;
+     bool result = false;
+ 
+-    /* Execute pending BHs first (may modify the graph) and check everything
+-     * else only after the BHs have executed. */
+-    while (aio_poll(qemu_get_aio_context(), false));
+-
+     /* bdrv_drain_poll() can't make changes to the graph and we are holding the
+      * main AioContext lock, so iterating bdrv_next_all_states() is safe. */
+     while ((bs = bdrv_next_all_states(bs))) {
+-- 
+1.8.3.1
+

@@ -1,0 +1,65 @@
+From 31e4b214ef764476e99ddbbfd4b039235e3a4ea1 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 25 Jun 2018 13:04:46 +0200
+Subject: [PATCH 37/54] qemu-io: Use purely string blockdev options
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618163106.23010-2-mreitz@redhat.com>
+Patchwork-id: 80775
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/3] qemu-io: Use purely string blockdev options
+Bugzilla: 1576598
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Currently, qemu-io only uses string-valued blockdev options (as all are
+converted directly from QemuOpts) -- with one exception: -U adds the
+force-share option as a boolean.  This in itself is already a bit
+questionable, but a real issue is that it also assumes the value already
+existing in the options QDict would be a boolean, which is wrong.
+
+That has the following effect:
+
+$ ./qemu-io -r -U --image-opts \
+    driver=file,filename=/dev/null,force-share=off
+[1]    15200 segmentation fault (core dumped)  ./qemu-io -r -U
+--image-opts driver=file,filename=/dev/null,force-share=off
+
+Since @opts is converted from QemuOpts, the value must be a string, and
+we have to compare it as such.  Consequently, it makes sense to also set
+it as a string instead of a boolean.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180502202051.15493-2-mreitz@redhat.com
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 2a01c01f9ecb43af4c0a85fe6adc429ffc9c31b5)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-io.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/qemu-io.c b/qemu-io.c
+index 72fee0d..73c638f 100644
+--- a/qemu-io.c
++++ b/qemu-io.c
+@@ -95,12 +95,12 @@ static int openfile(char *name, int flags, bool writethrough, bool force_share,
+             opts = qdict_new();
+         }
+         if (qdict_haskey(opts, BDRV_OPT_FORCE_SHARE)
+-            && !qdict_get_bool(opts, BDRV_OPT_FORCE_SHARE)) {
++            && strcmp(qdict_get_str(opts, BDRV_OPT_FORCE_SHARE), "on")) {
+             error_report("-U conflicts with image options");
+             qobject_unref(opts);
+             return 1;
+         }
+-        qdict_put_bool(opts, BDRV_OPT_FORCE_SHARE, true);
++        qdict_put_str(opts, BDRV_OPT_FORCE_SHARE, "on");
+     }
+     qemuio_blk = blk_new_open(name, NULL, opts, flags, &local_err);
+     if (!qemuio_blk) {
+-- 
+1.8.3.1
+

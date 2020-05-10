@@ -1,0 +1,86 @@
+From dec8a19c9a45f060a9f20556672edeb61ecb6685 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:44 +0200
+Subject: [PATCH 139/163] block/dirty-bitmap: explicitly lock bitmaps with
+ successors
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-9-jsnow@redhat.com>
+Patchwork-id: 85410
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 08/21] block/dirty-bitmap: explicitly lock bitmaps with successors
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+Instead of implying a user_locked/busy status, make it explicit.
+Now, bitmaps in use by migration, NBD or backup operations
+are all treated the same way with the same code paths.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190223000614.13894-7-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 21d2376f264bcaa1692bd71ab1f99b9b0ff5afbf)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index fa411f9..a495178 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -50,7 +50,7 @@ struct BdrvDirtyBitmap {
+     HBitmap *meta;              /* Meta dirty bitmap */
+     bool qmp_locked;            /* Bitmap is locked, it can't be modified
+                                    through QMP */
+-    BdrvDirtyBitmap *successor; /* Anonymous child; implies user_locked state */
++    BdrvDirtyBitmap *successor; /* Anonymous child, if any. */
+     char *name;                 /* Optional non-empty unique ID */
+     int64_t size;               /* Size of the bitmap, in bytes */
+     bool disabled;              /* Bitmap is disabled. It ignores all writes to
+@@ -188,10 +188,8 @@ bool bdrv_dirty_bitmap_has_successor(BdrvDirtyBitmap *bitmap)
+     return bitmap->successor;
+ }
+ 
+-/* Both conditions disallow user-modification via QMP. */
+ bool bdrv_dirty_bitmap_user_locked(BdrvDirtyBitmap *bitmap) {
+-    return bdrv_dirty_bitmap_has_successor(bitmap) ||
+-           bdrv_dirty_bitmap_qmp_locked(bitmap);
++    return bdrv_dirty_bitmap_qmp_locked(bitmap);
+ }
+ 
+ void bdrv_dirty_bitmap_set_qmp_locked(BdrvDirtyBitmap *bitmap, bool qmp_locked)
+@@ -267,8 +265,9 @@ int bdrv_dirty_bitmap_create_successor(BlockDriverState *bs,
+     child->disabled = bitmap->disabled;
+     bitmap->disabled = true;
+ 
+-    /* Install the successor and freeze the parent */
++    /* Install the successor and lock the parent */
+     bitmap->successor = child;
++    bitmap->qmp_locked = true;
+     return 0;
+ }
+ 
+@@ -323,6 +322,7 @@ BdrvDirtyBitmap *bdrv_dirty_bitmap_abdicate(BlockDriverState *bs,
+     bitmap->successor = NULL;
+     successor->persistent = bitmap->persistent;
+     bitmap->persistent = false;
++    bitmap->qmp_locked = false;
+     bdrv_release_dirty_bitmap(bs, bitmap);
+ 
+     return successor;
+@@ -352,6 +352,7 @@ BdrvDirtyBitmap *bdrv_reclaim_dirty_bitmap_locked(BlockDriverState *bs,
+     }
+ 
+     parent->disabled = successor->disabled;
++    parent->qmp_locked = false;
+     bdrv_release_dirty_bitmap_locked(successor);
+     parent->successor = NULL;
+ 
+-- 
+1.8.3.1
+

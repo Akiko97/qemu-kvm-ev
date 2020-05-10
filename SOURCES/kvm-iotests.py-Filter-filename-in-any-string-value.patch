@@ -1,0 +1,49 @@
+From 8e28b84e9502f95c2f08e20ec44b1f161193c2d8 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:31 +0100
+Subject: [PATCH 033/163] iotests.py: Filter filename in any string value
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-20-jsnow@redhat.com>
+Patchwork-id: 84954
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 19/19] iotests.py: Filter filename in any string value
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Max Reitz <mreitz@redhat.com>
+
+filter_qmp_testfiles() currently filters the filename only for specific
+keys.  However, there are more keys that take filenames (such as
+block-commit's @top and @base, or ssh's @path), and it does not make
+sense to list them all here.  "$TEST_DIR/$PID-" should have enough
+entropy not to appear anywhere randomly.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Message-id: 20190210145736.1486-8-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 56a6e5d0ca61f746577ea6223bcabbf7d6c576af)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index 64bb718..a796ad2 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -269,7 +269,7 @@ def filter_testfiles(msg):
+ 
+ def filter_qmp_testfiles(qmsg):
+     def _filter(key, value):
+-        if key == 'filename' or key == 'backing-file':
++        if is_str(value):
+             return filter_testfiles(value)
+         return value
+     return filter_qmp(qmsg, _filter)
+-- 
+1.8.3.1
+

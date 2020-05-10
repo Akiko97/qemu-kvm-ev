@@ -1,0 +1,144 @@
+From ed8f16b1786f28d3fb6c6cef79cd4f94deae8857 Mon Sep 17 00:00:00 2001
+From: Sergio Lopez Pascual <slp@redhat.com>
+Date: Thu, 28 Nov 2019 11:30:47 +0100
+Subject: [PATCH] virtio-scsi: fixed virtio_scsi_ctx_check failed when
+ detaching scsi disk
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Sergio Lopez Pascual <slp@redhat.com>
+Message-id: <20191128113047.253669-2-slp@redhat.com>
+Patchwork-id: 92747
+O-Subject: [RHEL-7.8 qemu-kvm-rhev PATCH v2 1/1] virtio-scsi: fixed virtio_scsi_ctx_check failed when detaching scsi disk
+Bugzilla: 1764120
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Maxim Levitsky <mlevitsk@redhat.com>
+
+From: Zhengui li <lizhengui@huawei.com>
+
+commit a6f230c move blockbackend back to main AioContext on unplug. It set the AioContext of
+SCSIDevice to the main AioContex, but s->ctx is still the iothread AioContexï¼ˆif the scsi controller
+is configure with iothreadï¼‰. So if there are having in-flight requests during unplug, a failing assertion
+happend. The bt is below:
+(gdb) bt
+#0  0x0000ffff86aacbd0 in raise () from /lib64/libc.so.6
+#1  0x0000ffff86aadf7c in abort () from /lib64/libc.so.6
+#2  0x0000ffff86aa6124 in __assert_fail_base () from /lib64/libc.so.6
+#3  0x0000ffff86aa61a4 in __assert_fail () from /lib64/libc.so.6
+#4  0x0000000000529118 in virtio_scsi_ctx_check (d=<optimized out>, s=<optimized out>, s=<optimized out>) at /home/qemu-4.0.0/hw/scsi/virtio-scsi.c:246
+#5  0x0000000000529ec4 in virtio_scsi_handle_cmd_req_prepare (s=0x2779ec00, req=0xffff740397d0) at /home/qemu-4.0.0/hw/scsi/virtio-scsi.c:559
+#6  0x000000000052a228 in virtio_scsi_handle_cmd_vq (s=0x2779ec00, vq=0xffff7c6d7110) at /home/qemu-4.0.0/hw/scsi/virtio-scsi.c:603
+#7  0x000000000052afa8 in virtio_scsi_data_plane_handle_cmd (vdev=<optimized out>, vq=0xffff7c6d7110) at /home/qemu-4.0.0/hw/scsi/virtio-scsi-dataplane.c:59
+#8  0x000000000054d94c in virtio_queue_host_notifier_aio_poll (opaque=<optimized out>) at /home/qemu-4.0.0/hw/virtio/virtio.c:2452
+
+assert(blk_get_aio_context(d->conf.blk) == s->ctx) failed.
+
+To avoid assertion failed,  moving the "if" after qdev_simple_device_unplug_cb.
+
+In addition, to avoid another qemu crash below, add aio_disable_external before
+qdev_simple_device_unplug_cb, which disable the further processing of external clients
+when doing qdev_simple_device_unplug_cb.
+(gdb) bt
+#0  scsi_req_unref (req=0xffff6802c6f0) at hw/scsi/scsi-bus.c:1283
+#1  0x00000000005294a4 in virtio_scsi_handle_cmd_req_submit (req=<optimized out>,
+    s=<optimized out>) at /home/qemu-4.0.0/hw/scsi/virtio-scsi.c:589
+#2  0x000000000052a2a8 in virtio_scsi_handle_cmd_vq (s=s@entry=0x9c90e90,
+    vq=vq@entry=0xffff7c05f110) at /home/qemu-4.0.0/hw/scsi/virtio-scsi.c:625
+#3  0x000000000052afd8 in virtio_scsi_data_plane_handle_cmd (vdev=<optimized out>,
+    vq=0xffff7c05f110) at /home/qemu-4.0.0/hw/scsi/virtio-scsi-dataplane.c:60
+#4  0x000000000054d97c in virtio_queue_host_notifier_aio_poll (opaque=<optimized out>)
+    at /home/qemu-4.0.0/hw/virtio/virtio.c:2447
+#5  0x00000000009b204c in run_poll_handlers_once (ctx=ctx@entry=0x6efea40,
+    timeout=timeout@entry=0xffff7d7f7308) at util/aio-posix.c:521
+#6  0x00000000009b2b64 in run_poll_handlers (ctx=ctx@entry=0x6efea40,
+    max_ns=max_ns@entry=4000, timeout=timeout@entry=0xffff7d7f7308) at util/aio-posix.c:559
+#7  0x00000000009b2ca0 in try_poll_mode (ctx=ctx@entry=0x6efea40, timeout=0xffff7d7f7308,
+    timeout@entry=0xffff7d7f7348) at util/aio-posix.c:594
+#8  0x00000000009b31b8 in aio_poll (ctx=0x6efea40, blocking=blocking@entry=true)
+    at util/aio-posix.c:636
+#9  0x00000000006973cc in iothread_run (opaque=0x6ebd800) at iothread.c:75
+#10 0x00000000009b592c in qemu_thread_start (args=0x6efef60) at util/qemu-thread-posix.c:502
+#11 0x0000ffff8057f8bc in start_thread () from /lib64/libpthread.so.0
+#12 0x0000ffff804e5f8c in thread_start () from /lib64/libc.so.6
+(gdb) p bus
+$1 = (SCSIBus *) 0x0
+
+Signed-off-by: Zhengui li <lizhengui@huawei.com>
+Message-Id: <1563696502-7972-1-git-send-email-lizhengui@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-Id: <1563829520-17525-1-git-send-email-pbonzini@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 9c5aad84da1c37429d06c193f23a8df6445ed29e)
+[slp: we need to get a reference to the underlying BDS to be able
+to switch the context after calling qdev_simple_device_unplug_cb(),
+as in 2.12 this causes the SCSIDevice to go away immediately]
+Signed-off-by: Sergio Lopez <slp@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/virtio-scsi.c | 30 ++++++++++++++++++++++++++----
+ 1 file changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/hw/scsi/virtio-scsi.c b/hw/scsi/virtio-scsi.c
+index 391500b..2bd54b3 100644
+--- a/hw/scsi/virtio-scsi.c
++++ b/hw/scsi/virtio-scsi.c
+@@ -20,6 +20,7 @@
+ #include "qemu/error-report.h"
+ #include "qemu/iov.h"
+ #include "sysemu/block-backend.h"
++#include "sysemu/blockdev.h"
+ #include "hw/scsi/scsi.h"
+ #include "scsi/constants.h"
+ #include "hw/virtio/virtio-bus.h"
+@@ -839,6 +840,9 @@ static void virtio_scsi_hotunplug(HotplugHandler *hotplug_dev, DeviceState *dev,
+     VirtIODevice *vdev = VIRTIO_DEVICE(hotplug_dev);
+     VirtIOSCSI *s = VIRTIO_SCSI(vdev);
+     SCSIDevice *sd = SCSI_DEVICE(dev);
++    AioContext *ctx = s->ctx ?: qemu_get_aio_context();
++    BlockDriverState *bs;
++    DriveInfo *dinfo;
+ 
+     if (virtio_vdev_has_feature(vdev, VIRTIO_SCSI_F_HOTPLUG)) {
+         virtio_scsi_acquire(s);
+@@ -848,13 +852,31 @@ static void virtio_scsi_hotunplug(HotplugHandler *hotplug_dev, DeviceState *dev,
+         virtio_scsi_release(s);
+     }
+ 
+-    if (s->ctx) {
++    /*
++     * This SCSIDevice goes away after calling qdev_simple_device_unplug_cb(),
++     * so get a reference to the underlying BDS here to be able to switch
++     * its AioContext afterwards.
++     */
++    bs = blk_bs(sd->conf.blk);
++
++    /*
++     * Drives attached to a legacy device will get auto deleted while
++     * unplugging the latter, so we don't need to switch their context.
++     * Get a reference to dinfo here, which is only NULL for non-legacy
++     * devices, and use it to avoid doing the switch for drives attached
++     * to legacy devices.
++     */
++    dinfo = blk_legacy_dinfo(sd->conf.blk);
++
++    aio_disable_external(ctx);
++    qdev_simple_device_unplug_cb(hotplug_dev, dev, errp);
++    aio_enable_external(ctx);
++
++    if (s->ctx && bs && !dinfo) {
+         virtio_scsi_acquire(s);
+-        blk_set_aio_context(sd->conf.blk, qemu_get_aio_context());
++        bdrv_set_aio_context(bs, qemu_get_aio_context());
+         virtio_scsi_release(s);
+     }
+-
+-    qdev_simple_device_unplug_cb(hotplug_dev, dev, errp);
+ }
+ 
+ static struct SCSIBusInfo virtio_scsi_scsi_info = {
+-- 
+1.8.3.1
+

@@ -1,0 +1,38 @@
+From 7d3c970b0033d3bdb99e901676228bdb205e96c0 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 6 Jul 2018 17:56:59 +0200
+Subject: [PATCH 25/89] pr-manager-helper: fix memory leak on event
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20180706175659.30615-10-pbonzini@redhat.com>
+Patchwork-id: 81249
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 9/9] pr-manager-helper: fix memory leak on event
+Bugzilla: 1533158
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Michal Privoznik <mprivozn@redhat.com>
+
+Reported by Coverity.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit ea3d77c889cfa8c450da8a716c2bfd6aaea0adb2)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ scsi/pr-manager-helper.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/scsi/pr-manager-helper.c b/scsi/pr-manager-helper.c
+index 519a296..3027dde 100644
+--- a/scsi/pr-manager-helper.c
++++ b/scsi/pr-manager-helper.c
+@@ -46,6 +46,7 @@ static void pr_manager_send_status_changed_event(PRManagerHelper *pr_mgr)
+     if (id) {
+         qapi_event_send_pr_manager_status_changed(id, !!pr_mgr->ioc,
+                                                   &error_abort);
++        g_free(id);
+     }
+ }
+ 
+-- 
+1.8.3.1
+

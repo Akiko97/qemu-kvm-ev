@@ -1,0 +1,204 @@
+From 5ca59831fc7c51ec7f0c002bced4a41d088a0fb2 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:00 +0200
+Subject: [PATCH 31/89] job: Rename BlockJobType into JobType
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-18-kwolf@redhat.com>
+Patchwork-id: 81112
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 17/73] job: Rename BlockJobType into JobType
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+QAPI types aren't externally visible, so we can rename them without
+causing problems. Before we add a job type to Job, rename the enum
+so it can be used for more than just block jobs.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 8e4c87000fc515f8f65f7c8f18afb1e9270b11d6)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/backup.c               |  2 +-
+ block/commit.c               |  2 +-
+ block/mirror.c               |  4 ++--
+ block/stream.c               |  2 +-
+ blockjob.c                   |  6 +++---
+ include/block/blockjob_int.h |  2 +-
+ qapi/block-core.json         | 14 +++++++-------
+ 7 files changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index 9e672bb..c49ea92 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -526,7 +526,7 @@ static const BlockJobDriver backup_job_driver = {
+     .job_driver = {
+         .instance_size          = sizeof(BackupBlockJob),
+     },
+-    .job_type               = BLOCK_JOB_TYPE_BACKUP,
++    .job_type               = JOB_TYPE_BACKUP,
+     .start                  = backup_run,
+     .commit                 = backup_commit,
+     .abort                  = backup_abort,
+diff --git a/block/commit.c b/block/commit.c
+index 18cbb2f..afa2b2b 100644
+--- a/block/commit.c
++++ b/block/commit.c
+@@ -218,7 +218,7 @@ static const BlockJobDriver commit_job_driver = {
+     .job_driver = {
+         .instance_size = sizeof(CommitBlockJob),
+     },
+-    .job_type      = BLOCK_JOB_TYPE_COMMIT,
++    .job_type      = JOB_TYPE_COMMIT,
+     .start         = commit_run,
+ };
+ 
+diff --git a/block/mirror.c b/block/mirror.c
+index aa1d6b7..ed72656 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -989,7 +989,7 @@ static const BlockJobDriver mirror_job_driver = {
+     .job_driver = {
+         .instance_size          = sizeof(MirrorBlockJob),
+     },
+-    .job_type               = BLOCK_JOB_TYPE_MIRROR,
++    .job_type               = JOB_TYPE_MIRROR,
+     .start                  = mirror_run,
+     .complete               = mirror_complete,
+     .pause                  = mirror_pause,
+@@ -1001,7 +1001,7 @@ static const BlockJobDriver commit_active_job_driver = {
+     .job_driver = {
+         .instance_size          = sizeof(MirrorBlockJob),
+     },
+-    .job_type               = BLOCK_JOB_TYPE_COMMIT,
++    .job_type               = JOB_TYPE_COMMIT,
+     .start                  = mirror_run,
+     .complete               = mirror_complete,
+     .pause                  = mirror_pause,
+diff --git a/block/stream.c b/block/stream.c
+index f88fc75..048bceb 100644
+--- a/block/stream.c
++++ b/block/stream.c
+@@ -212,7 +212,7 @@ static const BlockJobDriver stream_job_driver = {
+     .job_driver = {
+         .instance_size = sizeof(StreamBlockJob),
+     },
+-    .job_type      = BLOCK_JOB_TYPE_STREAM,
++    .job_type      = JOB_TYPE_STREAM,
+     .start         = stream_run,
+ };
+ 
+diff --git a/blockjob.c b/blockjob.c
+index 1464856..2a38447 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -310,7 +310,7 @@ static char *child_job_get_parent_desc(BdrvChild *c)
+ {
+     BlockJob *job = c->opaque;
+     return g_strdup_printf("%s job '%s'",
+-                           BlockJobType_str(job->driver->job_type),
++                           JobType_str(job->driver->job_type),
+                            job->job.id);
+ }
+ 
+@@ -847,7 +847,7 @@ BlockJobInfo *block_job_query(BlockJob *job, Error **errp)
+         return NULL;
+     }
+     info = g_new0(BlockJobInfo, 1);
+-    info->type      = g_strdup(BlockJobType_str(job->driver->job_type));
++    info->type      = g_strdup(JobType_str(job->driver->job_type));
+     info->device    = g_strdup(job->job.id);
+     info->len       = job->len;
+     info->busy      = atomic_read(&job->busy);
+@@ -980,7 +980,7 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
+                    block_job_sleep_timer_cb, job);
+ 
+     error_setg(&job->blocker, "block device is in use by block job: %s",
+-               BlockJobType_str(driver->job_type));
++               JobType_str(driver->job_type));
+     block_job_add_bdrv(job, "main node", bs, 0, BLK_PERM_ALL, &error_abort);
+     bs->job = job;
+ 
+diff --git a/include/block/blockjob_int.h b/include/block/blockjob_int.h
+index e8eca44..8e7e0a2 100644
+--- a/include/block/blockjob_int.h
++++ b/include/block/blockjob_int.h
+@@ -39,7 +39,7 @@ struct BlockJobDriver {
+     JobDriver job_driver;
+ 
+     /** String describing the operation, part of query-block-jobs QMP API */
+-    BlockJobType job_type;
++    JobType job_type;
+ 
+     /** Mandatory: Entrypoint for the Coroutine. */
+     CoroutineEntry *start;
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 1f6d4bb..607e5c5 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1050,9 +1050,9 @@
+   'data': ['top', 'full', 'none', 'incremental'] }
+ 
+ ##
+-# @BlockJobType:
++# @JobType:
+ #
+-# Type of a block job.
++# Type of a background job.
+ #
+ # @commit: block commit job type, see "block-commit"
+ #
+@@ -1064,7 +1064,7 @@
+ #
+ # Since: 1.7
+ ##
+-{ 'enum': 'BlockJobType',
++{ 'enum': 'JobType',
+   'data': ['commit', 'stream', 'mirror', 'backup'] }
+ 
+ ##
+@@ -4529,7 +4529,7 @@
+ #
+ ##
+ { 'event': 'BLOCK_JOB_COMPLETED',
+-  'data': { 'type'  : 'BlockJobType',
++  'data': { 'type'  : 'JobType',
+             'device': 'str',
+             'len'   : 'int',
+             'offset': 'int',
+@@ -4565,7 +4565,7 @@
+ #
+ ##
+ { 'event': 'BLOCK_JOB_CANCELLED',
+-  'data': { 'type'  : 'BlockJobType',
++  'data': { 'type'  : 'JobType',
+             'device': 'str',
+             'len'   : 'int',
+             'offset': 'int',
+@@ -4630,7 +4630,7 @@
+ #
+ ##
+ { 'event': 'BLOCK_JOB_READY',
+-  'data': { 'type'  : 'BlockJobType',
++  'data': { 'type'  : 'JobType',
+             'device': 'str',
+             'len'   : 'int',
+             'offset': 'int',
+@@ -4657,7 +4657,7 @@
+ #
+ ##
+ { 'event': 'BLOCK_JOB_PENDING',
+-  'data': { 'type'  : 'BlockJobType',
++  'data': { 'type'  : 'JobType',
+             'id'    : 'str' } }
+ 
+ ##
+-- 
+1.8.3.1
+

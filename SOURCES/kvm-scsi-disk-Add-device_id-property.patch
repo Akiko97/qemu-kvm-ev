@@ -1,0 +1,98 @@
+From 4907989f1e3ccfa465a919c3a66e7f5a460bffe1 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Wed, 6 Feb 2019 15:58:29 +0100
+Subject: [PATCH 09/33] scsi-disk: Add device_id property
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190206155829.14641-3-kwolf@redhat.com>
+Patchwork-id: 84254
+O-Subject: [RHEL-7.7/8.0-AV qemu-kvm-rhev PATCH 2/2] scsi-disk: Add device_id property
+Bugzilla: 1673080
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+
+The new device_id property specifies which value to use for the vendor
+specific designator in the Device Identification VPD page.
+
+In particular, this is necessary for libvirt to maintain guest ABI
+compatibility when no serial number is given and a VM is switched from
+-drive (where the BlockBackend name is used) to -blockdev (where the
+vendor specific designator is left out by default).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 7471a649fc3a391dd497297013fb2525ca9821ba)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/scsi-disk.c | 24 ++++++++++++++++--------
+ 1 file changed, 16 insertions(+), 8 deletions(-)
+
+diff --git a/hw/scsi/scsi-disk.c b/hw/scsi/scsi-disk.c
+index de6c7bc..8033d7e 100644
+--- a/hw/scsi/scsi-disk.c
++++ b/hw/scsi/scsi-disk.c
+@@ -103,6 +103,7 @@ typedef struct SCSIDiskState
+     char *serial;
+     char *vendor;
+     char *product;
++    char *device_id;
+     bool tray_open;
+     bool tray_locked;
+     /*
+@@ -638,13 +639,8 @@ static int scsi_disk_emulate_vpd_page(SCSIRequest *req, uint8_t *outbuf)
+ 
+     case 0x83: /* Device identification page, mandatory */
+     {
+-        const char *str = s->serial ?: blk_name(s->qdev.conf.blk);
+-        int max_len = s->serial ? 20 : 255 - 8;
+-        int id_len = strlen(str);
++        int id_len = s->device_id ? MIN(strlen(s->device_id), 255 - 8) : 0;
+ 
+-        if (id_len > max_len) {
+-            id_len = max_len;
+-        }
+         DPRINTF("Inquiry EVPD[Device identification] "
+                 "buffer size %zd\n", req->cmd.xfer);
+ 
+@@ -653,7 +649,7 @@ static int scsi_disk_emulate_vpd_page(SCSIRequest *req, uint8_t *outbuf)
+             outbuf[buflen++] = 0;   /* not officially assigned */
+             outbuf[buflen++] = 0;   /* reserved */
+             outbuf[buflen++] = id_len; /* length of data following */
+-            memcpy(outbuf + buflen, str, id_len);
++            memcpy(outbuf + buflen, s->device_id, id_len);
+             buflen += id_len;
+         }
+ 
+@@ -2360,6 +2356,16 @@ static void scsi_realize(SCSIDevice *dev, Error **errp)
+     if (!s->vendor) {
+         s->vendor = g_strdup("QEMU");
+     }
++    if (!s->device_id) {
++        if (s->serial) {
++            s->device_id = g_strdup_printf("%.20s", s->serial);
++        } else {
++            const char *str = blk_name(s->qdev.conf.blk);
++            if (str && *str) {
++                s->device_id = g_strdup(str);
++            }
++        }
++    }
+ 
+     if (blk_is_sg(s->qdev.conf.blk)) {
+         error_setg(errp, "unwanted /dev/sg*");
+@@ -2895,7 +2901,9 @@ static const TypeInfo scsi_disk_base_info = {
+     DEFINE_PROP_STRING("ver", SCSIDiskState, version),               \
+     DEFINE_PROP_STRING("serial", SCSIDiskState, serial),             \
+     DEFINE_PROP_STRING("vendor", SCSIDiskState, vendor),             \
+-    DEFINE_PROP_STRING("product", SCSIDiskState, product)
++    DEFINE_PROP_STRING("product", SCSIDiskState, product),           \
++    DEFINE_PROP_STRING("device_id", SCSIDiskState, device_id)
++
+ 
+ static Property scsi_hd_properties[] = {
+     DEFINE_SCSI_DISK_PROPERTIES(),
+-- 
+1.8.3.1
+

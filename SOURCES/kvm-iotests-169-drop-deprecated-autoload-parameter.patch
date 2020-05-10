@@ -1,0 +1,41 @@
+From 4b6af7c190fb1366d5c7f43fdfe39fddc2465e89 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:38 +0100
+Subject: [PATCH 28/33] iotests: 169: drop deprecated 'autoload' parameter
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-19-jsnow@redhat.com>
+Patchwork-id: 84276
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 18/23] iotests: 169: drop deprecated 'autoload' parameter
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 304cc429a07eb6601020212a478050ebbe87df88)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/169 | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/tests/qemu-iotests/169 b/tests/qemu-iotests/169
+index f243db9..df408f8 100755
+--- a/tests/qemu-iotests/169
++++ b/tests/qemu-iotests/169
+@@ -58,7 +58,6 @@ class TestDirtyBitmapMigration(iotests.QMPTestCase):
+                   'granularity': granularity}
+         if persistent:
+             params['persistent'] = True
+-            params['autoload'] = True
+ 
+         result = vm.qmp('block-dirty-bitmap-add', **params)
+         self.assert_qmp(result, 'return', {});
+-- 
+1.8.3.1
+

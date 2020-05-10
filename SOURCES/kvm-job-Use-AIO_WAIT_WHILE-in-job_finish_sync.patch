@@ -1,0 +1,75 @@
+From 1c16ba251ec8d0bf64ee34a0ef71b5912907de12 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:29 +0200
+Subject: [PATCH 38/49] job: Use AIO_WAIT_WHILE() in job_finish_sync()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-32-kwolf@redhat.com>
+Patchwork-id: 82184
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 31/42] job: Use AIO_WAIT_WHILE() in job_finish_sync()
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+job_finish_sync() needs to release the AioContext lock of the job before
+calling aio_poll(). Otherwise, callbacks called by aio_poll() would
+possibly take the lock a second time and run into a deadlock with a
+nested AIO_WAIT_WHILE() call.
+
+Also, job_drain() without aio_poll() isn't necessarily enough to make
+progress on a job, it could depend on bottom halves to be executed.
+
+Combine both open-coded while loops into a single AIO_WAIT_WHILE() call
+that solves both of these problems.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ job.c | 14 ++++++--------
+ 1 file changed, 6 insertions(+), 8 deletions(-)
+
+diff --git a/job.c b/job.c
+index 5a0ccc7..47b5a11 100644
+--- a/job.c
++++ b/job.c
+@@ -29,6 +29,7 @@
+ #include "qemu/job.h"
+ #include "qemu/id.h"
+ #include "qemu/main-loop.h"
++#include "block/aio-wait.h"
+ #include "trace-root.h"
+ #include "qapi/qapi-events-job.h"
+ 
+@@ -957,6 +958,7 @@ void job_complete(Job *job, Error **errp)
+ int job_finish_sync(Job *job, void (*finish)(Job *, Error **errp), Error **errp)
+ {
+     Error *local_err = NULL;
++    AioWait dummy_wait = {};
+     int ret;
+ 
+     job_ref(job);
+@@ -969,14 +971,10 @@ int job_finish_sync(Job *job, void (*finish)(Job *, Error **errp), Error **errp)
+         job_unref(job);
+         return -EBUSY;
+     }
+-    /* job_drain calls job_enter, and it should be enough to induce progress
+-     * until the job completes or moves to the main thread. */
+-    while (!job->deferred_to_main_loop && !job_is_completed(job)) {
+-        job_drain(job);
+-    }
+-    while (!job_is_completed(job)) {
+-        aio_poll(qemu_get_aio_context(), true);
+-    }
++
++    AIO_WAIT_WHILE(&dummy_wait, job->aio_context,
++                   (job_drain(job), !job_is_completed(job)));
++
+     ret = (job_is_cancelled(job) && job->ret == 0) ? -ECANCELED : job->ret;
+     job_unref(job);
+     return ret;
+-- 
+1.8.3.1
+

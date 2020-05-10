@@ -1,0 +1,48 @@
+From 156eb2b86b1383e639106650be32ca7d1a004f09 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 18:59:59 +0200
+Subject: [PATCH 20/57] migration: fix saving normal page even if it's been
+ compressed
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-13-dgilbert@redhat.com>
+Patchwork-id: 80997
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 12/18] migration: fix saving normal page even if it's been compressed
+Bugzilla: 1584139
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Xiao Guangrong <xiaoguangrong@tencent.com>
+
+Fix the bug introduced by da3f56cb2e767016 (migration: remove
+ram_save_compressed_page()), It should be 'return' rather than
+'res'
+
+Sorry for this stupid mistake :(
+
+Signed-off-by: Xiao Guangrong <xiaoguangrong@tencent.com>
+Message-Id: <20180428081045.8878-1-xiaoguangrong@tencent.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+(cherry picked from commit 701b1876c0fc0c583e4aff300ace5d33a1b97ed6)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/ram.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 466609f..c982201 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1491,7 +1491,7 @@ static int ram_save_target_page(RAMState *rs, PageSearchStatus *pss,
+      * CPU resource.
+      */
+     if (block == rs->last_sent_block && save_page_use_compression(rs)) {
+-        res = compress_page_with_multi_thread(rs, block, offset);
++        return compress_page_with_multi_thread(rs, block, offset);
+     }
+ 
+     return ram_save_page(rs, pss, last_stage);
+-- 
+1.8.3.1
+

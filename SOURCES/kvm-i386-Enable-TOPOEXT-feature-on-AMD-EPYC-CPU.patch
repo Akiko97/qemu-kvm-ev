@@ -1,0 +1,111 @@
+From 2f039646554d29873f39b867cfe80d044f2c56b4 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 3 Jul 2018 17:23:55 +0200
+Subject: [PATCH 10/89] i386: Enable TOPOEXT feature on AMD EPYC CPU
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180703172356.21038-10-ehabkost@redhat.com>
+Patchwork-id: 81219
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v3 09/10] i386: Enable TOPOEXT feature on AMD EPYC CPU
+Bugzilla: 1481253
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Babu Moger <babu.moger@amd.com>
+
+Enable TOPOEXT feature on EPYC CPU. This is required to support
+hyperthreading on VM guests. Also extend xlevel to 0x8000001E.
+
+Disable topoext on PC_COMPAT_2_12 and keep xlevel 0x8000000a.
+
+Signed-off-by: Babu Moger <babu.moger@amd.com>
+Message-Id: <1529443919-67509-3-git-send-email-babu.moger@amd.com>
+[ehabkost: Added EPYC-IBPB.xlevel to PC_COMPAT_2_12]
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit e00516475c270dcb6705753da96063f95699abf2)
+[ehabkost: moved compat code to PC_RHEL75_COMPAT]
+[ehabkost: fixed typo on EPYC-IBPB compat entry]
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+---
+Changes v2 -> v3:
+* Removed duplicate TYPE_X86_CPU.legacy-cache=on entry from
+  PC_RHEL7_5_COMPAT (caught by Laurent Vivier)
+
+Changes v1 -> v2:
+* Fixed typo on EPYC-IBPB compat entry
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/hw/i386/pc.h | 12 ++++++++++++
+ target/i386/cpu.c    | 10 ++++++----
+ 2 files changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/include/hw/i386/pc.h b/include/hw/i386/pc.h
+index 3ff55c6..88e5a92 100644
+--- a/include/hw/i386/pc.h
++++ b/include/hw/i386/pc.h
+@@ -983,6 +983,18 @@ extern void igd_passthrough_isa_bridge_create(PCIBus *bus, uint16_t gpu_dev_id);
+             .driver   = TYPE_X86_CPU,\
+             .property = "legacy-cache",\
+             .value    = "on",\
++        },{ /* PC_RHEL7_5_COMPAT from PC_COMPAT_2_12 */ \
++            .driver   = TYPE_X86_CPU,\
++            .property = "topoext",\
++            .value    = "off",\
++        },{ /* PC_RHEL7_5_COMPAT from PC_COMPAT_2_12 */ \
++            .driver   = "EPYC-" TYPE_X86_CPU,\
++            .property = "xlevel",\
++            .value    = stringify(0x8000000a),\
++        },{ /* PC_RHEL7_5_COMPAT from PC_COMPAT_2_12 */ \
++            .driver   = "EPYC-IBPB-" TYPE_X86_CPU,\
++            .property = "xlevel",\
++            .value    = stringify(0x8000000a),\
+         },
+ 
+ 
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index ef43ea0..5d5d7e6 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -2562,7 +2562,8 @@ static X86CPUDefinition builtin_x86_defs[] = {
+         .features[FEAT_8000_0001_ECX] =
+             CPUID_EXT3_OSVW | CPUID_EXT3_3DNOWPREFETCH |
+             CPUID_EXT3_MISALIGNSSE | CPUID_EXT3_SSE4A | CPUID_EXT3_ABM |
+-            CPUID_EXT3_CR8LEG | CPUID_EXT3_SVM | CPUID_EXT3_LAHF_LM,
++            CPUID_EXT3_CR8LEG | CPUID_EXT3_SVM | CPUID_EXT3_LAHF_LM |
++            CPUID_EXT3_TOPOEXT,
+         .features[FEAT_7_0_EBX] =
+             CPUID_7_0_EBX_FSGSBASE | CPUID_7_0_EBX_BMI1 | CPUID_7_0_EBX_AVX2 |
+             CPUID_7_0_EBX_SMEP | CPUID_7_0_EBX_BMI2 | CPUID_7_0_EBX_RDSEED |
+@@ -2577,7 +2578,7 @@ static X86CPUDefinition builtin_x86_defs[] = {
+             CPUID_XSAVE_XGETBV1,
+         .features[FEAT_6_EAX] =
+             CPUID_6_EAX_ARAT,
+-        .xlevel = 0x8000000A,
++        .xlevel = 0x8000001E,
+         .model_id = "AMD EPYC Processor",
+         .cache_info = &epyc_cache_info,
+     },
+@@ -2607,7 +2608,8 @@ static X86CPUDefinition builtin_x86_defs[] = {
+         .features[FEAT_8000_0001_ECX] =
+             CPUID_EXT3_OSVW | CPUID_EXT3_3DNOWPREFETCH |
+             CPUID_EXT3_MISALIGNSSE | CPUID_EXT3_SSE4A | CPUID_EXT3_ABM |
+-            CPUID_EXT3_CR8LEG | CPUID_EXT3_SVM | CPUID_EXT3_LAHF_LM,
++            CPUID_EXT3_CR8LEG | CPUID_EXT3_SVM | CPUID_EXT3_LAHF_LM |
++            CPUID_EXT3_TOPOEXT,
+         .features[FEAT_8000_0008_EBX] =
+             CPUID_8000_0008_EBX_IBPB,
+         .features[FEAT_7_0_EBX] =
+@@ -2624,7 +2626,7 @@ static X86CPUDefinition builtin_x86_defs[] = {
+             CPUID_XSAVE_XGETBV1,
+         .features[FEAT_6_EAX] =
+             CPUID_6_EAX_ARAT,
+-        .xlevel = 0x8000000A,
++        .xlevel = 0x8000001E,
+         .model_id = "AMD EPYC Processor (with IBPB)",
+         .cache_info = &epyc_cache_info,
+     },
+-- 
+1.8.3.1
+

@@ -1,0 +1,62 @@
+From 11637f33d743a928b6e05f4475f3f840715f33c6 Mon Sep 17 00:00:00 2001
+From: Cornelia Huck <cohuck@redhat.com>
+Date: Tue, 3 Jul 2018 10:55:10 +0200
+Subject: [PATCH 56/57] s390x/cpumodel: default enable bpb and ppa15 for z196
+ and later
+
+RH-Author: Cornelia Huck <cohuck@redhat.com>
+Message-id: <20180703105510.30555-1-cohuck@redhat.com>
+Patchwork-id: 81191
+O-Subject: [RHEL-7.6 qemu-kvm-ma PATCH] s390x/cpumodel: default enable bpb and ppa15 for z196 and later
+Bugzilla: 1595715
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+
+Most systems and host kernels provide the necessary building blocks for
+bpb and ppa15. We can reverse the logic and default enable those
+features, while still allowing to disable it via cpu model.
+
+So let us add bpb and ppa15 to z196 and later default CPU model for the
+qemu rhel7.6.0 machine. (like -cpu z13).  Older machine types (i.e.
+s390-ccw-virtio-rhel7.5.0) will retain the old value and not provide those
+bits in the default model.
+
+Signed-off-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/s390x/s390-virtio-ccw.c  | 4 ++++
+ target/s390x/gen-features.c | 2 ++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/hw/s390x/s390-virtio-ccw.c b/hw/s390x/s390-virtio-ccw.c
+index 64e2a3b..bf039a1 100644
+--- a/hw/s390x/s390-virtio-ccw.c
++++ b/hw/s390x/s390-virtio-ccw.c
+@@ -912,6 +912,10 @@ static void ccw_machine_rhel750_instance_options(MachineState *machine)
+     /* before 2.12 we emulated the very first z900, and RHEL 7.5 is
+        based on 2.10 */
+     s390_set_qemu_cpu_model(0x2064, 7, 1, qemu_cpu_feat);
++
++    /* bpb and ppa15 were only in the full model in RHEL 7.5 */
++    s390_cpudef_featoff_greater(11, 1, S390_FEAT_PPA15);
++    s390_cpudef_featoff_greater(11, 1, S390_FEAT_BPB);
+ }
+ 
+ static void ccw_machine_rhel750_class_options(MachineClass *mc)
+diff --git a/target/s390x/gen-features.c b/target/s390x/gen-features.c
+index 0cdbc15..6626b6f 100644
+--- a/target/s390x/gen-features.c
++++ b/target/s390x/gen-features.c
+@@ -512,6 +512,8 @@ static uint16_t default_GEN11_GA1[] = {
+     S390_FEAT_IPTE_RANGE,
+     S390_FEAT_ACCESS_EXCEPTION_FS_INDICATION,
+     S390_FEAT_GROUP_MSA_EXT_4,
++    S390_FEAT_PPA15,
++    S390_FEAT_BPB,
+ };
+ 
+ #define default_GEN11_GA2 EmptyFeat
+-- 
+1.8.3.1
+

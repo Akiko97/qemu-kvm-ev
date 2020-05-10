@@ -1,0 +1,202 @@
+From d48c917f7bcc56fce488c129884abee39dbf0df4 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 21:48:36 +0100
+Subject: [PATCH 043/163] bdrv_query_image_info Error parameter added
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320214838.22027-9-jsnow@redhat.com>
+Patchwork-id: 85002
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 08/10] bdrv_query_image_info Error parameter added
+Bugzilla: 1691048
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Andrey Shinkevich <andrey.shinkevich@virtuozzo.com>
+
+Inform a user in case qcow2_get_specific_info fails to obtain
+QCOW2 image specific information. This patch is preliminary to
+the one "qcow2: Add list of bitmaps to ImageInfoSpecificQCow2".
+
+Signed-off-by: Andrey Shinkevich <andrey.shinkevich@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Message-Id: <1549638368-530182-2-git-send-email-andrey.shinkevich@virtuozzo.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 1bf6e9ca9234e1dbcaa18baa06eca9d55cc2dbbb)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c                   |  5 +++--
+ block/crypto.c            |  9 +++------
+ block/qapi.c              |  7 ++++++-
+ block/qcow2.c             | 10 ++++++++--
+ block/vmdk.c              |  3 ++-
+ include/block/block.h     |  3 ++-
+ include/block/block_int.h |  3 ++-
+ qemu-io-cmds.c            |  7 ++++++-
+ 8 files changed, 32 insertions(+), 15 deletions(-)
+
+diff --git a/block.c b/block.c
+index bcf277d..e3e0e34 100644
+--- a/block.c
++++ b/block.c
+@@ -4204,11 +4204,12 @@ int bdrv_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
+     return drv->bdrv_get_info(bs, bdi);
+ }
+ 
+-ImageInfoSpecific *bdrv_get_specific_info(BlockDriverState *bs)
++ImageInfoSpecific *bdrv_get_specific_info(BlockDriverState *bs,
++                                          Error **errp)
+ {
+     BlockDriver *drv = bs->drv;
+     if (drv && drv->bdrv_get_specific_info) {
+-        return drv->bdrv_get_specific_info(bs);
++        return drv->bdrv_get_specific_info(bs, errp);
+     }
+     return NULL;
+ }
+diff --git a/block/crypto.c b/block/crypto.c
+index 0bb0db6..fd88782 100644
+--- a/block/crypto.c
++++ b/block/crypto.c
+@@ -664,20 +664,17 @@ static int block_crypto_get_info_luks(BlockDriverState *bs,
+ }
+ 
+ static ImageInfoSpecific *
+-block_crypto_get_specific_info_luks(BlockDriverState *bs)
++block_crypto_get_specific_info_luks(BlockDriverState *bs, Error **errp)
+ {
+     BlockCrypto *crypto = bs->opaque;
+     ImageInfoSpecific *spec_info;
+     QCryptoBlockInfo *info;
+ 
+-    info = qcrypto_block_get_info(crypto->block, NULL);
++    info = qcrypto_block_get_info(crypto->block, errp);
+     if (!info) {
+         return NULL;
+     }
+-    if (info->format != Q_CRYPTO_BLOCK_FORMAT_LUKS) {
+-        qapi_free_QCryptoBlockInfo(info);
+-        return NULL;
+-    }
++    assert(info->format == Q_CRYPTO_BLOCK_FORMAT_LUKS);
+ 
+     spec_info = g_new(ImageInfoSpecific, 1);
+     spec_info->type = IMAGE_INFO_SPECIFIC_KIND_LUKS;
+diff --git a/block/qapi.c b/block/qapi.c
+index 339727f..42ce4a3 100644
+--- a/block/qapi.c
++++ b/block/qapi.c
+@@ -282,7 +282,12 @@ void bdrv_query_image_info(BlockDriverState *bs,
+         info->dirty_flag = bdi.is_dirty;
+         info->has_dirty_flag = true;
+     }
+-    info->format_specific     = bdrv_get_specific_info(bs);
++    info->format_specific = bdrv_get_specific_info(bs, &err);
++    if (err) {
++        error_propagate(errp, err);
++        qapi_free_ImageInfo(info);
++        goto out;
++    }
+     info->has_format_specific = info->format_specific != NULL;
+ 
+     backing_filename = bs->backing_file;
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 114dcdd..de9872f 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -4166,14 +4166,20 @@ static int qcow2_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
+     return 0;
+ }
+ 
+-static ImageInfoSpecific *qcow2_get_specific_info(BlockDriverState *bs)
++static ImageInfoSpecific *qcow2_get_specific_info(BlockDriverState *bs,
++                                                  Error **errp)
+ {
+     BDRVQcow2State *s = bs->opaque;
+     ImageInfoSpecific *spec_info;
+     QCryptoBlockInfo *encrypt_info = NULL;
++    Error *local_err = NULL;
+ 
+     if (s->crypto != NULL) {
+-        encrypt_info = qcrypto_block_get_info(s->crypto, &error_abort);
++        encrypt_info = qcrypto_block_get_info(s->crypto, &local_err);
++        if (local_err) {
++            error_propagate(errp, local_err);
++            return NULL;
++        }
+     }
+ 
+     spec_info = g_new(ImageInfoSpecific, 1);
+diff --git a/block/vmdk.c b/block/vmdk.c
+index 84f8bbe..f52f291 100644
+--- a/block/vmdk.c
++++ b/block/vmdk.c
+@@ -2287,7 +2287,8 @@ static int coroutine_fn vmdk_co_check(BlockDriverState *bs,
+     return ret;
+ }
+ 
+-static ImageInfoSpecific *vmdk_get_specific_info(BlockDriverState *bs)
++static ImageInfoSpecific *vmdk_get_specific_info(BlockDriverState *bs,
++                                                 Error **errp)
+ {
+     int i;
+     BDRVVmdkState *s = bs->opaque;
+diff --git a/include/block/block.h b/include/block/block.h
+index 36a702c..5f40140 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -472,7 +472,8 @@ const char *bdrv_get_device_name(const BlockDriverState *bs);
+ const char *bdrv_get_device_or_node_name(const BlockDriverState *bs);
+ int bdrv_get_flags(BlockDriverState *bs);
+ int bdrv_get_info(BlockDriverState *bs, BlockDriverInfo *bdi);
+-ImageInfoSpecific *bdrv_get_specific_info(BlockDriverState *bs);
++ImageInfoSpecific *bdrv_get_specific_info(BlockDriverState *bs,
++                                          Error **errp);
+ void bdrv_round_to_clusters(BlockDriverState *bs,
+                             int64_t offset, int64_t bytes,
+                             int64_t *cluster_offset,
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index f457acb..f241bd9 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -321,7 +321,8 @@ struct BlockDriver {
+                                   const char *name,
+                                   Error **errp);
+     int (*bdrv_get_info)(BlockDriverState *bs, BlockDriverInfo *bdi);
+-    ImageInfoSpecific *(*bdrv_get_specific_info)(BlockDriverState *bs);
++    ImageInfoSpecific *(*bdrv_get_specific_info)(BlockDriverState *bs,
++                                                 Error **errp);
+ 
+     int coroutine_fn (*bdrv_save_vmstate)(BlockDriverState *bs,
+                                           QEMUIOVector *qiov,
+diff --git a/qemu-io-cmds.c b/qemu-io-cmds.c
+index 5bf5f28..9c51e57 100644
+--- a/qemu-io-cmds.c
++++ b/qemu-io-cmds.c
+@@ -1660,6 +1660,7 @@ static int info_f(BlockBackend *blk, int argc, char **argv)
+     BlockDriverState *bs = blk_bs(blk);
+     BlockDriverInfo bdi;
+     ImageInfoSpecific *spec_info;
++    Error *local_err = NULL;
+     char s1[64], s2[64];
+     int ret;
+ 
+@@ -1681,7 +1682,11 @@ static int info_f(BlockBackend *blk, int argc, char **argv)
+     printf("cluster size: %s\n", s1);
+     printf("vm state offset: %s\n", s2);
+ 
+-    spec_info = bdrv_get_specific_info(bs);
++    spec_info = bdrv_get_specific_info(bs, &local_err);
++    if (local_err) {
++        error_report_err(local_err);
++        return -EIO;
++    }
+     if (spec_info) {
+         printf("Format specific information:\n");
+         bdrv_image_info_specific_dump(fprintf, stdout, spec_info);
+-- 
+1.8.3.1
+

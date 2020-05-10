@@ -1,0 +1,81 @@
+From 41f2bce1d8d55b1a35bd7456b4b13b5bc098745f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 10 Jul 2018 23:06:15 +0200
+Subject: [PATCH 32/89] ahci: fix PxCI register race
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180710230616.11000-3-jsnow@redhat.com>
+Patchwork-id: 81293
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/3] ahci: fix PxCI register race
+Bugzilla: 1584914
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+Fixes: https://bugs.launchpad.net/qemu/+bug/1769189
+
+AHCI presently signals completion prior to the PxCI register being
+cleared to indicate completion. If a guest driver attempts to issue
+a new command in its IRQ handler, it might be surprised to learn there
+is still a command pending.
+
+In the case of Windows 10's boot driver, it will actually poll the IRQ
+register hoping to find out when the command is done running -- which
+will never happen, as there isn't a command running.
+
+Fix this: clear PxCI in ahci_cmd_done and not in the asynchronous BH.
+Because it now runs synchronously, we don't need to check if the command
+is actually done by spying on the ATA registers. We know it's done.
+
+CC: qemu-stable <qemu-stable@nongnu.org>
+Reported-by: François Guerraz <kubrick@fgv6.net>
+Tested-by: Bruce Rogers <brogers@suse.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Message-id: 20180531004323.4611-3-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 5694c7eacce6b263ad7497cc1bb76aad746cfd4e)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ide/ahci.c | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/hw/ide/ahci.c b/hw/ide/ahci.c
+index b7a6f68..a9558e4 100644
+--- a/hw/ide/ahci.c
++++ b/hw/ide/ahci.c
+@@ -532,13 +532,6 @@ static void ahci_check_cmd_bh(void *opaque)
+     qemu_bh_delete(ad->check_bh);
+     ad->check_bh = NULL;
+ 
+-    if ((ad->busy_slot != -1) &&
+-        !(ad->port.ifs[0].status & (BUSY_STAT|DRQ_STAT))) {
+-        /* no longer busy */
+-        ad->port_regs.cmd_issue &= ~(1 << ad->busy_slot);
+-        ad->busy_slot = -1;
+-    }
+-
+     check_cmd(ad->hba, ad->port_no);
+ }
+ 
+@@ -1425,6 +1418,12 @@ static void ahci_cmd_done(IDEDMA *dma)
+ 
+     trace_ahci_cmd_done(ad->hba, ad->port_no);
+ 
++    /* no longer busy */
++    if (ad->busy_slot != -1) {
++        ad->port_regs.cmd_issue &= ~(1 << ad->busy_slot);
++        ad->busy_slot = -1;
++    }
++
+     /* update d2h status */
+     ahci_write_fis_d2h(ad);
+ 
+-- 
+1.8.3.1
+

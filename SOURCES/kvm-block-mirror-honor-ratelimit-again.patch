@@ -1,0 +1,87 @@
+From 294916c8fdc6fdd221543c70b716e31591315379 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 14:47:34 +0200
+Subject: [PATCH 24/54] block/mirror: honor ratelimit again
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618144736.29873-2-mreitz@redhat.com>
+Patchwork-id: 80747
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/3] block/mirror: honor ratelimit again
+Bugzilla: 1572856
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Stefan Hajnoczi <stefanha@redhat.com>
+
+Commit b76e4458b1eb3c32e9824fe6aa51f67d2b251748 ("block/mirror: change
+the semantic of 'force' of block-job-cancel") accidentally removed the
+ratelimit in the mirror job.
+
+Reintroduce the ratelimit but keep the block-job-cancel force=true
+behavior that was added in commit
+b76e4458b1eb3c32e9824fe6aa51f67d2b251748.
+
+Note that block_job_sleep_ns() returns immediately when the job is
+cancelled.  Therefore it's safe to unconditionally call
+block_job_sleep_ns() - a cancelled job does not sleep.
+
+This commit fixes the non-deterministic qemu-iotests 185 output.  The
+test relies on the ratelimit to make the job sleep until the 'quit'
+command is processed.  Previously the job could complete before the
+'quit' command was received since there was no ratelimit.
+
+Cc: Liang Li <liliang.opensource@gmail.com>
+Cc: Jeff Cody <jcody@redhat.com>
+Cc: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: 20180424123527.19168-1-stefanha@redhat.com
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit ddc4115efdfa6619689fe18871aa2d37890b3463)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/mirror.c             | 8 +++++---
+ tests/qemu-iotests/185.out | 2 +-
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index 820f512..9436a8d 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -868,12 +868,14 @@ static void coroutine_fn mirror_run(void *opaque)
+         }
+ 
+         ret = 0;
++
++        if (s->synced && !should_complete) {
++            delay_ns = (s->in_flight == 0 && cnt == 0 ? SLICE_TIME : 0);
++        }
+         trace_mirror_before_sleep(s, cnt, s->synced, delay_ns);
++        block_job_sleep_ns(&s->common, delay_ns);
+         if (block_job_is_cancelled(&s->common) && s->common.force) {
+             break;
+-        } else if (!should_complete) {
+-            delay_ns = (s->in_flight == 0 && cnt == 0 ? SLICE_TIME : 0);
+-            block_job_sleep_ns(&s->common, delay_ns);
+         }
+         s->last_pause_ns = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+     }
+diff --git a/tests/qemu-iotests/185.out b/tests/qemu-iotests/185.out
+index 2c4b04d..992162f 100644
+--- a/tests/qemu-iotests/185.out
++++ b/tests/qemu-iotests/185.out
+@@ -36,9 +36,9 @@ Formatting 'TEST_DIR/t.qcow2', fmt=qcow2 size=67108864 backing_file=TEST_DIR/t.q
+ {"return": {}}
+ Formatting 'TEST_DIR/t.qcow2.copy', fmt=qcow2 size=67108864 cluster_size=65536 lazy_refcounts=off refcount_bits=16
+ {"return": {}}
+-{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "BLOCK_JOB_READY", "data": {"device": "disk", "len": 4194304, "offset": 4194304, "speed": 65536, "type": "mirror"}}
+ {"return": {}}
+ {"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "BLOCK_JOB_READY", "data": {"device": "disk", "len": 4194304, "offset": 4194304, "speed": 65536, "type": "mirror"}}
+ {"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "BLOCK_JOB_COMPLETED", "data": {"device": "disk", "len": 4194304, "offset": 4194304, "speed": 65536, "type": "mirror"}}
+ 
+ === Start backup job and exit qemu ===
+-- 
+1.8.3.1
+

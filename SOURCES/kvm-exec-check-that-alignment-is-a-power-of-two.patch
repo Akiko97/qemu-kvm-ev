@@ -1,0 +1,60 @@
+From 16f855a65838c81a35ac65a8a8b1084fa0b39689 Mon Sep 17 00:00:00 2001
+From: David Hildenbrand <david@redhat.com>
+Date: Fri, 21 Sep 2018 09:43:58 +0200
+Subject: [PATCH 04/22] exec: check that alignment is a power of two
+
+RH-Author: David Hildenbrand <david@redhat.com>
+Message-id: <20180921094358.12256-1-david@redhat.com>
+Patchwork-id: 82228
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] exec: check that alignment is a power of two
+Bugzilla: 1629717
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+
+BZ: https://bugzilla.redhat.com/show_bug.cgi?id=1629717
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=18439720
+Upstream: 61362b71c105ccb151ca16897a7d56534423f390
+
+Right now we can crash QEMU using e.g.
+
+qemu-system-x86_64 -m 256M,maxmem=20G,slots=2 \
+ -object memory-backend-file,id=mem0,size=12288,mem-path=/dev/zero,align=12288 \
+ -device pc-dimm,id=dimm1,memdev=mem0
+
+qemu-system-x86_64: util/mmap-alloc.c:115:
+ qemu_ram_mmap: Assertion `is_power_of_2(align)' failed
+
+Fix this by adding a proper check.
+
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Message-Id: <20180607154705.6316-3-david@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 61362b71c105ccb151ca16897a7d56534423f390)
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ exec.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/exec.c b/exec.c
+index c670185..9028700 100644
+--- a/exec.c
++++ b/exec.c
+@@ -1629,6 +1629,10 @@ static void *file_ram_alloc(RAMBlock *block,
+                    " must be multiples of page size 0x%zx",
+                    block->mr->align, block->page_size);
+         return NULL;
++    } else if (block->mr->align && !is_power_of_2(block->mr->align)) {
++        error_setg(errp, "alignment 0x%" PRIx64
++                   " must be a power of two", block->mr->align);
++        return NULL;
+     }
+     block->mr->align = MAX(block->page_size, block->mr->align);
+ #if defined(__s390x__)
+-- 
+1.8.3.1
+

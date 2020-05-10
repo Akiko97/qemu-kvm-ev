@@ -1,0 +1,142 @@
+From 5e5b310f575cab0403a84de8e6e7505d6f167730 Mon Sep 17 00:00:00 2001
+From: Sam Bobroff <sbobroff@redhat.com>
+Date: Tue, 16 Apr 2019 05:29:09 +0200
+Subject: [PATCH 162/163] mmap-alloc: unfold qemu_ram_mmap()
+
+RH-Author: Sam Bobroff <sbobroff@redhat.com>
+Message-id: <1555392550-21945-2-git-send-email-sbobroff@redhat.com>
+Patchwork-id: 85701
+O-Subject: [RHEL-7.7 qemu-kvm-rhev BZ1672819 PATCH 1/2 REPOST] mmap-alloc: unfold qemu_ram_mmap()
+Bugzilla: 1672819
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+
+From: Murilo Opsfelder Araujo <muriloo@linux.ibm.com>
+
+Unfold parts of qemu_ram_mmap() for the sake of understanding, moving
+declarations to the top, and keeping architecture-specifics in the
+ifdef-else blocks.  No changes in the function behaviour.
+
+Give ptr and ptr1 meaningful names:
+  ptr  -> guardptr : pointer to the PROT_NONE guard region
+  ptr1 -> ptr      : pointer to the mapped memory returned to caller
+
+Signed-off-by: Murilo Opsfelder Araujo <muriloo@linux.ibm.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Greg Kurz <groug@kaod.org>
+(cherry picked from commit 94af9e34821c5c47a3c69fe242e32d0b33c2fff6)
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1672819
+Testing: Check that hugepage backed RAM removed from a guest is free'd
+on the host.
+Signed-off-by: Sam Bobroff <sbobroff@redhat.com>
+Upstream: Patch is in dgibson/ppc-for-4.0
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ util/mmap-alloc.c | 53 ++++++++++++++++++++++++++++++++++-------------------
+ 1 file changed, 34 insertions(+), 19 deletions(-)
+
+diff --git a/util/mmap-alloc.c b/util/mmap-alloc.c
+index 2fd8cbc..94ee517 100644
+--- a/util/mmap-alloc.c
++++ b/util/mmap-alloc.c
+@@ -75,11 +75,19 @@ size_t qemu_mempath_getpagesize(const char *mem_path)
+ 
+ void *qemu_ram_mmap(int fd, size_t size, size_t align, bool shared)
+ {
++    int flags;
++    int guardfd;
++    size_t offset;
++    size_t total;
++    void *guardptr;
++    void *ptr;
++
+     /*
+      * Note: this always allocates at least one extra page of virtual address
+      * space, even if size is already aligned.
+      */
+-    size_t total = size + align;
++    total = size + align;
++
+ #if defined(__powerpc64__) && defined(__linux__)
+     /* On ppc64 mappings in the same segment (aka slice) must share the same
+      * page size. Since we will be re-allocating part of this segment
+@@ -89,16 +97,22 @@ void *qemu_ram_mmap(int fd, size_t size, size_t align, bool shared)
+      * We do this unless we are using the system page size, in which case
+      * anonymous memory is OK.
+      */
+-    int anonfd = fd == -1 || qemu_fd_getpagesize(fd) == getpagesize() ? -1 : fd;
+-    int flags = anonfd == -1 ? MAP_ANONYMOUS : MAP_NORESERVE;
+-    void *ptr = mmap(0, total, PROT_NONE, flags | MAP_PRIVATE, anonfd, 0);
++    flags = MAP_PRIVATE;
++    if (fd == -1 || qemu_fd_getpagesize(fd) == getpagesize()) {
++        guardfd = -1;
++        flags |= MAP_ANONYMOUS;
++    } else {
++        guardfd = fd;
++        flags |= MAP_NORESERVE;
++    }
+ #else
+-    void *ptr = mmap(0, total, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
++    guardfd = -1;
++    flags = MAP_PRIVATE | MAP_ANONYMOUS;
+ #endif
+-    size_t offset;
+-    void *ptr1;
+ 
+-    if (ptr == MAP_FAILED) {
++    guardptr = mmap(0, total, PROT_NONE, flags, guardfd, 0);
++
++    if (guardptr == MAP_FAILED) {
+         return MAP_FAILED;
+     }
+ 
+@@ -106,19 +120,20 @@ void *qemu_ram_mmap(int fd, size_t size, size_t align, bool shared)
+     /* Always align to host page size */
+     assert(align >= getpagesize());
+ 
+-    offset = QEMU_ALIGN_UP((uintptr_t)ptr, align) - (uintptr_t)ptr;
+-    ptr1 = mmap(ptr + offset, size, PROT_READ | PROT_WRITE,
+-                MAP_FIXED |
+-                (fd == -1 ? MAP_ANONYMOUS : 0) |
+-                (shared ? MAP_SHARED : MAP_PRIVATE),
+-                fd, 0);
+-    if (ptr1 == MAP_FAILED) {
+-        munmap(ptr, total);
++    flags = MAP_FIXED;
++    flags |= fd == -1 ? MAP_ANONYMOUS : 0;
++    flags |= shared ? MAP_SHARED : MAP_PRIVATE;
++    offset = QEMU_ALIGN_UP((uintptr_t)guardptr, align) - (uintptr_t)guardptr;
++
++    ptr = mmap(guardptr + offset, size, PROT_READ | PROT_WRITE, flags, fd, 0);
++
++    if (ptr == MAP_FAILED) {
++        munmap(guardptr, total);
+         return MAP_FAILED;
+     }
+ 
+     if (offset > 0) {
+-        munmap(ptr, offset);
++        munmap(guardptr, offset);
+     }
+ 
+     /*
+@@ -127,10 +142,10 @@ void *qemu_ram_mmap(int fd, size_t size, size_t align, bool shared)
+      */
+     total -= offset;
+     if (total > size + getpagesize()) {
+-        munmap(ptr1 + size + getpagesize(), total - size - getpagesize());
++        munmap(ptr + size + getpagesize(), total - size - getpagesize());
+     }
+ 
+-    return ptr1;
++    return ptr;
+ }
+ 
+ void qemu_ram_munmap(void *ptr, size_t size)
+-- 
+1.8.3.1
+

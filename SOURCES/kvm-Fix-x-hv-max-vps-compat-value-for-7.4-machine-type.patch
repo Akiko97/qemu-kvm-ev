@@ -1,0 +1,60 @@
+From b6128137787bb3c5e05c41013cb4f6cf6c0edf6a Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 31 May 2018 06:36:35 +0200
+Subject: [PATCH 1/9] Fix x-hv-max-vps compat value for 7.4 machine type
+
+RH-Author: Miroslav Rezanina <mrezanin@redhat.com>
+Message-id: <1527748595-28488-1-git-send-email-mrezanin@redhat.com>
+Patchwork-id: 80541
+O-Subject: [RHEL qemu-kvm/qemu-kvm-rhev PATCH] Fix x-hv-max-vps compat value for 7.4 machine type
+Bugzilla: 1583959
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+Commit b2f9f4fcaad9c64f4551ab1dbe9e474c3dc6b2b4 increased the limit of vcpus
+for windows guest. In addition, it keep old limit for older machine types.
+However, due to conflict was compatibility part incorrectly placed and
+we keep this limit for 7.3 and older machine types instead of 7.4 and older.
+
+Moving the chunk to correct spot so we have correct limit.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/hw/i386/pc.h | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/include/hw/i386/pc.h b/include/hw/i386/pc.h
+index e94424f..d5a0827 100644
+--- a/include/hw/i386/pc.h
++++ b/include/hw/i386/pc.h
+@@ -1003,9 +1003,13 @@ extern void igd_passthrough_isa_bridge_create(PCIBus *bus, uint16_t gpu_dev_id);
+             .driver   = "q35-pcihost",\
+             .property = "x-pci-hole64-fix",\
+             .value    = "off",\
++        },\
++        { /* PC_RHEL7_4_COMPAT from PC_COMPAT_2_10 */ \
++             .driver   = TYPE_X86_CPU,\
++             .property = "x-hv-max-vps",\
++             .value    = "0x40",\
+         },
+ 
+-
+ #define PC_RHEL7_3_COMPAT \
+         HW_COMPAT_RHEL7_3 \
+         { /* PC_RHEL7_3_COMPAT from PC_COMPAT_2_8 */ \
+@@ -1067,11 +1071,6 @@ extern void igd_passthrough_isa_bridge_create(PCIBus *bus, uint16_t gpu_dev_id);
+             .driver = TYPE_X86_CPU,\
+             .property = "kvm-no-smi-migration",\
+             .value    = "on",\
+-        },\
+-        { /* PC_RHEL7_4_COMPAT from PC_COMPAT_2_10 */ \
+-             .driver   = TYPE_X86_CPU,\
+-             .property = "x-hv-max-vps",\
+-             .value    = "0x40",\
+         },
+ 
+ #define PC_RHEL7_2_COMPAT \
+-- 
+1.8.3.1
+

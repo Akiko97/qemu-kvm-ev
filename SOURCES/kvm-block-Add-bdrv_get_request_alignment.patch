@@ -1,0 +1,65 @@
+From c4d49803aeb1d6304c2728cb1475f8314ae1f8a8 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:22 +0200
+Subject: [PATCH 12/53] block: Add bdrv_get_request_alignment()
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-13-jsnow@redhat.com>
+Patchwork-id: 87195
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 12/19] block: Add bdrv_get_request_alignment()
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+The next patch needs access to a device's minimum permitted
+alignment, since NBD wants to advertise this to clients. Add
+an accessor function, borrowing from blk_get_max_transfer()
+for accessing a backend's block limits.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20190329042750.14704-6-eblake@redhat.com>
+(cherry picked from commit 4841211e0d1628cd386b35835676d7f6f9a4fa9d)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/block-backend.c          | 7 +++++++
+ include/sysemu/block-backend.h | 1 +
+ 2 files changed, 8 insertions(+)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 52eebeb..f6480f6 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -1834,6 +1834,13 @@ int blk_get_flags(BlockBackend *blk)
+     }
+ }
+ 
++/* Returns the minimum request alignment, in bytes; guaranteed nonzero */
++uint32_t blk_get_request_alignment(BlockBackend *blk)
++{
++    BlockDriverState *bs = blk_bs(blk);
++    return bs ? bs->bl.request_alignment : BDRV_SECTOR_SIZE;
++}
++
+ /* Returns the maximum transfer length, in bytes; guaranteed nonzero */
+ uint32_t blk_get_max_transfer(BlockBackend *blk)
+ {
+diff --git a/include/sysemu/block-backend.h b/include/sysemu/block-backend.h
+index 6b6d882..815b6e5 100644
+--- a/include/sysemu/block-backend.h
++++ b/include/sysemu/block-backend.h
+@@ -178,6 +178,7 @@ bool blk_is_available(BlockBackend *blk);
+ void blk_lock_medium(BlockBackend *blk, bool locked);
+ void blk_eject(BlockBackend *blk, bool eject_flag);
+ int blk_get_flags(BlockBackend *blk);
++uint32_t blk_get_request_alignment(BlockBackend *blk);
+ uint32_t blk_get_max_transfer(BlockBackend *blk);
+ int blk_get_max_iov(BlockBackend *blk);
+ void blk_set_guest_block_size(BlockBackend *blk, int align);
+-- 
+1.8.3.1
+

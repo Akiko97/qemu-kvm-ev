@@ -1,0 +1,66 @@
+From dec442886deeedfbcb0c9958403627bc11a8d9e9 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Mon, 20 May 2019 17:57:03 +0200
+Subject: [PATCH 2/3] slirp: ensure there is enough space in mbuf to
+ null-terminate
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: <20190520175704.6250-3-marcandre.lureau@redhat.com>
+Patchwork-id: 88109
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 2/3] slirp: ensure there is enough space in mbuf to null-terminate
+Bugzilla: 1669071
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+Prevents from buffer overflows.
+Related to: https://bugzilla.redhat.com/show_bug.cgi?id=1664205
+
+Cc: Prasad J Pandit <pjp@fedoraproject.org>
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+(cherry picked from libslirp commit
+306fef58b54d793ba4b259728c21322765bda917)
+
+[ MA - backported with style conflicts fixes ]
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ slirp/tcp_subr.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/slirp/tcp_subr.c b/slirp/tcp_subr.c
+index a61632d..a801a14 100644
+--- a/slirp/tcp_subr.c
++++ b/slirp/tcp_subr.c
+@@ -641,6 +641,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 			memcpy(so_rcv->sb_wptr, m->m_data, m->m_len);
+ 			so_rcv->sb_wptr += m->m_len;
+ 			so_rcv->sb_rptr += m->m_len;
++			m_inc(m, m->m_len + 1);
+ 			m->m_data[m->m_len] = 0; /* NULL terminate */
+ 			if (strchr(m->m_data, '\r') || strchr(m->m_data, '\n')) {
+ 				if (sscanf(so_rcv->sb_data, "%u%*[ ,]%u", &n1, &n2) == 2) {
+@@ -674,6 +675,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 		}
+ 
+         case EMU_FTP: /* ftp */
++		m_inc(m, m->m_len + 1);
+                 *(m->m_data+m->m_len) = 0; /* NUL terminate for strstr */
+ 		if ((bptr = (char *)strstr(m->m_data, "ORT")) != NULL) {
+ 			/*
+@@ -771,6 +773,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 		/*
+ 		 * Need to emulate DCC CHAT, DCC SEND and DCC MOVE
+ 		 */
++		m_inc(m, m->m_len + 1);
+ 		*(m->m_data+m->m_len) = 0; /* NULL terminate the string for strstr */
+ 		if ((bptr = (char *)strstr(m->m_data, "DCC")) == NULL)
+ 			 return 1;
+-- 
+1.8.3.1
+

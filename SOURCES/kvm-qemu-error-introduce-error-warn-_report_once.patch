@@ -1,0 +1,102 @@
+From 22b617c9f567f65f72a29fff454a40f4ed67b45d Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Thu, 8 Nov 2018 05:37:15 +0100
+Subject: [PATCH 08/22] qemu-error: introduce {error|warn}_report_once
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Peter Xu <peterx@redhat.com>
+Message-id: <20181108053721.13162-2-peterx@redhat.com>
+Patchwork-id: 82951
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/7] qemu-error: introduce {error|warn}_report_once
+Bugzilla: 1627272
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+There are many error_report()s that can be used in frequently called
+functions, especially on IO paths.  That can be unideal in that
+malicious guest can try to trigger the error tons of time which might
+use up the log space on the host (e.g., libvirt can capture the stderr
+of QEMU and put it persistently onto disk).  In VT-d emulation code, we
+have trace_vtd_error() tracer.  AFAIU all those places can be replaced
+by something like error_report() but trace points are mostly used to
+avoid the DDOS attack that mentioned above.  However using trace points
+mean that errors are not dumped if trace not enabled.
+
+It's not a big deal in most modern server managements since we have
+things like logrotate to maintain the logs and make sure the quota is
+expected.  However it'll still be nice that we just provide another way
+to restrict message generations.  In most cases, this kind of
+error_report()s will only provide valid information on the first message
+sent, and all the rest of similar messages will be mostly talking about
+the same thing.  This patch introduces *_report_once() helpers to allow
+a message to be dumped only once during one QEMU process's life cycle.
+It will make sure: (1) it's on by deffault, so we can even get something
+without turning the trace on and reproducing, and (2) it won't be
+affected by DDOS attack.
+
+To implement it, I stole the printk_once() macro from Linux.
+
+CC: Eric Blake <eblake@redhat.com>
+CC: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Message-Id: <20180815095328.32414-2-peterx@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+[Whitespace adjusted, comments improved]
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit bc6a69dd4bfa41ae56235dcbb9a28a56e12a7dc6)
+Signed-off-by: Peter Xu <peterx@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/error-report.h | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/include/qemu/error-report.h b/include/qemu/error-report.h
+index e1c8ae1..72fab2b 100644
+--- a/include/qemu/error-report.h
++++ b/include/qemu/error-report.h
+@@ -44,6 +44,38 @@ void error_report(const char *fmt, ...) GCC_FMT_ATTR(1, 2);
+ void warn_report(const char *fmt, ...) GCC_FMT_ATTR(1, 2);
+ void info_report(const char *fmt, ...) GCC_FMT_ATTR(1, 2);
+ 
++/*
++ * Similar to error_report(), except it prints the message just once.
++ * Return true when it prints, false otherwise.
++ */
++#define error_report_once(fmt, ...)             \
++    ({                                          \
++        static bool print_once_;                \
++        bool ret_print_once_ = !print_once_;    \
++                                                \
++        if (!print_once_) {                     \
++            print_once_ = true;                 \
++            error_report(fmt, ##__VA_ARGS__);   \
++        }                                       \
++        unlikely(ret_print_once_);              \
++    })
++
++/*
++ * Similar to warn_report(), except it prints the message just once.
++ * Return true when it prints, false otherwise.
++ */
++#define warn_report_once(fmt, ...)              \
++    ({                                          \
++        static bool print_once_;                \
++        bool ret_print_once_ = !print_once_;    \
++                                                \
++        if (!print_once_) {                     \
++            print_once_ = true;                 \
++            warn_report(fmt, ##__VA_ARGS__);    \
++        }                                       \
++        unlikely(ret_print_once_);              \
++    })
++
+ const char *error_get_progname(void);
+ extern bool enable_timestamp_msg;
+ 
+-- 
+1.8.3.1
+

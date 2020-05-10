@@ -1,0 +1,139 @@
+From b528c59ca234b23c7bdcb9d3bcff20cdb111fd46 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Fri, 29 Jun 2018 06:11:47 +0200
+Subject: [PATCH 43/57] iscsi: Create and use iscsi_co_wait_for_task
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180629061153.12687-8-famz@redhat.com>
+Patchwork-id: 81160
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 07/13] iscsi: Create and use iscsi_co_wait_for_task
+Bugzilla: 1482537
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+This loop is repeated a growing number times. Make a helper.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-id: 20180601092648.24614-8-famz@redhat.com
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 66e75c03b2247bda6dcaa883b700291bc0f7f0ef)
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/iscsi.c | 54 +++++++++++++++++-------------------------------------
+ 1 file changed, 17 insertions(+), 37 deletions(-)
+
+diff --git a/block/iscsi.c b/block/iscsi.c
+index a1a0044..338f3dd 100644
+--- a/block/iscsi.c
++++ b/block/iscsi.c
+@@ -557,6 +557,17 @@ static inline bool iscsi_allocmap_is_valid(IscsiLun *iscsilun,
+                                offset / iscsilun->cluster_size) == size);
+ }
+ 
++static void coroutine_fn iscsi_co_wait_for_task(IscsiTask *iTask,
++                                                IscsiLun *iscsilun)
++{
++    while (!iTask->complete) {
++        iscsi_set_events(iscsilun);
++        qemu_mutex_unlock(&iscsilun->mutex);
++        qemu_coroutine_yield();
++        qemu_mutex_lock(&iscsilun->mutex);
++    }
++}
++
+ static int coroutine_fn
+ iscsi_co_writev_flags(BlockDriverState *bs, int64_t sector_num, int nb_sectors,
+                       QEMUIOVector *iov, int flags)
+@@ -618,12 +629,7 @@ retry:
+     scsi_task_set_iov_out(iTask.task, (struct scsi_iovec *) iov->iov,
+                           iov->niov);
+ #endif
+-    while (!iTask.complete) {
+-        iscsi_set_events(iscsilun);
+-        qemu_mutex_unlock(&iscsilun->mutex);
+-        qemu_coroutine_yield();
+-        qemu_mutex_lock(&iscsilun->mutex);
+-    }
++    iscsi_co_wait_for_task(&iTask, iscsilun);
+ 
+     if (iTask.task != NULL) {
+         scsi_free_scsi_task(iTask.task);
+@@ -694,13 +700,7 @@ retry:
+         ret = -ENOMEM;
+         goto out_unlock;
+     }
+-
+-    while (!iTask.complete) {
+-        iscsi_set_events(iscsilun);
+-        qemu_mutex_unlock(&iscsilun->mutex);
+-        qemu_coroutine_yield();
+-        qemu_mutex_lock(&iscsilun->mutex);
+-    }
++    iscsi_co_wait_for_task(&iTask, iscsilun);
+ 
+     if (iTask.do_retry) {
+         if (iTask.task != NULL) {
+@@ -864,13 +864,8 @@ retry:
+ #if LIBISCSI_API_VERSION < (20160603)
+     scsi_task_set_iov_in(iTask.task, (struct scsi_iovec *) iov->iov, iov->niov);
+ #endif
+-    while (!iTask.complete) {
+-        iscsi_set_events(iscsilun);
+-        qemu_mutex_unlock(&iscsilun->mutex);
+-        qemu_coroutine_yield();
+-        qemu_mutex_lock(&iscsilun->mutex);
+-    }
+ 
++    iscsi_co_wait_for_task(&iTask, iscsilun);
+     if (iTask.task != NULL) {
+         scsi_free_scsi_task(iTask.task);
+         iTask.task = NULL;
+@@ -907,12 +902,7 @@ retry:
+         return -ENOMEM;
+     }
+ 
+-    while (!iTask.complete) {
+-        iscsi_set_events(iscsilun);
+-        qemu_mutex_unlock(&iscsilun->mutex);
+-        qemu_coroutine_yield();
+-        qemu_mutex_lock(&iscsilun->mutex);
+-    }
++    iscsi_co_wait_for_task(&iTask, iscsilun);
+ 
+     if (iTask.task != NULL) {
+         scsi_free_scsi_task(iTask.task);
+@@ -1144,12 +1134,7 @@ retry:
+         goto out_unlock;
+     }
+ 
+-    while (!iTask.complete) {
+-        iscsi_set_events(iscsilun);
+-        qemu_mutex_unlock(&iscsilun->mutex);
+-        qemu_coroutine_yield();
+-        qemu_mutex_lock(&iscsilun->mutex);
+-    }
++    iscsi_co_wait_for_task(&iTask, iscsilun);
+ 
+     if (iTask.task != NULL) {
+         scsi_free_scsi_task(iTask.task);
+@@ -1245,12 +1230,7 @@ retry:
+         return -ENOMEM;
+     }
+ 
+-    while (!iTask.complete) {
+-        iscsi_set_events(iscsilun);
+-        qemu_mutex_unlock(&iscsilun->mutex);
+-        qemu_coroutine_yield();
+-        qemu_mutex_lock(&iscsilun->mutex);
+-    }
++    iscsi_co_wait_for_task(&iTask, iscsilun);
+ 
+     if (iTask.status == SCSI_STATUS_CHECK_CONDITION &&
+         iTask.task->sense.key == SCSI_SENSE_ILLEGAL_REQUEST &&
+-- 
+1.8.3.1
+

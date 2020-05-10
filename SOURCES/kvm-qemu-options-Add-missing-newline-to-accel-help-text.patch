@@ -1,0 +1,54 @@
+From 93dbdd330d91333053406b0a2bb9c4404dd210d3 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 3 Jul 2018 13:27:24 +0200
+Subject: [PATCH 57/57] qemu-options: Add missing newline to -accel help text
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180703132724.21964-2-ehabkost@redhat.com>
+Patchwork-id: 81208
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] qemu-options: Add missing newline to -accel help text
+Bugzilla: 1586313
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+
+The newline was removed by commit c97d6d2c, and broke -help output:
+
+Before this patch:
+
+  $ qemu-system-x86_64 -help | grep smp
+                  thread=single|multi (enable multi-threaded TCG)-smp [...]
+
+After this patch:
+
+  $ qemu-system-x86_64 -help  | grep smp
+  -smp [cpus=]n[,maxcpus=cpus][,cores=cores][,threads=threads][,sockets=sockets]
+
+Fixes: c97d6d2cdf97edb4aebe832fdba65d701ad7bcb6
+Cc: Sergio Andres Gomez Del Real <sergio.g.delreal@gmail.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <20180611195607.3015-1-ehabkost@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 0b3c5c81bf0a9e32fd08c532acde3caa446b3712)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-options.hx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/qemu-options.hx b/qemu-options.hx
+index 43f10b1..4271cd3 100644
+--- a/qemu-options.hx
++++ b/qemu-options.hx
+@@ -130,7 +130,7 @@ ETEXI
+ DEF("accel", HAS_ARG, QEMU_OPTION_accel,
+     "-accel [accel=]accelerator[,thread=single|multi]\n"
+     "                select accelerator (kvm, xen, hax, hvf, whpx or tcg; use 'help' for a list)\n"
+-    "                thread=single|multi (enable multi-threaded TCG)", QEMU_ARCH_ALL)
++    "                thread=single|multi (enable multi-threaded TCG)\n", QEMU_ARCH_ALL)
+ STEXI
+ @item -accel @var{name}[,prop=@var{value}[,...]]
+ @findex -accel
+-- 
+1.8.3.1
+

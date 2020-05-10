@@ -1,0 +1,72 @@
+From d3e302f2ab9543e1fb52c9d7b6c2167d054a62f5 Mon Sep 17 00:00:00 2001
+From: Alex Williamson <alex.williamson@redhat.com>
+Date: Mon, 3 Dec 2018 21:52:37 +0100
+Subject: [PATCH 18/34] balloon: Allow multiple inhibit users
+
+RH-Author: Alex Williamson <alex.williamson@redhat.com>
+Message-id: <154387395708.26945.11708135028435449926.stgit@gimli.home>
+Patchwork-id: 83227
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/7] balloon: Allow multiple inhibit users
+Bugzilla: 1619778
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+
+Bugzilla: 1619778
+
+A simple true/false internal state does not allow multiple users.  Fix
+this within the existing interface by converting to a counter, so long
+as the counter is elevated, ballooning is inhibited.
+
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+(cherry picked from commit 01ccbec7bdf6f89f1b7d46dda05e4c1fd2dd5ade)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ balloon.c | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/balloon.c b/balloon.c
+index 6bf0a96..9319879 100644
+--- a/balloon.c
++++ b/balloon.c
+@@ -26,6 +26,7 @@
+ 
+ #include "qemu/osdep.h"
+ #include "qemu-common.h"
++#include "qemu/atomic.h"
+ #include "exec/cpu-common.h"
+ #include "sysemu/kvm.h"
+ #include "sysemu/balloon.h"
+@@ -37,16 +38,22 @@
+ static QEMUBalloonEvent *balloon_event_fn;
+ static QEMUBalloonStatus *balloon_stat_fn;
+ static void *balloon_opaque;
+-static bool balloon_inhibited;
++static int balloon_inhibit_count;
+ 
+ bool qemu_balloon_is_inhibited(void)
+ {
+-    return balloon_inhibited;
++    return atomic_read(&balloon_inhibit_count) > 0;
+ }
+ 
+ void qemu_balloon_inhibit(bool state)
+ {
+-    balloon_inhibited = state;
++    if (state) {
++        atomic_inc(&balloon_inhibit_count);
++    } else {
++        atomic_dec(&balloon_inhibit_count);
++    }
++
++    assert(atomic_read(&balloon_inhibit_count) >= 0);
+ }
+ 
+ static bool have_balloon(Error **errp)
+-- 
+1.8.3.1
+

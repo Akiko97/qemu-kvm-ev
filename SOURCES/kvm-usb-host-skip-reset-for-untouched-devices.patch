@@ -1,0 +1,47 @@
+From 2aed844c2485cfc07bee58f67be64749655f7f12 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Mon, 3 Jun 2019 13:45:49 +0200
+Subject: [PATCH 6/9] usb-host: skip reset for untouched devices
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20190603134550.30153-4-kraxel@redhat.com>
+Patchwork-id: 88448
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/4] usb-host: skip reset for untouched devices
+Bugzilla: 1710861
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+If the guest didn't talk to the device yet, skip the reset.
+Without this usb-host devices get resetted a number of times
+at boot time for no good reason.
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: 20190522094702.17619-3-kraxel@redhat.com
+(cherry picked from commit 65f14ab98da1da920f98ee8734dc1588b01d6b2b)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/usb/host-libusb.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/hw/usb/host-libusb.c b/hw/usb/host-libusb.c
+index 0425f0e..1d7e386 100644
+--- a/hw/usb/host-libusb.c
++++ b/hw/usb/host-libusb.c
+@@ -1450,6 +1450,9 @@ static void usb_host_handle_reset(USBDevice *udev)
+     if (!s->allow_guest_reset) {
+         return;
+     }
++    if (udev->addr == 0) {
++        return;
++    }
+ 
+     trace_usb_host_reset(s->bus_num, s->addr);
+ 
+-- 
+1.8.3.1
+

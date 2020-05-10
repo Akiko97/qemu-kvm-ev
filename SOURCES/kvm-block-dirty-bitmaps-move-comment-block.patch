@@ -1,0 +1,87 @@
+From 4123b978727d577491f84dde507f841c23b6caa4 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:46 +0200
+Subject: [PATCH 141/163] block/dirty-bitmaps: move comment block
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-11-jsnow@redhat.com>
+Patchwork-id: 85415
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 10/21] block/dirty-bitmaps: move comment block
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+Simply move the big status enum comment block to above the status
+function, and document it as being deprecated. The whole confusing
+block can get deleted in three releases time.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190223000614.13894-9-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 1e6fddcd6f2d3b6b8c7584004763b376334a8457)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c | 36 +++++++++++++++++++-----------------
+ 1 file changed, 19 insertions(+), 17 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index 89c9665..e090237 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -28,22 +28,6 @@
+ #include "block/block_int.h"
+ #include "block/blockjob.h"
+ 
+-/**
+- * A BdrvDirtyBitmap can be in four possible user-visible states:
+- * (1) Active:   successor is NULL, and disabled is false: full r/w mode
+- * (2) Disabled: successor is NULL, and disabled is true: qualified r/w mode,
+- *               guest writes are dropped, but monitor writes are possible,
+- *               through commands like merge and clear.
+- * (3) Frozen:   successor is not NULL.
+- *               A frozen bitmap cannot be renamed, deleted, cleared, set,
+- *               enabled, merged to, etc. A frozen bitmap can only abdicate()
+- *               or reclaim().
+- *               In this state, the anonymous successor bitmap may be either
+- *               Active and recording writes from the guest (e.g. backup jobs),
+- *               but it can be Disabled and not recording writes.
+- * (4) Locked:   Whether Active or Disabled, the user cannot modify this bitmap
+- *               in any way from the monitor.
+- */
+ struct BdrvDirtyBitmap {
+     QemuMutex *mutex;
+     HBitmap *bitmap;            /* Dirty bitmap implementation */
+@@ -205,7 +189,25 @@ bool bdrv_dirty_bitmap_enabled(BdrvDirtyBitmap *bitmap)
+     return !bitmap->disabled;
+ }
+ 
+-/* Called with BQL taken.  */
++/**
++ * bdrv_dirty_bitmap_status: This API is now deprecated.
++ * Called with BQL taken.
++ *
++ * A BdrvDirtyBitmap can be in four possible user-visible states:
++ * (1) Active:   successor is NULL, and disabled is false: full r/w mode
++ * (2) Disabled: successor is NULL, and disabled is true: qualified r/w mode,
++ *               guest writes are dropped, but monitor writes are possible,
++ *               through commands like merge and clear.
++ * (3) Frozen:   successor is not NULL.
++ *               A frozen bitmap cannot be renamed, deleted, cleared, set,
++ *               enabled, merged to, etc. A frozen bitmap can only abdicate()
++ *               or reclaim().
++ *               In this state, the anonymous successor bitmap may be either
++ *               Active and recording writes from the guest (e.g. backup jobs),
++ *               or it can be Disabled and not recording writes.
++ * (4) Locked:   Whether Active or Disabled, the user cannot modify this bitmap
++ *               in any way from the monitor.
++ */
+ DirtyBitmapStatus bdrv_dirty_bitmap_status(BdrvDirtyBitmap *bitmap)
+ {
+     if (bdrv_dirty_bitmap_has_successor(bitmap)) {
+-- 
+1.8.3.1
+

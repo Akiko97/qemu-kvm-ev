@@ -1,0 +1,109 @@
+From 4dc02d3f416a291b48e803600302e69cbb6f92ff Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:47:49 +0200
+Subject: [PATCH 20/89] blockjob: drop block_job_pause/resume_all()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-7-kwolf@redhat.com>
+Patchwork-id: 81068
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 06/73] blockjob: drop block_job_pause/resume_all()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Stefan Hajnoczi <stefanha@redhat.com>
+
+Commit 8119334918e86f45877cfc139192d54f2449a239 ("block: Don't
+block_job_pause_all() in bdrv_drain_all()") removed the only callers of
+block_job_pause/resume_all().
+
+Pausing and resuming now happens in child_job_drained_begin/end() so
+it's no longer necessary to globally pause/resume jobs.
+
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Message-id: 20180424085240.5798-1-stefanha@redhat.com
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 23d702d898bdd8e6772d83ea9789767ed589e17e)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c                   | 27 ---------------------------
+ include/block/blockjob_int.h | 14 --------------
+ 2 files changed, 41 deletions(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index 7064389..b39d0f8 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -996,19 +996,6 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
+     return job;
+ }
+ 
+-void block_job_pause_all(void)
+-{
+-    BlockJob *job = NULL;
+-    while ((job = block_job_next(job))) {
+-        AioContext *aio_context = blk_get_aio_context(job->blk);
+-
+-        aio_context_acquire(aio_context);
+-        block_job_ref(job);
+-        block_job_pause(job);
+-        aio_context_release(aio_context);
+-    }
+-}
+-
+ void block_job_early_fail(BlockJob *job)
+ {
+     assert(job->status == BLOCK_JOB_STATUS_CREATED);
+@@ -1086,20 +1073,6 @@ void coroutine_fn block_job_pause_point(BlockJob *job)
+     }
+ }
+ 
+-void block_job_resume_all(void)
+-{
+-    BlockJob *job, *next;
+-
+-    QLIST_FOREACH_SAFE(job, &block_jobs, job_list, next) {
+-        AioContext *aio_context = blk_get_aio_context(job->blk);
+-
+-        aio_context_acquire(aio_context);
+-        block_job_resume(job);
+-        block_job_unref(job);
+-        aio_context_release(aio_context);
+-    }
+-}
+-
+ /*
+  * Conditionally enter a block_job pending a call to fn() while
+  * under the block_job_lock critical section.
+diff --git a/include/block/blockjob_int.h b/include/block/blockjob_int.h
+index 642adce..d5a515d 100644
+--- a/include/block/blockjob_int.h
++++ b/include/block/blockjob_int.h
+@@ -169,20 +169,6 @@ void block_job_sleep_ns(BlockJob *job, int64_t ns);
+ void block_job_yield(BlockJob *job);
+ 
+ /**
+- * block_job_pause_all:
+- *
+- * Asynchronously pause all jobs.
+- */
+-void block_job_pause_all(void);
+-
+-/**
+- * block_job_resume_all:
+- *
+- * Resume all block jobs.  Must be paired with a preceding block_job_pause_all.
+- */
+-void block_job_resume_all(void);
+-
+-/**
+  * block_job_early_fail:
+  * @bs: The block device.
+  *
+-- 
+1.8.3.1
+

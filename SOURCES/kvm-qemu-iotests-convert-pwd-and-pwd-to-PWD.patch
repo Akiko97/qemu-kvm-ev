@@ -1,0 +1,135 @@
+From 2da89bf5ccc55e0535fecc5b507bacac5c6ad3b4 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:27 +0100
+Subject: [PATCH 060/163] qemu-iotests: convert `pwd` and $(pwd) to $PWD
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-15-jsnow@redhat.com>
+Patchwork-id: 85097
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 14/28] qemu-iotests: convert `pwd` and $(pwd) to $PWD
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Mao Zhongyi <maozhongyi@cmss.chinamobile.com>
+
+POSIX requires $PWD to be reliable, and we expect all
+shells used by qemu scripts to be relatively close to
+POSIX.  Thus, it is smarter to avoid forking the pwd
+executable for something that is already available in
+the environment.
+
+So replace it with the following:
+
+sed -i 's/\(`pwd`\|\$(pwd)\)/$PWD/g' $(git grep -l pwd)
+
+Then delete a pointless line assigning PWD to itself.
+
+Cc: kwolf@redhat.com
+Cc: mreitz@redhat.com
+Cc: eblake@redhat.com
+Suggested-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Mao Zhongyi <maozhongyi@cmss.chinamobile.com>
+Message-Id: <20181024094051.4470-2-maozhongyi@cmss.chinamobile.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+[eblake: touch up commit message, reorder series, tweak a couple more files]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit e8d81a61e1b9e28267164f751dee5b9b59444e71)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ configure                                | 2 +-
+ scripts/coccinelle/tcg_gen_extract.cocci | 2 +-
+ tests/check-block.sh                     | 6 +++---
+ tests/qemu-iotests/check                 | 2 +-
+ tests/qemu-iotests/common.config         | 2 --
+ tests/qemu-iotests/common.rc             | 2 +-
+ 6 files changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/configure b/configure
+index f9c8365..285fd47 100755
+--- a/configure
++++ b/configure
+@@ -821,7 +821,7 @@ Linux)
+   vhost_crypto="yes"
+   vhost_scsi="yes"
+   vhost_vsock="yes"
+-  QEMU_INCLUDES="-I\$(SRC_PATH)/linux-headers -I$(pwd)/linux-headers $QEMU_INCLUDES"
++  QEMU_INCLUDES="-I\$(SRC_PATH)/linux-headers -I$PWD/linux-headers $QEMU_INCLUDES"
+   supported_os="yes"
+ ;;
+ esac
+diff --git a/scripts/coccinelle/tcg_gen_extract.cocci b/scripts/coccinelle/tcg_gen_extract.cocci
+index 81e66a3..c10c863 100644
+--- a/scripts/coccinelle/tcg_gen_extract.cocci
++++ b/scripts/coccinelle/tcg_gen_extract.cocci
+@@ -17,7 +17,7 @@
+ //     --keep-comments --in-place \
+ //     --use-gitgrep --dir target
+ //
+-// $ docker run --rm -v `pwd`:`pwd` -w `pwd` philmd/coccinelle \
++// $ docker run --rm -v $PWD:$PWD -w $PWD philmd/coccinelle \
+ //     --macro-file scripts/cocci-macro-file.h \
+ //     --sp-file scripts/coccinelle/tcg_gen_extract.cocci \
+ //     --keep-comments --in-place \
+diff --git a/tests/check-block.sh b/tests/check-block.sh
+index c3de378..f3d12fd 100755
+--- a/tests/check-block.sh
++++ b/tests/check-block.sh
+@@ -5,9 +5,9 @@ if [ "$#" -ne 0 ]; then
+     FORMAT_LIST="$@"
+ fi
+ 
+-export QEMU_PROG="$(pwd)/x86_64-softmmu/qemu-system-x86_64"
+-export QEMU_IMG_PROG="$(pwd)/qemu-img"
+-export QEMU_IO_PROG="$(pwd)/qemu-io"
++export QEMU_PROG="$PWD/x86_64-softmmu/qemu-system-x86_64"
++export QEMU_IMG_PROG="$PWD/qemu-img"
++export QEMU_IO_PROG="$PWD/qemu-io"
+ 
+ if [ ! -x $QEMU_PROG ]; then
+     echo "'make check-block' requires qemu-system-x86_64"
+diff --git a/tests/qemu-iotests/check b/tests/qemu-iotests/check
+index aa94c6c..b377132 100755
+--- a/tests/qemu-iotests/check
++++ b/tests/qemu-iotests/check
+@@ -99,7 +99,7 @@ set_prog_path()
+ }
+ 
+ if [ -z "$TEST_DIR" ]; then
+-        TEST_DIR=`pwd`/scratch
++        TEST_DIR=$PWD/scratch
+ fi
+ 
+ if [ ! -e "$TEST_DIR" ]; then
+diff --git a/tests/qemu-iotests/common.config b/tests/qemu-iotests/common.config
+index 102aa68..3cda0fe 100644
+--- a/tests/qemu-iotests/common.config
++++ b/tests/qemu-iotests/common.config
+@@ -25,8 +25,6 @@ HOSTOS=`uname -s`
+ arch=`uname -m`
+ [[ "$arch" =~ "ppc64" ]] && qemu_arch=ppc64 || qemu_arch="$arch"
+ 
+-export PWD=`pwd`
+-
+ # make sure we have a standard umask
+ umask 022
+ 
+diff --git a/tests/qemu-iotests/common.rc b/tests/qemu-iotests/common.rc
+index 1e567b0..bb03a4b 100644
+--- a/tests/qemu-iotests/common.rc
++++ b/tests/qemu-iotests/common.rc
+@@ -159,7 +159,7 @@ fi
+ ORIG_TEST_IMG="$TEST_IMG"
+ 
+ if [ -z "$TEST_DIR" ]; then
+-        TEST_DIR=`pwd`/scratch
++        TEST_DIR=$PWD/scratch
+ fi
+ 
+ QEMU_TEST_DIR="${TEST_DIR}"
+-- 
+1.8.3.1
+

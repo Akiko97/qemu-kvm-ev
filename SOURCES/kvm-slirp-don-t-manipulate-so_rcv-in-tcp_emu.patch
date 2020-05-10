@@ -1,0 +1,127 @@
+From d92a9042320bd959eac36dc76de9dc293d8da2ce Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Mon, 20 May 2019 17:57:04 +0200
+Subject: [PATCH 3/3] slirp: don't manipulate so_rcv in tcp_emu()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: <20190520175704.6250-4-marcandre.lureau@redhat.com>
+Patchwork-id: 88108
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/3] slirp: don't manipulate so_rcv in tcp_emu()
+Bugzilla: 1669071
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+For some reason, EMU_IDENT is not like other "emulated" protocols and
+tries to reconstitute the original buffer, if it came in multiple
+packets. Unfortunately, it does so wrongly, as it doesn't respect the
+sbuf circular buffer appending rules, nor does it maintain some of the
+invariants (rptr is incremented without bounds, etc): this leads to
+further memory corruption revealed by ASAN or various malloc
+errors. Furthermore, the so_rcv buffer is regularly flushed, so there
+is no guarantee that buffer reconstruction will do what is expected.
+
+Instead, do what the function comment says: "XXX Assumes the whole
+command came in one packet", and don't touch so_rcv.
+
+Related to: https://bugzilla.redhat.com/show_bug.cgi?id=1664205
+
+Cc: Prasad J Pandit <pjp@fedoraproject.org>
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+(cherry picked from libslirp commit
+9da0da837780f825b5db31db6620492f8b7cd5d6)
+
+[ MA - backported with style conflicts, and without qemu commit
+a7104eda7dab99d0cdbd3595c211864cba415905 which is unnecessary with
+this patch ]
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ slirp/tcp_subr.c | 63 +++++++++++++++++++++++++++-----------------------------
+ 1 file changed, 30 insertions(+), 33 deletions(-)
+
+diff --git a/slirp/tcp_subr.c b/slirp/tcp_subr.c
+index a801a14..0152f72 100644
+--- a/slirp/tcp_subr.c
++++ b/slirp/tcp_subr.c
+@@ -636,42 +636,39 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 			struct socket *tmpso;
+ 			struct sockaddr_in addr;
+ 			socklen_t addrlen = sizeof(struct sockaddr_in);
+-			struct sbuf *so_rcv = &so->so_rcv;
+-
+-			memcpy(so_rcv->sb_wptr, m->m_data, m->m_len);
+-			so_rcv->sb_wptr += m->m_len;
+-			so_rcv->sb_rptr += m->m_len;
+-			m_inc(m, m->m_len + 1);
+-			m->m_data[m->m_len] = 0; /* NULL terminate */
+-			if (strchr(m->m_data, '\r') || strchr(m->m_data, '\n')) {
+-				if (sscanf(so_rcv->sb_data, "%u%*[ ,]%u", &n1, &n2) == 2) {
+-					HTONS(n1);
+-					HTONS(n2);
+-					/* n2 is the one on our host */
+-					for (tmpso = slirp->tcb.so_next;
+-					     tmpso != &slirp->tcb;
+-					     tmpso = tmpso->so_next) {
+-						if (tmpso->so_laddr.s_addr == so->so_laddr.s_addr &&
+-						    tmpso->so_lport == n2 &&
+-						    tmpso->so_faddr.s_addr == so->so_faddr.s_addr &&
+-						    tmpso->so_fport == n1) {
+-							if (getsockname(tmpso->s,
+-								(struct sockaddr *)&addr, &addrlen) == 0)
+-							   n2 = addr.sin_port;
+-							break;
+-						}
++			char *eol = g_strstr_len(m->m_data, m->m_len, "\r\n");
++
++			if (!eol) {
++				return 1;
++			}
++
++			*eol = '\0';
++			if (sscanf(m->m_data, "%u%*[ ,]%u", &n1, &n2) == 2) {
++				HTONS(n1);
++				HTONS(n2);
++				/* n2 is the one on our host */
++				for (tmpso = slirp->tcb.so_next; tmpso != &slirp->tcb;
++					 tmpso = tmpso->so_next) {
++					if (tmpso->so_laddr.s_addr == so->so_laddr.s_addr &&
++						tmpso->so_lport == n2 &&
++						tmpso->so_faddr.s_addr == so->so_faddr.s_addr &&
++						tmpso->so_fport == n1) {
++						if (getsockname(tmpso->s, (struct sockaddr *)&addr,
++										&addrlen) == 0)
++							n2 = addr.sin_port;
++						break;
+ 					}
+-					NTOHS(n1);
+-					NTOHS(n2);
+-					so_rcv->sb_cc = snprintf(so_rcv->sb_data,
+-								 so_rcv->sb_datalen,
+-								 "%d,%d\r\n", n1, n2);
+-					so_rcv->sb_rptr = so_rcv->sb_data;
+-					so_rcv->sb_wptr = so_rcv->sb_data + so_rcv->sb_cc;
+ 				}
++				NTOHS(n1);
++				NTOHS(n2);
++				m_inc(m, snprintf(NULL, 0, "%d,%d\r\n", n1, n2) + 1);
++				m->m_len = snprintf(m->m_data, M_ROOM(m), "%d,%d\r\n", n1, n2);
++				assert(m->m_len < M_ROOM(m));
++			} else {
++				*eol = '\r';
+ 			}
+-			m_free(m);
+-			return 0;
++
++			return 1;
+ 		}
+ 
+         case EMU_FTP: /* ftp */
+-- 
+1.8.3.1
+

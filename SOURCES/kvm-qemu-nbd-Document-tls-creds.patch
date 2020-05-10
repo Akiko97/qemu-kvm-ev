@@ -1,0 +1,44 @@
+From 38e564acf5939c83ded3e324091a1e00631a12f8 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:23 +0100
+Subject: [PATCH 056/163] qemu-nbd: Document --tls-creds
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-11-jsnow@redhat.com>
+Patchwork-id: 85103
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 10/28] qemu-nbd: Document --tls-creds
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Commit 145614a1 introduced --tls-creds and documented it in
+qemu-nbd.texi, but forgot to document it in 'qemu-nbd --help'.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20181003180426.602765-1-eblake@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit f7812df77d7830c6b375066a4e656f3b79232c13)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-nbd.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/qemu-nbd.c b/qemu-nbd.c
+index 51b9d38..66e023f 100644
+--- a/qemu-nbd.c
++++ b/qemu-nbd.c
+@@ -94,6 +94,7 @@ static void usage(const char *name)
+ "General purpose options:\n"
+ "  --object type,id=ID,...   define an object such as 'secret' for providing\n"
+ "                            passwords and/or encryption keys\n"
++"  --tls-creds=ID            use id of an earlier --object to provide TLS\n"
+ "  -T, --trace [[enable=]<pattern>][,events=<file>][,file=<file>]\n"
+ "                            specify tracing options\n"
+ "  --fork                    fork off the server process and exit the parent\n"
+-- 
+1.8.3.1
+

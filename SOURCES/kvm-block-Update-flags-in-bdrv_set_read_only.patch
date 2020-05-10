@@ -1,0 +1,49 @@
+From 0e48a34df1ebd61f5fd0e914d638de2646b09635 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:43 +0100
+Subject: [PATCH 02/34] block: Update flags in bdrv_set_read_only()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-2-kwolf@redhat.com>
+Patchwork-id: 83110
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 01/12] block: Update flags in bdrv_set_read_only()
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+To fully change the read-only state of a node, we must not only change
+bs->read_only, but also update bs->open_flags.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+(cherry picked from commit eeae6a596b0efc092f5101c67683053e245e6250)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/block.c b/block.c
+index fbd569c..d3ea21a 100644
+--- a/block.c
++++ b/block.c
+@@ -281,6 +281,13 @@ int bdrv_set_read_only(BlockDriverState *bs, bool read_only, Error **errp)
+     }
+ 
+     bs->read_only = read_only;
++
++    if (read_only) {
++        bs->open_flags &= ~BDRV_O_RDWR;
++    } else {
++        bs->open_flags |= BDRV_O_RDWR;
++    }
++
+     return 0;
+ }
+ 
+-- 
+1.8.3.1
+

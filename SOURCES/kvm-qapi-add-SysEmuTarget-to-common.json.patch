@@ -1,0 +1,95 @@
+From f156a5a4d6e4afbe88e0485771f87db2a17aa75e Mon Sep 17 00:00:00 2001
+From: Laszlo Ersek <lersek@redhat.com>
+Date: Tue, 13 Nov 2018 18:16:35 +0100
+Subject: [PATCH 16/22] qapi: add SysEmuTarget to "common.json"
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Laszlo Ersek <lersek@redhat.com>
+Message-id: <20181113181639.4999-3-lersek@redhat.com>
+Patchwork-id: 83008
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 2/6] qapi: add SysEmuTarget to "common.json"
+Bugzilla: 1607406
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+We'll soon need an enumeration type that lists all the softmmu targets
+that QEMU (the project) supports. Introduce @SysEmuTarget to
+"common.json".
+
+The enum constant @x86_64 doesn't match the QAPI convention of preferring
+hyphen ("-") over underscore ("_"). This is intentional; the @SysEmuTarget
+constants are supposed to produce QEMU executable names when stringified
+and appended to the "qemu-system-" prefix. Put differently, the
+replacement text of the TARGET_NAME preprocessor macro must be possible to
+look up in the list of (stringified) enum constants.
+
+Like other enum types, @SysEmuTarget too can be used for discriminator
+fields in unions. For the @i386 constant, a C-language union member called
+"i386" would be generated. On mingw build hosts, "i386" is a macro
+however. Add "i386" to "polluted_words" at once.
+
+Cc: "Daniel P. Berrange" <berrange@redhat.com>
+Cc: Eric Blake <eblake@redhat.com>
+Cc: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Laszlo Ersek <lersek@redhat.com>
+Message-Id: <20180427192852.15013-3-lersek@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit 9a801c7d6c8fd927df915f2ac3eacd306e8fc334)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qapi/common.json       | 23 +++++++++++++++++++++++
+ scripts/qapi/common.py |  2 +-
+ 2 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/qapi/common.json b/qapi/common.json
+index d9b14dd..c811d04 100644
+--- a/qapi/common.json
++++ b/qapi/common.json
+@@ -126,3 +126,26 @@
+ ##
+ { 'enum': 'OffAutoPCIBAR',
+   'data': [ 'off', 'auto', 'bar0', 'bar1', 'bar2', 'bar3', 'bar4', 'bar5' ] }
++
++##
++# @SysEmuTarget:
++#
++# The comprehensive enumeration of QEMU system emulation ("softmmu")
++# targets. Run "./configure --help" in the project root directory, and
++# look for the *-softmmu targets near the "--target-list" option. The
++# individual target constants are not documented here, for the time
++# being.
++#
++# Notes: The resulting QMP strings can be appended to the "qemu-system-"
++#        prefix to produce the corresponding QEMU executable name. This
++#        is true even for "qemu-system-x86_64".
++#
++# Since: 2.13
++##
++{ 'enum' : 'SysEmuTarget',
++  'data' : [ 'aarch64', 'alpha', 'arm', 'cris', 'hppa', 'i386', 'lm32',
++             'm68k', 'microblaze', 'microblazeel', 'mips', 'mips64',
++             'mips64el', 'mipsel', 'moxie', 'nios2', 'or1k', 'ppc',
++             'ppc64', 'ppcemb', 'riscv32', 'riscv64', 's390x', 'sh4',
++             'sh4eb', 'sparc', 'sparc64', 'tricore', 'unicore32',
++             'x86_64', 'xtensa', 'xtensaeb' ] }
+diff --git a/scripts/qapi/common.py b/scripts/qapi/common.py
+index 3e14bc4..a032cec 100644
+--- a/scripts/qapi/common.py
++++ b/scripts/qapi/common.py
+@@ -1822,7 +1822,7 @@ def c_name(name, protect=True):
+                      'and', 'and_eq', 'bitand', 'bitor', 'compl', 'not',
+                      'not_eq', 'or', 'or_eq', 'xor', 'xor_eq'])
+     # namespace pollution:
+-    polluted_words = set(['unix', 'errno', 'mips', 'sparc'])
++    polluted_words = set(['unix', 'errno', 'mips', 'sparc', 'i386'])
+     name = name.translate(c_name_trans)
+     if protect and (name in c89_words | c99_words | c11_words | gcc_words
+                     | cpp_words | polluted_words):
+-- 
+1.8.3.1
+

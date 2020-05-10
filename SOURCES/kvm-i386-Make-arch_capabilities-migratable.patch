@@ -1,0 +1,45 @@
+From 94a85e1b51fb7e2f646938330c4a4ebf4ffeb281 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Tue, 4 Jun 2019 21:47:27 +0200
+Subject: [PATCH 08/23] i386: Make arch_capabilities migratable
+
+RH-Author: plai@redhat.com
+Message-id: <1559684847-10889-9-git-send-email-plai@redhat.com>
+Patchwork-id: 88530
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH v4 8/8] i386: Make arch_capabilities migratable
+Bugzilla: 1709972
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eduardo Habkost <ehabkost@redhat.com>
+
+Now that kvm_arch_get_supported_cpuid() will only return
+arch_capabilities if QEMU is able to initialize the MSR properly,
+we know that the feature is safely migratable.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <20190125220606.4864-3-ehabkost@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 014018e19b3c54dd1bf5072bc912ceffea40abe8)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 478c5a4..1f2f286 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1053,7 +1053,6 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+             .reg = R_EDX,
+         },
+         .tcg_features = TCG_7_0_EDX_FEATURES,
+-        .unmigratable_flags = CPUID_7_0_EDX_ARCH_CAPABILITIES,
+     },
+     [FEAT_8000_0007_EDX] = {
+         .type = CPUID_FEATURE_WORD,
+-- 
+1.8.3.1
+

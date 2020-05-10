@@ -1,0 +1,137 @@
+From 31d4822f7d25e9438de3dc7d689cfe3dd5544cc7 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 3 Jul 2018 17:23:53 +0200
+Subject: [PATCH 08/89] i386: Add support for CPUID_8000_001E for AMD
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180703172356.21038-8-ehabkost@redhat.com>
+Patchwork-id: 81217
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v3 07/10] i386: Add support for CPUID_8000_001E for AMD
+Bugzilla: 1481253
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Babu Moger <babu.moger@amd.com>
+
+Add support for cpuid leaf CPUID_8000_001E. Build the config that closely
+match the underlying hardware. Please refer to the Processor Programming
+Reference (PPR) for AMD Family 17h Model for more details.
+
+Signed-off-by: Babu Moger <babu.moger@amd.com>
+Message-Id: <1528498581-131037-2-git-send-email-babu.moger@amd.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit ed78467a214595a63af7800a073a03ffe37cd7db)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 86 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 86 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 57f74c6..643d3b1 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -429,6 +429,87 @@ static void encode_cache_cpuid8000001d(CPUCacheInfo *cache, CPUState *cs,
+            (cache->complex_indexing ? CACHE_COMPLEX_IDX : 0);
+ }
+ 
++/* Data structure to hold the configuration info for a given core index */
++struct core_topology {
++    /* core complex id of the current core index */
++    int ccx_id;
++    /*
++     * Adjusted core index for this core in the topology
++     * This can be 0,1,2,3 with max 4 cores in a core complex
++     */
++    int core_id;
++    /* Node id for this core index */
++    int node_id;
++    /* Number of nodes in this config */
++    int num_nodes;
++};
++
++/*
++ * Build the configuration closely match the EPYC hardware. Using the EPYC
++ * hardware configuration values (MAX_CCX, MAX_CORES_IN_CCX, MAX_CORES_IN_NODE)
++ * right now. This could change in future.
++ * nr_cores : Total number of cores in the config
++ * core_id  : Core index of the current CPU
++ * topo     : Data structure to hold all the config info for this core index
++ */
++static void build_core_topology(int nr_cores, int core_id,
++                                struct core_topology *topo)
++{
++    int nodes, cores_in_ccx;
++
++    /* First get the number of nodes required */
++    nodes = nodes_in_socket(nr_cores);
++
++    cores_in_ccx = cores_in_core_complex(nr_cores);
++
++    topo->node_id = core_id / (cores_in_ccx * MAX_CCX);
++    topo->ccx_id = (core_id % (cores_in_ccx * MAX_CCX)) / cores_in_ccx;
++    topo->core_id = core_id % cores_in_ccx;
++    topo->num_nodes = nodes;
++}
++
++/* Encode cache info for CPUID[8000001E] */
++static void encode_topo_cpuid8000001e(CPUState *cs, X86CPU *cpu,
++                                       uint32_t *eax, uint32_t *ebx,
++                                       uint32_t *ecx, uint32_t *edx)
++{
++    struct core_topology topo = {0};
++
++    build_core_topology(cs->nr_cores, cpu->core_id, &topo);
++    *eax = cpu->apic_id;
++    /*
++     * CPUID_Fn8000001E_EBX
++     * 31:16 Reserved
++     * 15:8  Threads per core (The number of threads per core is
++     *       Threads per core + 1)
++     *  7:0  Core id (see bit decoding below)
++     *       SMT:
++     *           4:3 node id
++     *             2 Core complex id
++     *           1:0 Core id
++     *       Non SMT:
++     *           5:4 node id
++     *             3 Core complex id
++     *           1:0 Core id
++     */
++    if (cs->nr_threads - 1) {
++        *ebx = ((cs->nr_threads - 1) << 8) | (topo.node_id << 3) |
++                (topo.ccx_id << 2) | topo.core_id;
++    } else {
++        *ebx = (topo.node_id << 4) | (topo.ccx_id << 3) | topo.core_id;
++    }
++    /*
++     * CPUID_Fn8000001E_ECX
++     * 31:11 Reserved
++     * 10:8  Nodes per processor (Nodes per processor is number of nodes + 1)
++     *  7:0  Node id (see bit decoding below)
++     *         2  Socket id
++     *       1:0  Node id
++     */
++    *ecx = ((topo.num_nodes - 1) << 8) | (cpu->socket_id << 2) | topo.node_id;
++    *edx = 0;
++}
++
+ /*
+  * Definitions of the hardcoded cache entries we expose:
+  * These are legacy cache values. If there is a need to change any
+@@ -4105,6 +4186,11 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
+             break;
+         }
+         break;
++    case 0x8000001E:
++        assert(cpu->core_id <= 255);
++        encode_topo_cpuid8000001e(cs, cpu,
++                                  eax, ebx, ecx, edx);
++        break;
+     case 0xC0000000:
+         *eax = env->cpuid_xlevel2;
+         *ebx = 0;
+-- 
+1.8.3.1
+

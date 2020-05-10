@@ -1,0 +1,56 @@
+From 43d46e014933fd009b39dd780ef33ac8cd2081d3 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:04 +0200
+Subject: [PATCH 37/53] mips_malta: Clean up definition of flash memory size
+ somewhat
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-16-armbru@redhat.com>
+Patchwork-id: 88009
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 15/31] mips_malta: Clean up definition of flash memory size somewhat
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+pflash_cfi01_register() takes a size in bytes, a block size in bytes
+and a number of blocks.  mips_malta_init() passes BIOS_SIZE, 65536,
+FLASH_SIZE >> 16.  Actually consistent only because BIOS_SIZE (defined
+in include/hw/mips/bios.h as (4 * MiB)) matches FLASH_SIZE (defined
+locally as 0x400000).  Confusing all the same.
+
+Pass FLASH_SIZE instead of BIOS_SIZE.
+
+Cc: Aurelien Jarno <aurelien@aurel32.net>
+Cc: Aleksandar Rikalo <arikalo@wavecomp.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Message-Id: <20190308094610.21210-14-armbru@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Tested-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+(cherry picked from commit 7ebfece56a9370eecd4b425b109dd722b09b9303)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/mips/mips_malta.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/mips/mips_malta.c b/hw/mips/mips_malta.c
+index 857bdb8..e46a252 100644
+--- a/hw/mips/mips_malta.c
++++ b/hw/mips/mips_malta.c
+@@ -1063,7 +1063,7 @@ void mips_malta_init(MachineState *machine)
+     /* Load firmware in flash / BIOS. */
+     dinfo = drive_get(IF_PFLASH, 0, fl_idx);
+     fl = pflash_cfi01_register(FLASH_ADDRESS, NULL, "mips_malta.bios",
+-                               BIOS_SIZE,
++                               FLASH_SIZE,
+                                dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
+                                65536, FLASH_SIZE >> 16,
+                                4, 0x0000, 0x0000, 0x0000, 0x0000, be);
+-- 
+1.8.3.1
+

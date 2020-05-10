@@ -1,0 +1,42 @@
+From ec6f06f14094727dbe049343b1f815c40a6f05b4 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Thu, 9 Aug 2018 18:23:25 +0200
+Subject: [PATCH 3/5] Revert "Disable PCIe-to-PCI bridge device"
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180809182325.21534-2-ehabkost@redhat.com>
+Patchwork-id: 81691
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] Revert "Disable PCIe-to-PCI bridge device"
+Bugzilla: 1390329
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+This reverts commit d496bec5b14df55d49658a283326ad720f974a0a.
+
+Without pcie-pci-bridge, libvirt will keep using the DMI bridge
+(i82801b11-bridge) to plug Conventional PCI devices, and we want
+to discourage its usage.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/pci-bridge/Makefile.objs | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/hw/pci-bridge/Makefile.objs b/hw/pci-bridge/Makefile.objs
+index 68db0da..47065f8 100644
+--- a/hw/pci-bridge/Makefile.objs
++++ b/hw/pci-bridge/Makefile.objs
+@@ -1,6 +1,5 @@
+ common-obj-y += pci_bridge_dev.o
+-common-obj-$(CONFIG_PCIE_PORT) += pcie_root_port.o gen_pcie_root_port.o 
+-#common-obj-$(CONFIG_PCIE_PORT) += pcie_pci_bridge.o
++common-obj-$(CONFIG_PCIE_PORT) += pcie_root_port.o gen_pcie_root_port.o pcie_pci_bridge.o
+ common-obj-$(CONFIG_PXB) += pci_expander_bridge.o
+ common-obj-$(CONFIG_XIO3130) += xio3130_upstream.o xio3130_downstream.o
+ common-obj-$(CONFIG_IOH3420) += ioh3420.o
+-- 
+1.8.3.1
+

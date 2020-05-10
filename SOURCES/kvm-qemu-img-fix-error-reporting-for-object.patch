@@ -1,0 +1,168 @@
+From 021b459bdd231286b9029da55fc7847cd338d66e Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 5 Apr 2019 21:41:02 +0200
+Subject: [PATCH 096/163] qemu-img: fix error reporting for -object
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190405214102.17467-1-jsnow@redhat.com>
+Patchwork-id: 85467
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 21.5/55] qemu-img: fix error reporting for -object
+Bugzilla: 1691009
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Daniel P. Berrangé <berrange@redhat.com>
+
+Error reporting for user_creatable_add_opts_foreach was changed so that
+it no longer called 'error_report_err' in:
+
+  commit 7e1e0c11127bde81cff260fc6859690435c509d6
+  Author: Markus Armbruster <armbru@redhat.com>
+  Date:   Wed Oct 17 10:26:43 2018 +0200
+
+    qom: Clean up error reporting in user_creatable_add_opts_foreach()
+
+Some callers were updated to pass in "&error_fatal" but all the ones in
+qemu-img were left passing NULL. As a result all errors went to
+/dev/null instead of being reported to the user.
+
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Stefano Garzarella <sgarzare@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 334c43e2c342e878311c66b4e62343f0a7c2c6be)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 26 +++++++++++++-------------
+ 1 file changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index fa0cbd7..3b147ca 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -505,7 +505,7 @@ static int img_create(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         goto fail;
+     }
+ 
+@@ -755,7 +755,7 @@ static int img_check(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         return 1;
+     }
+ 
+@@ -968,7 +968,7 @@ static int img_commit(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         return 1;
+     }
+ 
+@@ -1327,7 +1327,7 @@ static int img_compare(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         ret = 2;
+         goto out4;
+     }
+@@ -2132,7 +2132,7 @@ static int img_convert(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         goto fail_getopt;
+     }
+ 
+@@ -2684,7 +2684,7 @@ static int img_info(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         return 1;
+     }
+ 
+@@ -2903,7 +2903,7 @@ static int img_map(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         return 1;
+     }
+ 
+@@ -3052,7 +3052,7 @@ static int img_snapshot(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         return 1;
+     }
+ 
+@@ -3212,7 +3212,7 @@ static int img_rebase(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         return 1;
+     }
+ 
+@@ -3592,7 +3592,7 @@ static int img_resize(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         return 1;
+     }
+ 
+@@ -3836,7 +3836,7 @@ static int img_amend(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         ret = -1;
+         goto out_no_progress;
+     }
+@@ -4480,7 +4480,7 @@ static int img_dd(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         ret = -1;
+         goto out;
+     }
+@@ -4757,7 +4757,7 @@ static int img_measure(int argc, char **argv)
+ 
+     if (qemu_opts_foreach(&qemu_object_opts,
+                           user_creatable_add_opts_foreach,
+-                          NULL, NULL)) {
++                          NULL, &error_fatal)) {
+         goto out;
+     }
+ 
+-- 
+1.8.3.1
+

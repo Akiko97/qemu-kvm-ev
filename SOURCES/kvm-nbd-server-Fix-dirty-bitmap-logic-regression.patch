@@ -1,0 +1,54 @@
+From 05a40305eb495ff14c9bfcb1aa94c168b54d79ce Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:55:08 +0200
+Subject: [PATCH 83/89] nbd/server: Fix dirty bitmap logic regression
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-33-jsnow@redhat.com>
+Patchwork-id: 81427
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 32/35] nbd/server: Fix dirty bitmap logic regression
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+In my hurry to fix a build failure, I introduced a logic bug.
+The assertion conditional is backwards, meaning that qemu will
+now abort instead of reporting dirty bitmap status.
+
+The bug can only be tickled by an NBD client using an exported
+dirty bitmap (which is still an experimental QMP command), so
+it's not the end of the world for supported usage (and neither
+'make check' nor qemu-iotests fails); but it also shows that we
+really want qemu-io support for reading dirty bitmaps if only
+so that I can add iotests coverage to prevent future
+brown-bag-of-shame events like this one.
+
+Fixes: 45eb6fb6
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180622153509.375130-1-eblake@redhat.com>
+(cherry picked from commit 7606c99a0421be7e9d984766fe239f7791a2fd9c)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 50ac8bf..e52b76b 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1977,7 +1977,7 @@ static unsigned int bitmap_to_extents(BdrvDirtyBitmap *bitmap, uint64_t offset,
+ 
+     bdrv_dirty_bitmap_unlock(bitmap);
+ 
+-    assert(offset > end);
++    assert(offset < end);
+     *length = end - offset;
+     return i;
+ }
+-- 
+1.8.3.1
+

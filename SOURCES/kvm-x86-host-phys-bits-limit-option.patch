@@ -1,0 +1,96 @@
+From 714c0396845fe74f8ccb9a72a7f0ab6753248e6e Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Thu, 11 Apr 2019 21:48:45 +0200
+Subject: [PATCH 159/163] x86: host-phys-bits-limit option
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20190411214846.8816-2-ehabkost@redhat.com>
+Patchwork-id: 85608
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/2] x86: host-phys-bits-limit option
+Bugzilla: 1691519
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+Some downstream distributions of QEMU set host-phys-bits=on by
+default.  This worked very well for most use cases, because
+phys-bits really didn't have huge consequences. The only
+difference was on the CPUID data seen by guests, and on the
+handling of reserved bits.
+
+This changed in KVM commit 855feb673640 ("KVM: MMU: Add 5 level
+EPT & Shadow page table support").  Now choosing a large
+phys-bits value for a VM has bigger impact: it will make KVM use
+5-level EPT even when it's not really necessary.  This means
+using the host phys-bits value may not be the best choice.
+
+Management software could address this problem by manually
+configuring phys-bits depending on the size of the VM and the
+amount of MMIO address space required for hotplug.  But this is
+not trivial to implement.
+
+However, there's another workaround that would work for most
+cases: keep using the host phys-bits value, but only if it's
+smaller than 48.  This patch makes this possible by introducing a
+new "-cpu" option: "host-phys-bits-limit".  Management software
+or users can make sure they will always use 4-level EPT using:
+"host-phys-bits=on,host-phys-bits-limit=48".
+
+This behavior is still not enabled by default because QEMU
+doesn't enable host-phys-bits=on by default.  But users,
+management software, or downstream distributions may choose to
+change their defaults using the new option.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <20181211192527.13254-1-ehabkost@redhat.com>
+[ehabkost: removed test code while some issues are addressed]
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 258fe08bd341d2e230676228307294e41f33002c)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 5 +++++
+ target/i386/cpu.h | 3 +++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 2f6d5f4..c5156c8 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -4826,6 +4826,10 @@ static void x86_cpu_realizefn(DeviceState *dev, Error **errp)
+             if (cpu->host_phys_bits) {
+                 /* The user asked for us to use the host physical bits */
+                 cpu->phys_bits = host_phys_bits;
++                if (cpu->host_phys_bits_limit &&
++                    cpu->phys_bits > cpu->host_phys_bits_limit) {
++                    cpu->phys_bits = cpu->host_phys_bits_limit;
++                }
+             }
+ 
+             /* Print a warning if the user set it to a value that's not the
+@@ -5377,6 +5381,7 @@ static Property x86_cpu_properties[] = {
+     DEFINE_PROP_BOOL("kvm", X86CPU, expose_kvm, true),
+     DEFINE_PROP_UINT32("phys-bits", X86CPU, phys_bits, 0),
+     DEFINE_PROP_BOOL("host-phys-bits", X86CPU, host_phys_bits, false),
++    DEFINE_PROP_UINT8("host-phys-bits-limit", X86CPU, host_phys_bits_limit, 0),
+     DEFINE_PROP_BOOL("fill-mtrr-mask", X86CPU, fill_mtrr_mask, true),
+     DEFINE_PROP_UINT32("level", X86CPU, env.cpuid_level, UINT32_MAX),
+     DEFINE_PROP_UINT32("xlevel", X86CPU, env.cpuid_xlevel, UINT32_MAX),
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 75cf5ed..392065d 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -1419,6 +1419,9 @@ struct X86CPU {
+     /* if true override the phys_bits value with a value read from the host */
+     bool host_phys_bits;
+ 
++    /* if set, limit maximum value for phys_bits when host_phys_bits is true */
++    uint8_t host_phys_bits_limit;
++
+     /* Stop SMI delivery for migration compatibility with old machines */
+     bool kvm_no_smi_migration;
+ 
+-- 
+1.8.3.1
+

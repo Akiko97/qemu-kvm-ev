@@ -1,0 +1,52 @@
+From 1abf2fdfb42f49715458e6b3c01b431c9522926a Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 9 Oct 2018 22:14:31 +0200
+Subject: [PATCH 01/22] nbd/server: fix NBD_CMD_CACHE
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20181009221432.18359-2-jsnow@redhat.com>
+Patchwork-id: 82508
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] nbd/server: fix NBD_CMD_CACHE
+Bugzilla: 1636148
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+We should not go to structured-read branch on CACHE command, fix that.
+
+Bug introduced in bc37b06a5cde24 "nbd/server: introduce NBD_CMD_CACHE"
+with the whole feature and affects 3.0.0 release.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+CC: qemu-stable@nongnu.org
+Message-Id: <20181003144738.70670-1-vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+[eblake: commit message typo fix]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 2f454defc23e1be78f2a96bad2877ce7829f61b4)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index ea5fe0e..1ce3f44 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -2135,7 +2135,8 @@ static coroutine_fn int nbd_do_cmd_read(NBDClient *client, NBDRequest *request,
+     }
+ 
+     if (client->structured_reply && !(request->flags & NBD_CMD_FLAG_DF) &&
+-        request->len) {
++        request->len && request->type != NBD_CMD_CACHE)
++    {
+         return nbd_co_send_sparse_read(client, request->handle, request->from,
+                                        data, request->len, errp);
+     }
+-- 
+1.8.3.1
+

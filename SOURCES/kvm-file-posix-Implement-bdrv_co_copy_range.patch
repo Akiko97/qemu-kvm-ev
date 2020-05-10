@@ -1,0 +1,261 @@
+From 29d5339959b539767f6482adc00e02f0bb6083f9 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Fri, 29 Jun 2018 06:11:45 +0200
+Subject: [PATCH 41/57] file-posix: Implement bdrv_co_copy_range
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180629061153.12687-6-famz@redhat.com>
+Patchwork-id: 81156
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 05/13] file-posix: Implement bdrv_co_copy_range
+Bugzilla: 1482537
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+With copy_file_range(2), we can implement the bdrv_co_copy_range
+semantics.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Message-id: 20180601092648.24614-6-famz@redhat.com
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 1efad060d7e131dd52ecd1e038a6ddd37a3940c8)
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c      | 98 +++++++++++++++++++++++++++++++++++++++++++++++--
+ configure               | 17 +++++++++
+ include/block/raw-aio.h | 10 ++++-
+ 3 files changed, 120 insertions(+), 5 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 370a483..29ff699 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -59,6 +59,7 @@
+ #ifdef __linux__
+ #include <sys/ioctl.h>
+ #include <sys/param.h>
++#include <sys/syscall.h>
+ #include <linux/cdrom.h>
+ #include <linux/fd.h>
+ #include <linux/fs.h>
+@@ -185,6 +186,8 @@ typedef struct RawPosixAIOData {
+ #define aio_ioctl_cmd   aio_nbytes /* for QEMU_AIO_IOCTL */
+     off_t aio_offset;
+     int aio_type;
++    int aio_fd2;
++    off_t aio_offset2;
+ } RawPosixAIOData;
+ 
+ #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+@@ -1422,6 +1425,49 @@ static ssize_t handle_aiocb_write_zeroes(RawPosixAIOData *aiocb)
+     return -ENOTSUP;
+ }
+ 
++#ifndef HAVE_COPY_FILE_RANGE
++static off_t copy_file_range(int in_fd, off_t *in_off, int out_fd,
++                             off_t *out_off, size_t len, unsigned int flags)
++{
++#ifdef __NR_copy_file_range
++    return syscall(__NR_copy_file_range, in_fd, in_off, out_fd,
++                   out_off, len, flags);
++#else
++    errno = ENOSYS;
++    return -1;
++#endif
++}
++#endif
++
++static ssize_t handle_aiocb_copy_range(RawPosixAIOData *aiocb)
++{
++    uint64_t bytes = aiocb->aio_nbytes;
++    off_t in_off = aiocb->aio_offset;
++    off_t out_off = aiocb->aio_offset2;
++
++    while (bytes) {
++        ssize_t ret = copy_file_range(aiocb->aio_fildes, &in_off,
++                                      aiocb->aio_fd2, &out_off,
++                                      bytes, 0);
++        if (ret == -EINTR) {
++            continue;
++        }
++        if (ret < 0) {
++            if (errno == ENOSYS) {
++                return -ENOTSUP;
++            } else {
++                return -errno;
++            }
++        }
++        if (!ret) {
++            /* No progress (e.g. when beyond EOF), fall back to buffer I/O. */
++            return -ENOTSUP;
++        }
++        bytes -= ret;
++    }
++    return 0;
++}
++
+ static ssize_t handle_aiocb_discard(RawPosixAIOData *aiocb)
+ {
+     int ret = -EOPNOTSUPP;
+@@ -1502,6 +1548,9 @@ static int aio_worker(void *arg)
+     case QEMU_AIO_WRITE_ZEROES:
+         ret = handle_aiocb_write_zeroes(aiocb);
+         break;
++    case QEMU_AIO_COPY_RANGE:
++        ret = handle_aiocb_copy_range(aiocb);
++        break;
+     default:
+         fprintf(stderr, "invalid aio request (0x%x)\n", aiocb->aio_type);
+         ret = -EINVAL;
+@@ -1512,9 +1561,10 @@ static int aio_worker(void *arg)
+     return ret;
+ }
+ 
+-static int paio_submit_co(BlockDriverState *bs, int fd,
+-                          int64_t offset, QEMUIOVector *qiov,
+-                          int bytes, int type)
++static int paio_submit_co_full(BlockDriverState *bs, int fd,
++                               int64_t offset, int fd2, int64_t offset2,
++                               QEMUIOVector *qiov,
++                               int bytes, int type)
+ {
+     RawPosixAIOData *acb = g_new(RawPosixAIOData, 1);
+     ThreadPool *pool;
+@@ -1522,6 +1572,8 @@ static int paio_submit_co(BlockDriverState *bs, int fd,
+     acb->bs = bs;
+     acb->aio_type = type;
+     acb->aio_fildes = fd;
++    acb->aio_fd2 = fd2;
++    acb->aio_offset2 = offset2;
+ 
+     acb->aio_nbytes = bytes;
+     acb->aio_offset = offset;
+@@ -1537,6 +1589,13 @@ static int paio_submit_co(BlockDriverState *bs, int fd,
+     return thread_pool_submit_co(pool, aio_worker, acb);
+ }
+ 
++static inline int paio_submit_co(BlockDriverState *bs, int fd,
++                                 int64_t offset, QEMUIOVector *qiov,
++                                 int bytes, int type)
++{
++    return paio_submit_co_full(bs, fd, offset, -1, 0, qiov, bytes, type);
++}
++
+ static BlockAIOCB *paio_submit(BlockDriverState *bs, int fd,
+         int64_t offset, QEMUIOVector *qiov, int bytes,
+         BlockCompletionFunc *cb, void *opaque, int type)
+@@ -2346,6 +2405,35 @@ static void raw_abort_perm_update(BlockDriverState *bs)
+     raw_handle_perm_lock(bs, RAW_PL_ABORT, 0, 0, NULL);
+ }
+ 
++static int coroutine_fn raw_co_copy_range_from(BlockDriverState *bs,
++                                               BdrvChild *src, uint64_t src_offset,
++                                               BdrvChild *dst, uint64_t dst_offset,
++                                               uint64_t bytes, BdrvRequestFlags flags)
++{
++    return bdrv_co_copy_range_to(src, src_offset, dst, dst_offset, bytes, flags);
++}
++
++static int coroutine_fn raw_co_copy_range_to(BlockDriverState *bs,
++                                             BdrvChild *src, uint64_t src_offset,
++                                             BdrvChild *dst, uint64_t dst_offset,
++                                             uint64_t bytes, BdrvRequestFlags flags)
++{
++    BDRVRawState *s = bs->opaque;
++    BDRVRawState *src_s;
++
++    assert(dst->bs == bs);
++    if (src->bs->drv->bdrv_co_copy_range_to != raw_co_copy_range_to) {
++        return -ENOTSUP;
++    }
++
++    src_s = src->bs->opaque;
++    if (fd_open(bs) < 0 || fd_open(bs) < 0) {
++        return -EIO;
++    }
++    return paio_submit_co_full(bs, src_s->fd, src_offset, s->fd, dst_offset,
++                               NULL, bytes, QEMU_AIO_COPY_RANGE);
++}
++
+ BlockDriver bdrv_file = {
+     .format_name = "file",
+     .protocol_name = "file",
+@@ -2368,6 +2456,8 @@ BlockDriver bdrv_file = {
+     .bdrv_co_pwritev        = raw_co_pwritev,
+     .bdrv_aio_flush = raw_aio_flush,
+     .bdrv_aio_pdiscard = raw_aio_pdiscard,
++    .bdrv_co_copy_range_from = raw_co_copy_range_from,
++    .bdrv_co_copy_range_to  = raw_co_copy_range_to,
+     .bdrv_refresh_limits = raw_refresh_limits,
+     .bdrv_io_plug = raw_aio_plug,
+     .bdrv_io_unplug = raw_aio_unplug,
+@@ -2845,6 +2935,8 @@ static BlockDriver bdrv_host_device = {
+     .bdrv_co_pwritev        = raw_co_pwritev,
+     .bdrv_aio_flush	= raw_aio_flush,
+     .bdrv_aio_pdiscard   = hdev_aio_pdiscard,
++    .bdrv_co_copy_range_from = raw_co_copy_range_from,
++    .bdrv_co_copy_range_to  = raw_co_copy_range_to,
+     .bdrv_refresh_limits = raw_refresh_limits,
+     .bdrv_io_plug = raw_aio_plug,
+     .bdrv_io_unplug = raw_aio_unplug,
+diff --git a/configure b/configure
+index d2367f1..a869f19 100755
+--- a/configure
++++ b/configure
+@@ -5156,6 +5156,20 @@ if test "$fortify_source" != "no"; then
+   fi
+ fi
+ 
++###############################################
++# Check if copy_file_range is provided by glibc
++have_copy_file_range=no
++cat > $TMPC << EOF
++#include <unistd.h>
++int main(void) {
++  copy_file_range(0, NULL, 0, NULL, 0, 0);
++  return 0;
++}
++EOF
++if compile_prog "" "" ; then
++    have_copy_file_range=yes
++fi
++
+ ##########################################
+ # check if struct fsxattr is available via linux/fs.h
+ 
+@@ -6233,6 +6247,9 @@ fi
+ if test "$have_fsxattr" = "yes" ; then
+     echo "HAVE_FSXATTR=y" >> $config_host_mak
+ fi
++if test "$have_copy_file_range" = "yes" ; then
++    echo "HAVE_COPY_FILE_RANGE=y" >> $config_host_mak
++fi
+ if test "$vte" = "yes" ; then
+   echo "CONFIG_VTE=y" >> $config_host_mak
+   echo "VTE_CFLAGS=$vte_cflags" >> $config_host_mak
+diff --git a/include/block/raw-aio.h b/include/block/raw-aio.h
+index a4cdbbf..3240530 100644
+--- a/include/block/raw-aio.h
++++ b/include/block/raw-aio.h
+@@ -25,9 +25,15 @@
+ #define QEMU_AIO_FLUSH        0x0008
+ #define QEMU_AIO_DISCARD      0x0010
+ #define QEMU_AIO_WRITE_ZEROES 0x0020
++#define QEMU_AIO_COPY_RANGE   0x0040
+ #define QEMU_AIO_TYPE_MASK \
+-        (QEMU_AIO_READ|QEMU_AIO_WRITE|QEMU_AIO_IOCTL|QEMU_AIO_FLUSH| \
+-         QEMU_AIO_DISCARD|QEMU_AIO_WRITE_ZEROES)
++        (QEMU_AIO_READ | \
++         QEMU_AIO_WRITE | \
++         QEMU_AIO_IOCTL | \
++         QEMU_AIO_FLUSH | \
++         QEMU_AIO_DISCARD | \
++         QEMU_AIO_WRITE_ZEROES | \
++         QEMU_AIO_COPY_RANGE)
+ 
+ /* AIO flags */
+ #define QEMU_AIO_MISALIGNED   0x1000
+-- 
+1.8.3.1
+

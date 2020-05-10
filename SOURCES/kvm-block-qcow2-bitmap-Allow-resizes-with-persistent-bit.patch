@@ -1,0 +1,126 @@
+From ad64bca4d6cc7a258a546112b9494e6bfdf6cfbe Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 22:42:51 +0200
+Subject: [PATCH 156/163] block/qcow2-bitmap: Allow resizes with persistent
+ bitmaps
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403224253.5251-4-jsnow@redhat.com>
+Patchwork-id: 85433
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/5] block/qcow2-bitmap: Allow resizes with persistent bitmaps
+Bugzilla: 1666884
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+Since we now load all bitmaps into memory anyway, we can just truncate
+them in-memory and then flush them back to disk. Just in case, we will
+still check and enforce that this shortcut is valid -- i.e. that any
+bitmap described on-disk is indeed in-memory and can be modified.
+
+If there are any inconsistent bitmaps, we refuse to allow the truncate
+as we do not actually load these bitmaps into memory, and it isn't safe
+or reasonable to attempt to truncate corrupted data.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190311185147.52309-4-vsementsov@virtuozzo.com
+  [vsementsov: drop bitmap flushing, fix block comments style]
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit d19c6b36ffe09cec7ce7ac6a3e979bfe923ebba9)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2-bitmap.c | 46 ++++++++++++++++++++++++++++++++++++++++++++++
+ block/qcow2.c        |  4 +---
+ block/qcow2.h        |  1 +
+ 3 files changed, 48 insertions(+), 3 deletions(-)
+
+diff --git a/block/qcow2-bitmap.c b/block/qcow2-bitmap.c
+index fe4a6a2..3150855 100644
+--- a/block/qcow2-bitmap.c
++++ b/block/qcow2-bitmap.c
+@@ -1176,6 +1176,52 @@ int qcow2_reopen_bitmaps_rw(BlockDriverState *bs, Error **errp)
+     return qcow2_reopen_bitmaps_rw_hint(bs, NULL, errp);
+ }
+ 
++/* Checks to see if it's safe to resize bitmaps */
++int qcow2_truncate_bitmaps_check(BlockDriverState *bs, Error **errp)
++{
++    BDRVQcow2State *s = bs->opaque;
++    Qcow2BitmapList *bm_list;
++    Qcow2Bitmap *bm;
++    int ret = 0;
++
++    if (s->nb_bitmaps == 0) {
++        return 0;
++    }
++
++    bm_list = bitmap_list_load(bs, s->bitmap_directory_offset,
++                               s->bitmap_directory_size, errp);
++    if (bm_list == NULL) {
++        return -EINVAL;
++    }
++
++    QSIMPLEQ_FOREACH(bm, bm_list, entry) {
++        BdrvDirtyBitmap *bitmap = bdrv_find_dirty_bitmap(bs, bm->name);
++        if (bitmap == NULL) {
++            /*
++             * We rely on all bitmaps being in-memory to be able to resize them,
++             * Otherwise, we'd need to resize them on disk explicitly
++             */
++            error_setg(errp, "Cannot resize qcow2 with persistent bitmaps that "
++                       "were not loaded into memory");
++            ret = -ENOTSUP;
++            goto out;
++        }
++
++        /*
++         * The checks against readonly and busy are redundant, but certainly
++         * do no harm. checks against inconsistent are crucial:
++         */
++        if (bdrv_dirty_bitmap_check(bitmap, BDRV_BITMAP_DEFAULT, errp)) {
++            ret = -ENOTSUP;
++            goto out;
++        }
++    }
++
++out:
++    bitmap_list_free(bm_list);
++    return ret;
++}
++
+ /* store_bitmap_data()
+  * Store bitmap to image, filling bitmap table accordingly.
+  */
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 21f7556..b137480 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -3487,9 +3487,7 @@ static int coroutine_fn qcow2_co_truncate(BlockDriverState *bs, int64_t offset,
+     }
+ 
+     /* cannot proceed if image has bitmaps */
+-    if (s->nb_bitmaps) {
+-        /* TODO: resize bitmaps in the image */
+-        error_setg(errp, "Can't resize an image which has bitmaps");
++    if (qcow2_truncate_bitmaps_check(bs, errp)) {
+         ret = -ENOTSUP;
+         goto fail;
+     }
+diff --git a/block/qcow2.h b/block/qcow2.h
+index 2633e33..3b1b972 100644
+--- a/block/qcow2.h
++++ b/block/qcow2.h
+@@ -681,6 +681,7 @@ Qcow2BitmapInfoList *qcow2_get_bitmap_info_list(BlockDriverState *bs,
+ int qcow2_reopen_bitmaps_rw_hint(BlockDriverState *bs, bool *header_updated,
+                                  Error **errp);
+ int qcow2_reopen_bitmaps_rw(BlockDriverState *bs, Error **errp);
++int qcow2_truncate_bitmaps_check(BlockDriverState *bs, Error **errp);
+ void qcow2_store_persistent_dirty_bitmaps(BlockDriverState *bs, Error **errp);
+ int qcow2_reopen_bitmaps_ro(BlockDriverState *bs, Error **errp);
+ bool qcow2_can_store_new_dirty_bitmap(BlockDriverState *bs,
+-- 
+1.8.3.1
+

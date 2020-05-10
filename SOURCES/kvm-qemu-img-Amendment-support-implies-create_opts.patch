@@ -1,0 +1,61 @@
+From d43212510cea4b1eda20cb43f357473590d54ffd Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 14:59:37 +0200
+Subject: [PATCH 03/89] qemu-img: Amendment support implies create_opts
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618145943.4489-2-mreitz@redhat.com>
+Patchwork-id: 80758
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/7] qemu-img: Amendment support implies create_opts
+Bugzilla: 1537956
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+Instead of checking whether a driver has a non-NULL create_opts we
+should check whether it supports image amendment in the first place.  If
+it does, it must have create_opts.
+
+On the other hand, if it does not have create_opts (so it does not
+support amendment either), the error message "does not support any
+options" is a bit useless.  Stating clearly that the driver has no
+amendment support whatsoever is probably better.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-id: 20180509210023.20283-2-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 1f996683ad908fd41c572221a63d9fc31ce04d07)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index 60e45ec..2f7c491 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -3740,13 +3740,16 @@ static int img_amend(int argc, char **argv)
+         goto out;
+     }
+ 
+-    if (!bs->drv->create_opts) {
+-        error_report("Format driver '%s' does not support any options to amend",
++    if (!bs->drv->bdrv_amend_options) {
++        error_report("Format driver '%s' does not support option amendment",
+                      fmt);
+         ret = -1;
+         goto out;
+     }
+ 
++    /* Every driver supporting amendment must have create_opts */
++    assert(bs->drv->create_opts);
++
+     create_opts = qemu_opts_append(create_opts, bs->drv->create_opts);
+     opts = qemu_opts_create(create_opts, NULL, 0, &error_abort);
+     qemu_opts_do_parse(opts, options, NULL, &err);
+-- 
+1.8.3.1
+

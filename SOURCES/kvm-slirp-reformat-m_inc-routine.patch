@@ -1,0 +1,78 @@
+From 37e3851f6eac7999e7c5a7cfd41d53f72e47b03d Mon Sep 17 00:00:00 2001
+From: Xiao Wang <jasowang@redhat.com>
+Date: Wed, 8 Aug 2018 07:52:56 +0200
+Subject: [PATCH 1/5] slirp: reformat m_inc routine
+
+RH-Author: Xiao Wang <jasowang@redhat.com>
+Message-id: <1533714777-24827-2-git-send-email-jasowang@redhat.com>
+Patchwork-id: 81675
+O-Subject: [RHEL-7.6/7.5z qemu-kvm-rhev 1/2] slirp: reformat m_inc routine
+Bugzilla: 1586255
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: wexu@redhat.com
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Prasad J Pandit <pjp@fedoraproject.org>
+
+Coding style changes to the m_inc routine and minor refactoring.
+
+Reported-by: ZDI Disclosures <zdi-disclosures@trendmicro.com>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+Signed-off-by: Samuel Thibault <samuel.thibault@ens-lyon.org>
+(cherry picked from commit c22098c74a09164797fae6511c5eaf68f32c4dd8)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ slirp/mbuf.c | 34 ++++++++++++++++------------------
+ 1 file changed, 16 insertions(+), 18 deletions(-)
+
+diff --git a/slirp/mbuf.c b/slirp/mbuf.c
+index 18cbf75..0c189e1 100644
+--- a/slirp/mbuf.c
++++ b/slirp/mbuf.c
+@@ -151,27 +151,25 @@ m_cat(struct mbuf *m, struct mbuf *n)
+ void
+ m_inc(struct mbuf *m, int size)
+ {
+-	int datasize;
++    int datasize;
+ 
+-	/* some compiles throw up on gotos.  This one we can fake. */
+-        if(m->m_size>size) return;
++    /* some compilers throw up on gotos.  This one we can fake. */
++    if (m->m_size > size) {
++        return;
++    }
+ 
+-        if (m->m_flags & M_EXT) {
+-	  datasize = m->m_data - m->m_ext;
+-	  m->m_ext = g_realloc(m->m_ext, size + datasize);
+-	  m->m_data = m->m_ext + datasize;
+-        } else {
+-	  char *dat;
+-	  datasize = m->m_data - m->m_dat;
+-	  dat = g_malloc(size + datasize);
+-	  memcpy(dat, m->m_dat, m->m_size);
+-
+-	  m->m_ext = dat;
+-	  m->m_data = m->m_ext + datasize;
+-	  m->m_flags |= M_EXT;
+-        }
++    if (m->m_flags & M_EXT) {
++        datasize = m->m_data - m->m_ext;
++        m->m_ext = g_realloc(m->m_ext, size + datasize);
++    } else {
++        datasize = m->m_data - m->m_dat;
++        m->m_ext = g_malloc(size + datasize);
++        memcpy(m->m_ext, m->m_dat, m->m_size);
++        m->m_flags |= M_EXT;
++    }
+ 
+-        m->m_size = size + datasize;
++    m->m_data = m->m_ext + datasize;
++    m->m_size = size + datasize;
+ }
+ 
+ 
+-- 
+1.8.3.1
+

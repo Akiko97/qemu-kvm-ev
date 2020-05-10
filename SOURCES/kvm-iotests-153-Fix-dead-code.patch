@@ -1,0 +1,90 @@
+From ddc6da501740a60c1e7356e60928845be6ca2cda Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 4 Feb 2019 20:42:01 +0100
+Subject: [PATCH 01/33] iotests: 153: Fix dead code
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20190204204207.18079-2-mreitz@redhat.com>
+Patchwork-id: 84219
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/7] iotests: 153: Fix dead code
+Bugzilla: 1551486
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+This step was left behind my mistake. As suggested by the echoed text,
+the intention was to test two devices with the same image, with
+different options. The behavior should be the same as two QEMU
+processes. Complete it.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 0e1a582750269d3dde0481ca034b08a5784e430c)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/153     |  2 ++
+ tests/qemu-iotests/153.out | 25 +++++++++++++++++++++++++
+ 2 files changed, 27 insertions(+)
+
+diff --git a/tests/qemu-iotests/153 b/tests/qemu-iotests/153
+index 673813c..0daeb1b 100755
+--- a/tests/qemu-iotests/153
++++ b/tests/qemu-iotests/153
+@@ -162,6 +162,7 @@ for opts1 in "" "read-only=on" "read-only=on,force-share=on"; do
+     _cleanup_qemu
+ done
+ 
++test_opts="read-only=off read-only=on read-only=on,force-share=on"
+ for opt1 in $test_opts; do
+     for opt2 in $test_opts; do
+         echo
+@@ -170,6 +171,7 @@ for opt1 in $test_opts; do
+     done
+ done
+ 
++echo
+ echo "== Creating ${TEST_IMG}.[abc] ==" | _filter_testdir
+ (
+     $QEMU_IMG create -f qcow2 "${TEST_IMG}.a" -b "${TEST_IMG}"
+diff --git a/tests/qemu-iotests/153.out b/tests/qemu-iotests/153.out
+index 3492ba7..93eaf10 100644
+--- a/tests/qemu-iotests/153.out
++++ b/tests/qemu-iotests/153.out
+@@ -369,6 +369,31 @@ _qemu_img_wrapper bench -U -w -c 1 TEST_DIR/t.qcow2
+ qemu-img: Could not open 'TEST_DIR/t.qcow2': force-share=on can only be used with read-only images
+ 
+ Round done
++
++== Two devices with the same image (read-only=off - read-only=off) ==
++QEMU_PROG: -drive if=none,file=TEST_DIR/t.qcow2,read-only=off: Failed to get "write" lock
++Is another process using the image?
++
++== Two devices with the same image (read-only=off - read-only=on) ==
++QEMU_PROG: -drive if=none,file=TEST_DIR/t.qcow2,read-only=on: Failed to get shared "write" lock
++Is another process using the image?
++
++== Two devices with the same image (read-only=off - read-only=on,force-share=on) ==
++
++== Two devices with the same image (read-only=on - read-only=off) ==
++QEMU_PROG: -drive if=none,file=TEST_DIR/t.qcow2,read-only=off: Failed to get "write" lock
++Is another process using the image?
++
++== Two devices with the same image (read-only=on - read-only=on) ==
++
++== Two devices with the same image (read-only=on - read-only=on,force-share=on) ==
++
++== Two devices with the same image (read-only=on,force-share=on - read-only=off) ==
++
++== Two devices with the same image (read-only=on,force-share=on - read-only=on) ==
++
++== Two devices with the same image (read-only=on,force-share=on - read-only=on,force-share=on) ==
++
+ == Creating TEST_DIR/t.qcow2.[abc] ==
+ Formatting 'TEST_DIR/t.IMGFMT.a', fmt=IMGFMT size=33554432 backing_file=TEST_DIR/t.IMGFMT
+ Formatting 'TEST_DIR/t.IMGFMT.b', fmt=IMGFMT size=33554432 backing_file=TEST_DIR/t.IMGFMT
+-- 
+1.8.3.1
+

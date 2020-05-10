@@ -1,0 +1,48 @@
+From f2f3456bff9d30ce3850ff4d97b114714e4fe90d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:39 +0100
+Subject: [PATCH 29/33] block/qcow2: improve error message in qcow2_inactivate
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-20-jsnow@redhat.com>
+Patchwork-id: 84278
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 19/23] block/qcow2: improve error message in qcow2_inactivate
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+[Maintainer edit -- touched up error message. --js]
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 132adb682098e9af40a2132ec4feec6850fce8cd)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 1ea7203..5c5530d 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -2116,9 +2116,9 @@ static int qcow2_inactivate(BlockDriverState *bs)
+     qcow2_store_persistent_dirty_bitmaps(bs, &local_err);
+     if (local_err != NULL) {
+         result = -EINVAL;
+-        error_report_err(local_err);
+-        error_report("Persistent bitmaps are lost for node '%s'",
+-                     bdrv_get_device_or_node_name(bs));
++        error_reportf_err(local_err, "Lost persistent bitmaps during "
++                          "inactivation of node '%s': ",
++                          bdrv_get_device_or_node_name(bs));
+     }
+ 
+     ret = qcow2_cache_flush(bs, s->l2_table_cache);
+-- 
+1.8.3.1
+

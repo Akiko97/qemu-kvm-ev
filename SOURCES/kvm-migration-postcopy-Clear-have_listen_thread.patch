@@ -1,0 +1,53 @@
+From c6b775765f1b05c78fdaf24966c3c4f1d768a9ac Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Mon, 19 Nov 2018 16:19:20 +0100
+Subject: [PATCH 21/22] migration/postcopy: Clear have_listen_thread
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20181119161921.15191-2-dgilbert@redhat.com>
+Patchwork-id: 83047
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/2] migration/postcopy: Clear have_listen_thread
+Bugzilla: 1608877
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+
+Clear have_listen_thread when we exit the thread.
+The fallout from this was that various things thought there was
+an ongoing postcopy after the postcopy had finished.
+
+The case that failed was postcopy->savevm->loadvm.
+
+This corresponds to RH bug https://bugzilla.redhat.com/show_bug.cgi?id=1608765
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-Id: <20180914170430.54271-2-dgilbert@redhat.com>
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit 9cf4bb8730c669c40550e635a9e2b8ee4f1664ca)
+  Manual merge due to context
+
+Signed-off-by: Danilo C. L. de Paula <ddepaula@redhat.com>
+(cherry picked from commit 66e37a444b4b4818957dabadcc4580f1877e4ebb)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/savevm.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/migration/savevm.c b/migration/savevm.c
+index b975d3a..7a5d9ff 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -1621,6 +1621,7 @@ static void *postcopy_ram_listen_thread(void *opaque)
+     migration_incoming_state_destroy();
+     qemu_loadvm_state_cleanup();
+ 
++    mis->have_listen_thread = false;
+     return NULL;
+ }
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,39 @@
+From dda389bad731375b9308e4fc6db7a44cdadc7b1d Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 7 Jun 2018 07:43:14 +0200
+Subject: [PATCH 06/15] Disable new pvrdma device
+
+RH-Author: Miroslav Rezanina <mrezanin@redhat.com>
+Message-id: <5d290e25879e3ac42c247ff3c3a524001ceb0be1.1528355911.git.mrezanin@redhat.com>
+Patchwork-id: 80597
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 6/7] Disable new pvrdma device
+Bugzilla: 1586357
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+From: Miroslav Rezanina <mrezanin@redhat.com>
+
+New pvrdma device was introduced in rebase to QEMU 2.12. We do not want to
+support this device.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/rdma/Makefile.objs | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/hw/rdma/Makefile.objs b/hw/rdma/Makefile.objs
+index 3504c39..02ca2a9 100644
+--- a/hw/rdma/Makefile.objs
++++ b/hw/rdma/Makefile.objs
+@@ -1,5 +1,6 @@
+ ifeq ($(CONFIG_RDMA),y)
+ obj-$(CONFIG_PCI) += rdma_utils.o rdma_backend.o rdma_rm.o
+ obj-$(CONFIG_PCI) += vmw/pvrdma_dev_ring.o vmw/pvrdma_cmd.o \
+-                     vmw/pvrdma_qp_ops.o vmw/pvrdma_main.o
++                     vmw/pvrdma_qp_ops.o
++#obj-$(CONFIG_PCI) += vmw/pvrdma_main.o
+ endif
+-- 
+1.8.3.1
+

@@ -1,0 +1,1015 @@
+From ec05305843e6fb1cf3a8bc1dfab7b7e3d9edce4e Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Mon, 11 Sep 2017 07:11:00 +0200
+Subject: Initial redhat build
+
+This patch introduces redhat build structure in redhat subdirectory. In addition,
+several issues are fixed in QEMU tree:
+
+- Change of app name for sasl_server_init in VNC code from qemu to qemu-kvm
+ - As we use qemu-kvm as name in all places, this is updated to be consistent
+- Man page renamed from qemu to qemu-kvm
+ - man page is installed using make install so we have to fix it in qemu tree
+- Added live-block-migration configuration option support
+ - Downstream differentiation support
+- Use "/share/qemu-kvm" as SHARE_SUFFIX
+ - We reconfigured our share to qemu-kvm to be consistent with used name
+- Added .gitpublish configuration file
+ - Support for git publish has to be stored in repository root
+
+--
+Rebase notes (2.12.0):
+- Not packaging hppa-firmware.img
+- Disable vxhs.o in block/Makefile.obj
+- Disable ppc64 builds
+- Removed acpi-dsdt.aml (upstream)
+
+Rebase notes (2.11.0):
+- Removed --with-pixman configure option (upstream)
+- Disabled multipath for qemu-pr-helper (unsupported API)
+- null-co whitelisting moved to this patch
+- make check enabled
+- conditionaly disable query-block-jobs for qmp-test.c
+
+Rebase notes (2.10.0):
+- live_block_migration option added upstream
+- moved qmp-spec.txt file (upstream)
+- added s390-netboot.img (added upstream)
+- removed qemu_vga.ndrv (added upstream)
+- switch to (rhevh-)rhel-7.5-candidate
+- switched differentiation defaults
+- moved binary files to separate commit
+
+Rebase notes (2.9.0):
+- documentation files handling changes (upstrem)
+- removed --enable-colo option and --disable-archipelago (upstream)
+- bump BuildRequires versions
+- new mandatory argument for tracetool.py (upstream)
+- updated RHEL 6 roms
+- switch from sha1sum to sha256sum
+- Moved adding rhel6-e1000.rom from machine types commit
+- Moved adding pxe-e1000e.rom from device disable commit
+- Use rdma-core instead of librdmacm
+- Add upstream tarballs tar.xz to .gitignore
+- Updated git-backport-diff script
+
+Rebase notes (2.8.0):
+- removed vhdx option (upstream)
+- qemu-tech.html merged to qemu-doc.html (upstream)
+- removed skiboot.lid firmware
+- Changed tracetool.py parameters
+- Added support for easy z-stream switch
+
+Rebase notes (2.7.0):
+- removed kvm_stat
+- added efi-e1000e.rom
+- added efi-vmxnet.rom
+- added linuxboot_dma.bin
+- trace-events renamed to trace-events-all
+- reverted dependency to seccomp on aarch64
+- Add ipxe-qemu-roms ad build dependency to pass tests
+
+Rebase notes (2.6.0):
+- removed q35-acpi-dsdt.aml
+- add enable-gcrypt option
+
+Rebase notes (2.5.0):
+- New seccomp hadling in configure
+- New condition format  in migration/migration.c
+- libcacard extracted
+- vnc fixes
+- libsecomp for aarch64 requirements changed downstream
+
+Rebase notes (2.4.0):
+- remove --enable-ws-vnc
+- use error_setg instead of error_set in migration/migration.c
+- remove target-x86_64.conf
+- create /etc/qemu-kvm on copying of bridge.conf
+- disabled opengl
+- rebased to version 2.3.0-30.el7
+
+Merged patches (rebase 2.11.0)
+- ce6e8e5b8a redhat/qemu-kvm.spec.template: Enable seccomp on s390x, too
+- 8629f208c6 redhat: Remove qemu.binfmt from the downstream repository
+- b889ce1c40 Disable build of qemu-kvm-ma for x86_64
+- 4506913c42 redhat: add CONFIG_RHV flag
+- 21ecaec46f s390x: vm.allocate_pgste sysctl is no longer needed
+- 78a1864d99 Update build_configure for 2.10.0 options
+- decf881320 redhat: Provide s390x specific /etc/modprobe.d/kvm.conf
+- e0cd3138cc redhat/qemu-kvm.spec: Use the freshly built s390-ccw.img firmware image
+- 7af6b9a4fa redhat: install generic kvm.conf except for s390 and x86 architectures
+- c4290f50bb redhat: fix rh-srpm target
+- 8943f52e8b Package qemu-block-drivers manpage
+- 88b41044d6 update spec to build and install qemu-pr-helper
+- 34ca391 redhat: Fix permissions of /dev/kvm on a freshly booted s390x system
+
+Merged patches (rebase 2.10.0)
+- feefd46 qemu-kvm.spec: Enable s390x build
+- 985051e Removing texi2html from build requirements
+- 7c64a2a Update ignore files for redhat usage
+- 8f9a95a Disable replication feature
+- 1b7bbc5 block/vxhs: modularize VXHS via g_module
+- 7511527 Remove the dependencies to seavgabios-bin and ipxe-roms-qemu on s390x
+- aa0891c Downstream: Don't disable SMT on POWER9 hosts
+- a13a0e9 Update configuration for qemu 2.9
+- bbf46dd disable pulseaudio and alsa
+- 9124839 redhat/Makefile: honor BREW_FLAGS like the kernel
+- 53c03bd copy SLIT test reference blobs into tests directory
+- c4c77e6 Differentiation support
+- f1ec0e8 configure: allow to disable VT-d emulation
+- b972023 Disable VT-d for rhel builds
+- 29a0414 RHEL Diff.: Add option in configure to disable live block ops
+- 1f33b29 RHEL Diff.: Unregister live block operations
+- c590551 RHEL Diff.: Disable live block operations in HMP monitor
+- c7e208f RHEL Diff.: Add rpm spec options for live block ops
+- 733af5c pegas: add rpm spec options for vhost-user
+- ff16138 Add support for local build
+- fb426d4 qemu-kvm.spec: Configure vm.allocate_pgste for s390x
+
+Merged patches (rebase 2.9.0)
+- 9c7ab94 Enable seccomp for ppc64/ppc64le architecture
+- f6d7e9d Update qemu-kvm package Summary and Description
+- a9e55b6 Disable usbredir and libcacard for unsupported architectures
+- 0218220 Update configuration for 2.8.0 release
+
+Merged patches (rebase 2.7.0)
+- 2be6077 Fix SLOF dependency
+- dc58590 spec: Remove dependency to ipxe-roms-qemu for aarch64
+- 357ef43 spec: link sgabios.bin only for x86_64
+- 08d82cc spec: Update rules before triggering for kvm device
+- 8980a76 spec: Do not package ivshmem-server and ivshmem-client
+- 027067c spec: add a sample kvm.conf to enable Nested Virtualization
+- ba2ba30 Adjust locked memory limits to allow unprivileged VMs on Power
+- e9740b0 Increase locked memory limit for all users, not just kvm group
+- 8c301be add vgabios-virtio.bin symlink
+- 4d03723 usb: enable streams support
+- 2a9363e Add install dependency required for usb streams
+- 9a54442 Add dump-guest-memory.py to all archs
+- 73fffc9 add e1000e ipxe rom symlink
+- aaaa2a9 Add 'luks' to block driver whitelist
+- c78c3a8 redhat: switch from gcrypt to nettle for crypto
+- bb51a69 redhat: include username and date in RPM N-E-V-R for scratch builds
+- 21ecaec s390x: vm.allocate_pgste sysctl is no longer needed
+- 78a1864 Update build_configure for 2.10.0 options
+
+Merged patches (rebase 2.4.0)
+- 9201274 spec: Remove obsolete differentiation code
+- a938a8c spec: Use external configuration script
+- 5ca8d0e spec: Use configure options to prevent default resolution
+- 5dca391 spec: Ship complete QMP documentation files
+- 7899edd aarch64: allow --enable-seccomp
+- a56fb9c aarch64: redhat spec: enable seccomp
+- a9571e6 rhel: Update package version for SLOF dependency
+- 25c70c4 configure: Add support for tcmalloc
+- db72485 Change fsreeze-hook default location
+- 14b8a9e redhat: add kvm-unit-tests tarball to environment
+- 5ee4238 spec: Build tscdeadline_latency.flat from kvm-unit-tests
+- 6ba800b Downstream-only: Start kvm-setup service before libvirtd service
+- 59b43d6 Do not stop qemu-guest-agent service on target switch
+- 4d851fa provide vhost module config file with max_mem_regions set to 509
+- 0b18027 spec: Require proper version of SLOF
+- 3c436c7 Fix rh-brew-aarch64, rh-brew-ppc rh-brew-ga-ppc target
+
+(cherry picked from commit ba7591ec4a0906121d15ffbf740580bd79ec5814)
+(cherry picked from commit c984102495c0cee355158ecc382ad5e44b23b16c)
+
+Conflicts:
+	.gitpublish
+	configure
+	hw/i386/Makefile.objs
+
+(cherry picked from commit bea8f0ccd9fb65aefe7f19b3c4cc849c9e4c1bff)
+(cherry picked from commit 7bb63d45c5ed63943718d60382c140fbbba270cb)
+(cherry picked from commit a451d845da0e2f872b07ae57fd328adb8116f6cc)
+(cherry picked from commit db5d48c968290ffc47ef8662d6ee1fece967acac)
+---
+ .gitignore                         |    1 +
+ .gitpublish                        |   65 +-
+ Makefile                           |    2 +-
+ block/Makefile.objs                |    2 +-
+ block/vxhs.c                       |  122 +-
+ configure                          |   65 +-
+ hmp-commands-info.hx               |    4 +
+ hmp-commands.hx                    |   12 +
+ hmp.c                              |   12 +
+ include/block/vxhs_shim.h          |  143 +
+ monitor.c                          |   16 +
+ os-posix.c                         |    2 +-
+ redhat/.gitignore                  |    5 +
+ redhat/80-kvm.rules                |    1 +
+ redhat/85-kvm.preset               |    5 +
+ redhat/95-kvm-memlock.conf         |   10 +
+ redhat/99-qemu-guest-agent.rules   |    2 +
+ redhat/Makefile                    |   95 +
+ redhat/Makefile.common             |   57 +
+ redhat/Makefile.local              |   76 +
+ redhat/README.rhel6-gpxe-source    |    9 +
+ redhat/bridge.conf                 |    1 +
+ redhat/build_configure.sh          |  167 +
+ redhat/ksm.service                 |   13 +
+ redhat/ksm.sysconfig               |    4 +
+ redhat/ksmctl.c                    |   77 +
+ redhat/ksmtuned                    |  138 +
+ redhat/ksmtuned.conf               |   21 +
+ redhat/ksmtuned.service            |   12 +
+ redhat/kvm-s390x.conf              |    7 +
+ redhat/kvm-setup                   |   40 +
+ redhat/kvm-setup.service           |   14 +
+ redhat/kvm-x86.conf                |   12 +
+ redhat/kvm.conf                    |    3 +
+ redhat/kvm.modules                 |   21 +
+ redhat/qemu-ga.sysconfig           |   19 +
+ redhat/qemu-guest-agent.service    |   20 +
+ redhat/qemu-kvm.spec.template      | 6903 ++++++++++++++++++++++++++++++++++++
+ redhat/qemu-pr-helper.service      |   15 +
+ redhat/qemu-pr-helper.socket       |    9 +
+ redhat/rpmbuild/BUILD/.gitignore   |    2 +
+ redhat/rpmbuild/RPMS/.gitignore    |    2 +
+ redhat/rpmbuild/SOURCES/.gitignore |    2 +
+ redhat/rpmbuild/SPECS/.gitignore   |    2 +
+ redhat/rpmbuild/SRPMS/.gitignore   |    2 +
+ redhat/scripts/frh.py              |   26 +
+ redhat/scripts/git-backport-diff   |  327 ++
+ redhat/scripts/git-compile-check   |  215 ++
+ redhat/scripts/process-patches.sh  |   81 +
+ redhat/scripts/tarball_checksum.sh |    3 +
+ redhat/vhost.conf                  |    3 +
+ tests/qmp-test.c                   |    3 +
+ ui/vnc.c                           |    2 +-
+ 53 files changed, 8776 insertions(+), 96 deletions(-)
+ create mode 100644 include/block/vxhs_shim.h
+ create mode 100644 redhat/.gitignore
+ create mode 100644 redhat/80-kvm.rules
+ create mode 100644 redhat/85-kvm.preset
+ create mode 100644 redhat/95-kvm-memlock.conf
+ create mode 100644 redhat/99-qemu-guest-agent.rules
+ create mode 100644 redhat/Makefile
+ create mode 100644 redhat/Makefile.common
+ create mode 100644 redhat/Makefile.local
+ create mode 100644 redhat/README.rhel6-gpxe-source
+ create mode 100644 redhat/bridge.conf
+ create mode 100755 redhat/build_configure.sh
+ create mode 100644 redhat/ksm.service
+ create mode 100644 redhat/ksm.sysconfig
+ create mode 100644 redhat/ksmctl.c
+ create mode 100644 redhat/ksmtuned
+ create mode 100644 redhat/ksmtuned.conf
+ create mode 100644 redhat/ksmtuned.service
+ create mode 100644 redhat/kvm-s390x.conf
+ create mode 100644 redhat/kvm-setup
+ create mode 100644 redhat/kvm-setup.service
+ create mode 100644 redhat/kvm-x86.conf
+ create mode 100644 redhat/kvm.conf
+ create mode 100644 redhat/kvm.modules
+ create mode 100644 redhat/qemu-ga.sysconfig
+ create mode 100644 redhat/qemu-guest-agent.service
+ create mode 100644 redhat/qemu-kvm.spec.template
+ create mode 100644 redhat/qemu-pr-helper.service
+ create mode 100644 redhat/qemu-pr-helper.socket
+ create mode 100644 redhat/rpmbuild/BUILD/.gitignore
+ create mode 100644 redhat/rpmbuild/RPMS/.gitignore
+ create mode 100644 redhat/rpmbuild/SOURCES/.gitignore
+ create mode 100644 redhat/rpmbuild/SPECS/.gitignore
+ create mode 100644 redhat/rpmbuild/SRPMS/.gitignore
+ create mode 100755 redhat/scripts/frh.py
+ create mode 100755 redhat/scripts/git-backport-diff
+ create mode 100755 redhat/scripts/git-compile-check
+ create mode 100755 redhat/scripts/process-patches.sh
+ create mode 100755 redhat/scripts/tarball_checksum.sh
+ create mode 100644 redhat/vhost.conf
+
+diff --git a/Makefile b/Makefile
+index d71dd5b..89ba4c5 100644
+--- a/Makefile
++++ b/Makefile
+@@ -804,7 +804,7 @@ install-doc: $(DOCS)
+ 	$(INSTALL_DATA) docs/interop/qemu-qmp-ref.txt "$(DESTDIR)$(qemu_docdir)"
+ ifdef CONFIG_POSIX
+ 	$(INSTALL_DIR) "$(DESTDIR)$(mandir)/man1"
+-	$(INSTALL_DATA) qemu.1 "$(DESTDIR)$(mandir)/man1"
++	$(INSTALL_DATA) qemu.1 "$(DESTDIR)$(mandir)/man1/qemu-kvm.1"
+ 	$(INSTALL_DIR) "$(DESTDIR)$(mandir)/man7"
+ 	$(INSTALL_DATA) docs/interop/qemu-qmp-ref.7 "$(DESTDIR)$(mandir)/man7"
+ 	$(INSTALL_DATA) docs/qemu-block-drivers.7 "$(DESTDIR)$(mandir)/man7"
+diff --git a/block/Makefile.objs b/block/Makefile.objs
+index d644bac..c0693fc 100644
+--- a/block/Makefile.objs
++++ b/block/Makefile.objs
+@@ -20,7 +20,7 @@ block-obj-$(CONFIG_LIBNFS) += nfs.o
+ block-obj-$(CONFIG_CURL) += curl.o
+ block-obj-$(CONFIG_RBD) += rbd.o
+ block-obj-$(CONFIG_GLUSTERFS) += gluster.o
+-block-obj-$(CONFIG_VXHS) += vxhs.o
++#block-obj-$(CONFIG_VXHS) += vxhs.o
+ block-obj-$(CONFIG_LIBSSH2) += ssh.o
+ block-obj-y += accounting.o dirty-bitmap.o
+ block-obj-y += write-threshold.o
+diff --git a/block/vxhs.c b/block/vxhs.c
+index 75cc6c8..a18154c 100644
+--- a/block/vxhs.c
++++ b/block/vxhs.c
+@@ -9,7 +9,8 @@
+  */
+ 
+ #include "qemu/osdep.h"
+-#include <qnio/qnio_api.h>
++#include "block/vxhs_shim.h"
++#include <gmodule.h>
+ #include <sys/param.h>
+ #include "block/block_int.h"
+ #include "qapi/qmp/qerror.h"
+@@ -58,6 +59,96 @@ typedef struct BDRVVXHSState {
+     char *tlscredsid; /* tlscredsid */
+ } BDRVVXHSState;
+ 
++#define LIBVXHS_FULL_PATHNAME "/usr/lib64/qemu/libvxhs.so.1"
++static bool libvxhs_loaded;
++static GModule *libvxhs_handle;
++
++static LibVXHSFuncs libvxhs;
++
++typedef struct LibVXHSSymbols {
++    const char *name;
++    gpointer *addr;
++} LibVXHSSymbols;
++
++static LibVXHSSymbols libvxhs_symbols[] = {
++    {"iio_init",        (gpointer *) &libvxhs.iio_init},
++    {"iio_fini",        (gpointer *) &libvxhs.iio_fini},
++    {"iio_min_version", (gpointer *) &libvxhs.iio_min_version},
++    {"iio_max_version", (gpointer *) &libvxhs.iio_max_version},
++    {"iio_open",        (gpointer *) &libvxhs.iio_open},
++    {"iio_close",       (gpointer *) &libvxhs.iio_close},
++    {"iio_writev",      (gpointer *) &libvxhs.iio_writev},
++    {"iio_readv",       (gpointer *) &libvxhs.iio_readv},
++    {"iio_ioctl",       (gpointer *) &libvxhs.iio_ioctl},
++    {NULL}
++};
++
++static void bdrv_vxhs_set_funcs(GModule *handle, Error **errp)
++{
++    int i = 0;
++    while (libvxhs_symbols[i].name) {
++        const char *name = libvxhs_symbols[i].name;
++        if (!g_module_symbol(handle, name, libvxhs_symbols[i].addr)) {
++            error_setg(errp, "%s could not be loaded from libvxhs: %s",
++                       name, g_module_error());
++            return;
++        }
++        ++i;
++    }
++}
++
++static void bdrv_vxhs_load_libs(Error **errp)
++{
++    Error *local_err = NULL;
++    int32_t ver;
++
++    if (libvxhs_loaded) {
++        return;
++    }
++
++    if (!g_module_supported()) {
++        error_setg(errp, "modules are not supported on this platform: %s",
++                     g_module_error());
++        return;
++    }
++
++    libvxhs_handle = g_module_open(LIBVXHS_FULL_PATHNAME,
++                                   G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
++    if (!libvxhs_handle) {
++        error_setg(errp, "error loading libvxhs: %s", g_module_error());
++        return;
++    }
++
++    g_module_make_resident(libvxhs_handle);
++
++    bdrv_vxhs_set_funcs(libvxhs_handle, &local_err);
++    if (local_err) {
++        error_propagate(errp, local_err);
++        return;
++    }
++
++    /* Now check to see if the libvxhs we are using here is supported
++     * by the loaded version */
++
++    ver = (*libvxhs.iio_min_version)();
++    if (ver > QNIO_VERSION) {
++        error_setg(errp, "Trying to use libvxhs version %"PRId32" API, but "
++                         "only %"PRId32" or newer is supported by %s",
++                          QNIO_VERSION, ver, LIBVXHS_FULL_PATHNAME);
++        return;
++    }
++
++    ver = (*libvxhs.iio_max_version)();
++    if (ver < QNIO_VERSION) {
++        error_setg(errp, "Trying to use libvxhs version %"PRId32" API, but "
++                         "only %"PRId32" or earlier is supported by %s",
++                          QNIO_VERSION, ver, LIBVXHS_FULL_PATHNAME);
++        return;
++    }
++
++    libvxhs_loaded = true;
++}
++
+ static void vxhs_complete_aio_bh(void *opaque)
+ {
+     VXHSAIOCB *acb = opaque;
+@@ -219,7 +310,7 @@ static void vxhs_parse_filename(const char *filename, QDict *options,
+ static int vxhs_init_and_ref(void)
+ {
+     if (vxhs_ref++ == 0) {
+-        if (iio_init(QNIO_VERSION, vxhs_iio_callback)) {
++        if ((*libvxhs.iio_init)(QNIO_VERSION, vxhs_iio_callback)) {
+             return -ENODEV;
+         }
+     }
+@@ -229,7 +320,7 @@ static int vxhs_init_and_ref(void)
+ static void vxhs_unref(void)
+ {
+     if (--vxhs_ref == 0) {
+-        iio_fini();
++        (*libvxhs.iio_fini)();
+     }
+ }
+ 
+@@ -299,8 +390,17 @@ static int vxhs_open(BlockDriverState *bs, QDict *options,
+     char *client_key = NULL;
+     char *client_cert = NULL;
+ 
++    bdrv_vxhs_load_libs(&local_err);
++    if (local_err) {
++        error_propagate(errp, local_err);
++        /* on error, cannot cleanup because the iio_fini() function
++         * is not loaded */
++        return -EINVAL;
++    }
++
+     ret = vxhs_init_and_ref();
+     if (ret < 0) {
++        error_setg(&local_err, "libvxhs iio_init() failed");
+         ret = -EINVAL;
+         goto out;
+     }
+@@ -385,8 +485,8 @@ static int vxhs_open(BlockDriverState *bs, QDict *options,
+     /*
+      * Open qnio channel to storage agent if not opened before
+      */
+-    dev_handlep = iio_open(of_vsa_addr, s->vdisk_guid, 0,
+-                           cacert, client_key, client_cert);
++    dev_handlep = (*libvxhs.iio_open)(of_vsa_addr, s->vdisk_guid, 0,
++                                      cacert, client_key, client_cert);
+     if (dev_handlep == NULL) {
+         trace_vxhs_open_iio_open(of_vsa_addr);
+         ret = -ENODEV;
+@@ -450,12 +550,12 @@ static BlockAIOCB *vxhs_aio_rw(BlockDriverState *bs, int64_t sector_num,
+ 
+     switch (iodir) {
+     case VDISK_AIO_WRITE:
+-            ret = iio_writev(dev_handle, acb, qiov->iov, qiov->niov,
+-                             offset, (uint64_t)size, iio_flags);
++            ret = (*libvxhs.iio_writev)(dev_handle, acb, qiov->iov, qiov->niov,
++                                        offset, (uint64_t)size, iio_flags);
+             break;
+     case VDISK_AIO_READ:
+-            ret = iio_readv(dev_handle, acb, qiov->iov, qiov->niov,
+-                            offset, (uint64_t)size, iio_flags);
++            ret = (*libvxhs.iio_readv)(dev_handle, acb, qiov->iov, qiov->niov,
++                                       offset, (uint64_t)size, iio_flags);
+             break;
+     default:
+             trace_vxhs_aio_rw_invalid(iodir);
+@@ -505,7 +605,7 @@ static void vxhs_close(BlockDriverState *bs)
+      * Close vDisk device
+      */
+     if (s->vdisk_hostinfo.dev_handle) {
+-        iio_close(s->vdisk_hostinfo.dev_handle);
++        (*libvxhs.iio_close)(s->vdisk_hostinfo.dev_handle);
+         s->vdisk_hostinfo.dev_handle = NULL;
+     }
+ 
+@@ -527,7 +627,7 @@ static int64_t vxhs_get_vdisk_stat(BDRVVXHSState *s)
+     int ret = 0;
+     void *dev_handle = s->vdisk_hostinfo.dev_handle;
+ 
+-    ret = iio_ioctl(dev_handle, IOR_VDISK_STAT, &vdisk_size, 0);
++    ret = (*libvxhs.iio_ioctl)(dev_handle, IOR_VDISK_STAT, &vdisk_size, 0);
+     if (ret < 0) {
+         trace_vxhs_get_vdisk_stat_err(s->vdisk_guid, ret, errno);
+         return -EIO;
+diff --git a/configure b/configure
+index e9243f5..d2367f1 100755
+--- a/configure
++++ b/configure
+@@ -445,12 +445,15 @@ virglrenderer=""
+ tpm="yes"
+ libssh2=""
+ live_block_migration="yes"
++live_block_ops="yes"
+ numa=""
+ tcmalloc="no"
+ jemalloc="no"
+ replication="yes"
+ vxhs=""
+ libxml2=""
++vtd="yes"
++rhel_target="rhv"
+ 
+ supported_cpu="no"
+ supported_os="no"
+@@ -1348,6 +1351,10 @@ for opt do
+   ;;
+   --enable-replication) replication="yes"
+   ;;
++  --disable-live-block-ops) live_block_ops="no"
++  ;;
++  --enable-live-block-ops) live_block_ops="yes"
++  ;;
+   --disable-vxhs) vxhs="no"
+   ;;
+   --enable-vxhs) vxhs="yes"
+@@ -1374,6 +1381,12 @@ for opt do
+   ;;
+   --disable-git-update) git_update=no
+   ;;
++  --disable-vtd) vtd="no"
++  ;;
++  --enable-vtd) vtd="yes"
++  ;;
++  --rhel-target=*) rhel_target="$optarg"
++  ;;
+   *)
+       echo "ERROR: unknown option $opt"
+       echo "Try '$0 --help' for more information"
+@@ -1547,6 +1560,7 @@ Advanced options (experts only):
+                            xen pv domain builder
+   --enable-debug-stack-usage
+                            track the maximum stack usage of stacks created by qemu_alloc_stack
++  --rhel-target            set RHEL target (rhv or rhel)
+ 
+ Optional features, enabled with --enable-FEATURE and
+ disabled with --disable-FEATURE, default is enabled if available:
+@@ -1616,6 +1630,8 @@ disabled with --disable-FEATURE, default is enabled if available:
+   glusterfs       GlusterFS backend
+   tpm             TPM support
+   libssh2         ssh block device support
++  live-block-migration live block migration support
++  live-block-ops  live block operations support
+   numa            libnuma support
+   libxml2         for Parallels image format
+   tcmalloc        tcmalloc support
+@@ -1628,6 +1644,7 @@ disabled with --disable-FEATURE, default is enabled if available:
+   qom-cast-debug  cast debugging support
+   tools           build qemu-io, qemu-nbd and qemu-image tools
+   vxhs            Veritas HyperScale vDisk backend support
++  vtd             Emulated VT-d support (only affects x86 targets)
+   crypto-afalg    Linux AF_ALG crypto backend driver
+   vhost-user      vhost-user support
+   capstone        capstone disassembler support
+@@ -3369,7 +3386,7 @@ else
+     glib_req_ver=2.22
+ fi
+ glib_modules=gthread-2.0
+-if test "$modules" = yes; then
++if test "$modules" = yes -o "$vxhs" = yes; then
+     glib_modules="$glib_modules gmodule-export-2.0"
+ fi
+ 
+@@ -5306,33 +5323,6 @@ if compile_prog "" "" ; then
+ fi
+ 
+ ##########################################
+-# Veritas HyperScale block driver VxHS
+-# Check if libvxhs is installed
+-
+-if test "$vxhs" != "no" ; then
+-  cat > $TMPC <<EOF
+-#include <stdint.h>
+-#include <qnio/qnio_api.h>
+-
+-void *vxhs_callback;
+-
+-int main(void) {
+-    iio_init(QNIO_VERSION, vxhs_callback);
+-    return 0;
+-}
+-EOF
+-  vxhs_libs="-lvxhs -lssl"
+-  if compile_prog "" "$vxhs_libs" ; then
+-    vxhs=yes
+-  else
+-    if test "$vxhs" = "yes" ; then
+-      feature_not_found "vxhs block device" "Install libvxhs See github"
+-    fi
+-    vxhs=no
+-  fi
+-fi
+-
+-##########################################
+ # check for _Static_assert()
+ 
+ have_static_assert=no
+@@ -5855,6 +5845,7 @@ echo "TPM passthrough   $tpm_passthrough"
+ echo "TPM emulator      $tpm_emulator"
+ echo "QOM debugging     $qom_cast_debug"
+ echo "Live block migration $live_block_migration"
++echo "Live block ops    $live_block_ops"
+ echo "lzo support       $lzo"
+ echo "snappy support    $snappy"
+ echo "bzip2 support     $bzip2"
+@@ -5866,6 +5857,8 @@ echo "avx2 optimization $avx2_opt"
+ echo "replication support $replication"
+ echo "VxHS block device $vxhs"
+ echo "capstone          $capstone"
++echo "VT-d emulation    $vtd"
++echo "RHEL target       $rhel_target"
+ 
+ if test "$sdl_too_old" = "yes"; then
+ echo "-> Your SDL version is too old - please upgrade to have SDL support"
+@@ -6504,6 +6497,10 @@ if test "$live_block_migration" = "yes" ; then
+   echo "CONFIG_LIVE_BLOCK_MIGRATION=y" >> $config_host_mak
+ fi
+ 
++if test "$live_block_ops" = "yes" ; then
++  echo "CONFIG_LIVE_BLOCK_OPS=y" >> $config_host_mak
++fi
++
+ if test "$tpm" = "yes"; then
+   echo 'CONFIG_TPM=$(CONFIG_SOFTMMU)' >> $config_host_mak
+   # TPM passthrough support?
+@@ -6606,8 +6603,16 @@ if test "$pthread_setname_np" = "yes" ; then
+ fi
+ 
+ if test "$vxhs" = "yes" ; then
+-  echo "CONFIG_VXHS=y" >> $config_host_mak
+-  echo "VXHS_LIBS=$vxhs_libs" >> $config_host_mak
++  echo "CONFIG_VXHS=m" >> $config_host_mak
++  echo "VXHS_LIBS= -lssl" >> $config_host_mak
++fi
++
++if test "$vtd" = "yes" ; then
++  echo "CONFIG_VTD=y" >> $config_host_mak
++fi
++
++if test "$rhel_target" = "rhv" ; then
++  echo "CONFIG_RHV=y" >> $config_host_mak
+ fi
+ 
+ if test "$tcg_interpreter" = "yes"; then
+diff --git a/hmp-commands-info.hx b/hmp-commands-info.hx
+index ddfcd5a..601fcb6 100644
+--- a/hmp-commands-info.hx
++++ b/hmp-commands-info.hx
+@@ -84,6 +84,8 @@ STEXI
+ Show block device statistics.
+ ETEXI
+ 
++#ifdef CONFIG_LIVE_BLOCK_OPS
++
+     {
+         .name       = "block-jobs",
+         .args_type  = "",
+@@ -98,6 +100,8 @@ STEXI
+ Show progress of ongoing block device operations.
+ ETEXI
+ 
++#endif /* CONFIG_LIVE_BLOCK_OPS */
++
+     {
+         .name       = "registers",
+         .args_type  = "cpustate_all:-a",
+diff --git a/hmp-commands.hx b/hmp-commands.hx
+index 35d862a..3918831 100644
+--- a/hmp-commands.hx
++++ b/hmp-commands.hx
+@@ -73,6 +73,8 @@ but should be used with extreme caution.  Note that this command only
+ resizes image files, it can not resize block devices like LVM volumes.
+ ETEXI
+ 
++#ifdef CONFIG_LIVE_BLOCK_OPS
++
+     {
+         .name       = "block_stream",
+         .args_type  = "device:B,speed:o?,base:s?",
+@@ -160,6 +162,8 @@ STEXI
+ Resume a paused block streaming operation.
+ ETEXI
+ 
++#endif /* CONFIG_LIVE_BLOCK_OPS */
++
+     {
+         .name       = "eject",
+         .args_type  = "force:-f,device:B",
+@@ -1151,6 +1155,8 @@ STEXI
+ Enables or disables migration mode.
+ ETEXI
+ 
++#ifdef CONFIG_LIVE_BLOCK_OPS
++
+     {
+         .name       = "snapshot_blkdev",
+         .args_type  = "reuse:-n,device:B,snapshot-file:s?,format:s?",
+@@ -1172,6 +1178,8 @@ STEXI
+ Snapshot device, using snapshot file as target if provided
+ ETEXI
+ 
++#endif /* CONFIG_LIVE_BLOCK_OPS */
++
+     {
+         .name       = "snapshot_blkdev_internal",
+         .args_type  = "device:B,name:s",
+@@ -1206,6 +1214,8 @@ STEXI
+ Delete an internal snapshot on device if it support
+ ETEXI
+ 
++#ifdef CONFIG_LIVE_BLOCK_OPS
++
+     {
+         .name       = "drive_mirror",
+         .args_type  = "reuse:-n,full:-f,device:B,target:s,format:s?",
+@@ -1249,6 +1259,8 @@ STEXI
+ Start a point-in-time copy of a block device to a specificed target.
+ ETEXI
+ 
++#endif /* CONFIG_LIVE_BLOCK_OPS */
++
+     {
+         .name       = "drive_add",
+         .args_type  = "node:-n,pci_addr:s,opts:s",
+diff --git a/hmp.c b/hmp.c
+index a25c7bd..6c92198 100644
+--- a/hmp.c
++++ b/hmp.c
+@@ -942,6 +942,8 @@ void hmp_info_pci(Monitor *mon, const QDict *qdict)
+     qapi_free_PciInfoList(info_list);
+ }
+ 
++#ifdef CONFIG_LIVE_BLOCK_OPS
++
+ void hmp_info_block_jobs(Monitor *mon, const QDict *qdict)
+ {
+     BlockJobInfoList *list;
+@@ -980,6 +982,8 @@ void hmp_info_block_jobs(Monitor *mon, const QDict *qdict)
+     qapi_free_BlockJobInfoList(list);
+ }
+ 
++#endif /* CONFIG_LIVE_BLOCK_OPS */
++
+ void hmp_info_tpm(Monitor *mon, const QDict *qdict)
+ {
+     TPMInfoList *info_list, *info;
+@@ -1191,6 +1195,8 @@ void hmp_block_resize(Monitor *mon, const QDict *qdict)
+     hmp_handle_error(mon, &err);
+ }
+ 
++#ifdef CONFIG_LIVE_BLOCK_OPS
++
+ void hmp_drive_mirror(Monitor *mon, const QDict *qdict)
+ {
+     const char *filename = qdict_get_str(qdict, "target");
+@@ -1274,6 +1280,8 @@ void hmp_snapshot_blkdev(Monitor *mon, const QDict *qdict)
+     hmp_handle_error(mon, &err);
+ }
+ 
++#endif /* CONFIG_LIVE_BLOCK_OPS */
++
+ void hmp_snapshot_blkdev_internal(Monitor *mon, const QDict *qdict)
+ {
+     const char *device = qdict_get_str(qdict, "device");
+@@ -1789,6 +1797,8 @@ void hmp_block_set_io_throttle(Monitor *mon, const QDict *qdict)
+     hmp_handle_error(mon, &err);
+ }
+ 
++#ifdef CONFIG_LIVE_BLOCK_OPS
++
+ void hmp_block_stream(Monitor *mon, const QDict *qdict)
+ {
+     Error *error = NULL;
+@@ -1855,6 +1865,8 @@ void hmp_block_job_complete(Monitor *mon, const QDict *qdict)
+     hmp_handle_error(mon, &error);
+ }
+ 
++#endif /* CONFIG_LIVE_BLOCK_OPS */
++
+ typedef struct HMPMigrationStatus
+ {
+     QEMUTimer *timer;
+diff --git a/include/block/vxhs_shim.h b/include/block/vxhs_shim.h
+new file mode 100644
+index 0000000..42519ae
+--- /dev/null
++++ b/include/block/vxhs_shim.h
+@@ -0,0 +1,143 @@
++/*
++ * Network IO library for VxHS QEMU block driver (Veritas Technologies)
++ *
++ * This work is licensed under the terms of the GNU GPL, version 2.  See
++ * the COPYING file in the top-level directory.
++ *
++ * Contributions after 2014-08-15 are licensed under the terms of the
++ * GNU GPL, version 2 or (at your option) any later version.
++ */
++
++#ifndef QNIO_API_H
++#define QNIO_API_H
++
++#include <sys/uio.h>
++
++/*
++ * Bump up the version everytime this file is modified
++ */
++#define QNIO_VERSION    34
++
++/*
++ * These are the opcodes referenced by callback routine.
++ */
++#define IRP_READ_REQUEST                    0x1FFF
++#define IRP_WRITE_REQUEST                   0x2FFF
++#define IRP_VDISK_CHECK_IO_FAILOVER_READY   2020
++
++/*
++ * opcodes for iio_ioctl.
++ */
++#define IOR_VDISK_STAT                      1005
++
++/*
++ * Error values for iio_cb_t callback function.
++ */
++#define QNIOERROR_HUP                       901 /* Retriable error */
++#define QNIOERROR_NOCONN                    902 /* Non-retriable error */
++
++
++/* Operation Flags */
++#define IIO_FLAG_ASYNC        0x0001   /* Do an async send */
++
++/*
++ * INPUT:
++ *     ctx - opaque context
++ *     opcode - Operation
++ *     error - 0 for sucess, non-zero for failure.
++ * RETURNS:
++ *     void
++ * DESCRIPTION:
++ *     This callback is called, after Async request completes.
++ *
++ * CONTEXT:
++ *     The callback should be wait-free.
++ */
++typedef void (*iio_cb_t) (void *ctx, uint32_t opcode, uint32_t error);
++
++typedef struct LibVXHSFuncs {
++/*
++ * RETURNS:
++ *     0 for sucess, non-zero for failure.
++ * DESCRIPTION:
++ *     Intilize the library state. This should be called at the
++ *     begining before issuing any library call.
++ */
++    int     (*iio_init)(int32_t version, iio_cb_t cb);
++/*
++ * RETURNS:
++ *     void
++ * DESCRIPTION:
++ *     Relinquish library resources. This should be called on the
++ *     close of last open device.
++ */
++    void    (*iio_fini)(void);
++/*
++ * DESCRIPTION:
++ *     Returns minimum QNIO API version supported by library.
++ */
++    int32_t (*iio_min_version)(void);
++/*
++ * DESCRIPTION:
++ *     Returns maximum QNIO API version supported by library.
++ */
++    int32_t (*iio_max_version)(void);
++/*
++ * INPUT:
++ *    uri - const string of the format of://<hostname|ip>:port
++ *    devid - Device ID.
++ *    flags - currently unused, this must be set to 0
++ *    cacert - CA certificates file in PEM format
++ *    client_key - Client private key file in PEM format
++ *    client_cert - Client certificate file in PEM format
++ * RETURNS:
++ *    opeque device handle on success, NULL on failure.
++ * DESCRIPTION:
++ *    This call returns device handle on success. Returns NULL on
++ *    failure with errno set
++ *    errno can be one of:
++ *        ENODEV - remote device not found
++ *        EBADF  - Unable to open communication channel.
++ *        EBUSY  - The call cannot be completed right now
++ */
++    void   *(*iio_open)(const char *uri, const char *devid, uint32_t flags,
++                        const char *cacert, const char *client_key,
++                        const char *client_cert);
++/*
++ * Close the device.
++ *    For every matching iio_open() there should be a matching iio_close()
++ *    The last close free all data structures associated with the device.
++ */
++    int32_t (*iio_close)(void *dev_handle);
++/*
++ * INPUT:
++ *    dev_handle - device descriptor on which read/write needs to be performed
++ *    ctx - an opaque context that is not interpreted This is set for
++ *          async calls only. It can be NULL.
++ *    iov    - an array of iovecs (This is a scatter gather operation)
++ *    iovcnt  - the number of iovecs
++ *    offset - an offset to perform the write
++ *    size   - I/O size
++ *    flags  - can be one of
++ *        IIO_FLAG_ASYNC - indicating this is a aio call.
++ * RETURNS:
++ *        -1 on error, sets errno
++ *        EBADF  - the remote fd is bad
++ *        EBUSY  - The call cannot be completed right now
++ *        EPIPE  - the channel got disconnected, call back would be called in
++ *                 addition to this.
++ */
++    int32_t (*iio_writev)(void *dev_handle, void *ctx, struct iovec *iov,
++                          int iovcnt, uint64_t offset, uint64_t size,
++                          uint32_t flags);
++
++    int32_t (*iio_readv)(void *dev_handle, void *ctx, struct iovec *iov,
++                         int iovcnt, uint64_t offset, uint64_t size,
++                         uint32_t flags);
++
++    int32_t (*iio_ioctl)(void *dev_handle, uint32_t opcode, void *opaque,
++                         uint32_t flags);
++
++} LibVXHSFuncs;
++
++#endif
+diff --git a/monitor.c b/monitor.c
+index 39f8ee1..1813d34 100644
+--- a/monitor.c
++++ b/monitor.c
+@@ -1168,6 +1168,22 @@ static void qmp_unregister_commands_hack(void)
+     && !defined(TARGET_S390X)
+     qmp_unregister_command(&qmp_commands, "query-cpu-definitions");
+ #endif
++#ifndef CONFIG_LIVE_BLOCK_OPS
++    qmp_unregister_command(&qmp_commands, "block-stream");
++    qmp_unregister_command(&qmp_commands, "block-commit");
++    qmp_unregister_command(&qmp_commands, "drive-mirror");
++    qmp_unregister_command(&qmp_commands, "blockdev-mirror");
++    qmp_unregister_command(&qmp_commands, "drive-backup");
++    qmp_unregister_command(&qmp_commands, "blockdev-backup");
++    qmp_unregister_command(&qmp_commands, "blockdev-snapshot");
++    qmp_unregister_command(&qmp_commands, "blockdev-snapshot-sync");
++    qmp_unregister_command(&qmp_commands, "block-job-set-speed");
++    qmp_unregister_command(&qmp_commands, "block-job-cancel");
++    qmp_unregister_command(&qmp_commands, "block-job-pause");
++    qmp_unregister_command(&qmp_commands, "block-job-resume");
++    qmp_unregister_command(&qmp_commands, "block-job-complete");
++    qmp_unregister_command(&qmp_commands, "query-block-jobs");
++#endif
+ }
+ 
+ static void monitor_init_qmp_commands(void)
+diff --git a/os-posix.c b/os-posix.c
+index b9c2343..05de8ee 100644
+--- a/os-posix.c
++++ b/os-posix.c
+@@ -75,7 +75,7 @@ void os_setup_signal_handling(void)
+ /* Find a likely location for support files using the location of the binary.
+    For installed binaries this will be "$bindir/../share/qemu".  When
+    running from the build tree this will be "$bindir/../pc-bios".  */
+-#define SHARE_SUFFIX "/share/qemu"
++#define SHARE_SUFFIX "/share/qemu-kvm"
+ #define BUILD_SUFFIX "/pc-bios"
+ char *os_find_datadir(void)
+ {
+diff --git a/tests/qmp-test.c b/tests/qmp-test.c
+index 772058f..f34428e 100644
+--- a/tests/qmp-test.c
++++ b/tests/qmp-test.c
+@@ -238,6 +238,9 @@ static int query_error_class(const char *cmd)
+         { "query-balloon", ERROR_CLASS_DEVICE_NOT_ACTIVE },
+         { "query-hotpluggable-cpus", ERROR_CLASS_GENERIC_ERROR },
+         { "query-vm-generation-id", ERROR_CLASS_GENERIC_ERROR },
++#ifndef CONFIG_RHV
++        { "query-block-jobs", ERROR_CLASS_COMMAND_NOT_FOUND },
++#endif
+         { NULL, -1 }
+     };
+     int i;
+diff --git a/ui/vnc.c b/ui/vnc.c
+index e164eb7..0c3011b 100644
+--- a/ui/vnc.c
++++ b/ui/vnc.c
+@@ -4045,7 +4045,7 @@ void vnc_display_open(const char *id, Error **errp)
+     trace_vnc_auth_init(vd, 1, vd->ws_auth, vd->ws_subauth);
+ 
+ #ifdef CONFIG_VNC_SASL
+-    if ((saslErr = sasl_server_init(NULL, "qemu")) != SASL_OK) {
++    if ((saslErr = sasl_server_init(NULL, "qemu-kvm")) != SASL_OK) {
+         error_setg(errp, "Failed to initialize SASL auth: %s",
+                    sasl_errstring(saslErr, NULL, NULL));
+         goto fail;
+-- 
+1.8.3.1
+

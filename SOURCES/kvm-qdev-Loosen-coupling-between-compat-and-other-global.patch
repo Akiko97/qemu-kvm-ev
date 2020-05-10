@@ -1,0 +1,158 @@
+From a3a904263d8b2c2cb91be8f9dfb048239fc2b1e2 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:07 +0200
+Subject: [PATCH 40/53] qdev: Loosen coupling between compat and other global
+ properties
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-19-armbru@redhat.com>
+Patchwork-id: 88002
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 18/31] qdev: Loosen coupling between compat and other global properties
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+The (upstream) patch after next creates global properties before
+compat properties rather than after.  That's fine upstream, because
+compat properties have been divorced from global properties there, in
+merge commit 31ed41889e6.  Downstream, changing creation order that
+way would break overriding compat properties with -global.
+
+Since backporting the upstream work is rather invasive, this commit
+loosens the coupling between the two just enough to permit the
+reordering: collect accelerator and machine compat properties in
+separate lists @accel_compat_props and @machine_compat_props rather
+than stuffing them all into @global_props, and apply the three lists
+order @accel_compat_props, @machine_compat_props, @global_props.  This
+matches the order before the patch, thus no functional change.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ accel/accel.c                |  2 +-
+ hw/core/machine.c            |  2 +-
+ hw/core/qdev-properties.c    | 34 +++++++++++++++++++++++++++-------
+ include/hw/qdev-properties.h |  9 +++------
+ 4 files changed, 32 insertions(+), 15 deletions(-)
+
+diff --git a/accel/accel.c b/accel/accel.c
+index 5f3d73f..124f957 100644
+--- a/accel/accel.c
++++ b/accel/accel.c
+@@ -123,7 +123,7 @@ void configure_accelerator(MachineState *ms)
+ void accel_register_compat_props(AccelState *accel)
+ {
+     AccelClass *class = ACCEL_GET_CLASS(accel);
+-    register_compat_props_array(class->global_props);
++    register_accel_compat_props(class->global_props);
+ }
+ 
+ static void register_accel_types(void)
+diff --git a/hw/core/machine.c b/hw/core/machine.c
+index 2040177..b4804e9 100644
+--- a/hw/core/machine.c
++++ b/hw/core/machine.c
+@@ -853,7 +853,7 @@ void machine_register_compat_props(MachineState *machine)
+         p = g_array_index(mc->compat_props, GlobalProperty *, i);
+         /* Machine compat_props must never cause errors: */
+         p->errp = &error_abort;
+-        qdev_prop_register_global(p);
++        register_machine_compat_prop(p);
+     }
+ }
+ 
+diff --git a/hw/core/qdev-properties.c b/hw/core/qdev-properties.c
+index f3a83a3..5fd6d11 100644
+--- a/hw/core/qdev-properties.c
++++ b/hw/core/qdev-properties.c
+@@ -1174,6 +1174,14 @@ void qdev_prop_set_ptr(DeviceState *dev, const char *name, void *value)
+     *ptr = value;
+ }
+ 
++static GList *machine_compat_props;
++static GList *accel_compat_props;
++
++void register_machine_compat_prop(GlobalProperty *prop)
++{
++    machine_compat_props = g_list_append(machine_compat_props, prop);
++}
++
+ static GList *global_props;
+ 
+ void qdev_prop_register_global(GlobalProperty *prop)
+@@ -1195,10 +1203,17 @@ void register_compat_prop(const char *driver,
+     qdev_prop_register_global(p);
+ }
+ 
+-void register_compat_props_array(GlobalProperty *prop)
++void register_accel_compat_props(GlobalProperty *props)
+ {
+-    for (; prop && prop->driver; prop++) {
+-        register_compat_prop(prop->driver, prop->property, prop->value);
++    GlobalProperty *p, *prop;
++
++    for (p = props; p && p->driver; p++) {
++        prop = g_new0(GlobalProperty, 1);
++        prop->errp = &error_abort;
++        prop->driver = p->driver;
++        prop->property = p->property;
++        prop->value = p->value;
++        accel_compat_props = g_list_append(accel_compat_props, prop);
+     }
+ }
+ 
+@@ -1245,11 +1260,9 @@ int qdev_prop_check_globals(void)
+     return ret;
+ }
+ 
+-void qdev_prop_set_globals(DeviceState *dev)
++static void qdev_prop_set_globals_1(DeviceState *dev, GList *l)
+ {
+-    GList *l;
+-
+-    for (l = global_props; l; l = l->next) {
++    for (; l; l = l->next) {
+         GlobalProperty *prop = l->data;
+         Error *err = NULL;
+ 
+@@ -1271,6 +1284,13 @@ void qdev_prop_set_globals(DeviceState *dev)
+     }
+ }
+ 
++void qdev_prop_set_globals(DeviceState *dev)
++{
++    qdev_prop_set_globals_1(dev, accel_compat_props);
++    qdev_prop_set_globals_1(dev, machine_compat_props);
++    qdev_prop_set_globals_1(dev, global_props);
++}
++
+ /* --- 64bit unsigned int 'size' type --- */
+ 
+ static void get_size(Object *obj, Visitor *v, const char *name, void *opaque,
+diff --git a/include/hw/qdev-properties.h b/include/hw/qdev-properties.h
+index b2ad8e9..19ad0ae 100644
+--- a/include/hw/qdev-properties.h
++++ b/include/hw/qdev-properties.h
+@@ -280,12 +280,9 @@ void error_set_from_qdev_prop_error(Error **errp, int ret, DeviceState *dev,
+  */
+ void register_compat_prop(const char *driver, const char *property,
+                           const char *value);
+-/*
+- * register_compat_props_array(): using register_compat_prop(), which
+- * only registers internal global properties (which has lower priority
+- * than user-provided global properties)
+- */
+-void register_compat_props_array(GlobalProperty *prop);
++
++void register_accel_compat_props(GlobalProperty *props);
++void register_machine_compat_prop(GlobalProperty *prop);
+ 
+ /**
+  * qdev_property_add_static:
+-- 
+1.8.3.1
+

@@ -1,0 +1,53 @@
+From 098630a1298aa56f6dfffaeecbddf2d0f39c55a8 Mon Sep 17 00:00:00 2001
+From: Thomas Huth <thuth@redhat.com>
+Date: Mon, 7 May 2018 07:58:03 +0200
+Subject: [PATCH 07/13] s390-ccw: force diag 308 subcode to unsigned long
+
+RH-Author: Thomas Huth <thuth@redhat.com>
+Message-id: <1525679888-9234-2-git-send-email-thuth@redhat.com>
+Patchwork-id: 80049
+O-Subject: [RHEL-7.6 qemu-kvm-ma PATCH 1/6] s390-ccw: force diag 308 subcode to unsigned long
+Bugzilla: 1523857
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+From: Cornelia Huck <cohuck@redhat.com>
+
+We currently pass an integer as the subcode parameter. However,
+the upper bits of the register containing the subcode need to
+be 0, which is not guaranteed unless we explicitly specify the
+subcode to be an unsigned long value.
+
+Fixes: d046c51dad3 ("pc-bios/s390-ccw: Get device address via diag 308/6")
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Cornelia Huck <cohuck@redhat.com>
+Acked-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Tested-by: Thomas Huth <thuth@redhat.com>
+Signed-off-by: Thomas Huth <thuth@redhat.com>
+(cherry picked from commit 63d8b5ace31c1e1f3996fe4cd551d6d377594d5a)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ pc-bios/s390-ccw/iplb.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/pc-bios/s390-ccw/iplb.h b/pc-bios/s390-ccw/iplb.h
+index 5357a36..ded20c8 100644
+--- a/pc-bios/s390-ccw/iplb.h
++++ b/pc-bios/s390-ccw/iplb.h
+@@ -101,10 +101,11 @@ static inline bool manage_iplb(IplParameterBlock *iplb, bool store)
+ {
+     register unsigned long addr asm("0") = (unsigned long) iplb;
+     register unsigned long rc asm("1") = 0;
++    unsigned long subcode = store ? 6 : 5;
+ 
+     asm volatile ("diag %0,%2,0x308\n"
+                   : "+d" (addr), "+d" (rc)
+-                  : "d" (store ? 6 : 5)
++                  : "d" (subcode)
+                   : "memory", "cc");
+     return rc == 0x01;
+ }
+-- 
+1.8.3.1
+

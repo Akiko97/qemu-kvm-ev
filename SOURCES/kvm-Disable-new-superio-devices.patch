@@ -1,0 +1,38 @@
+From 5ce455e319c4e34fbe7fef78b72898d3dbc1c8c6 Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 7 Jun 2018 07:43:13 +0200
+Subject: [PATCH 05/15] Disable new superio devices
+
+RH-Author: Miroslav Rezanina <mrezanin@redhat.com>
+Message-id: <51483d3f0091abc80d52485ab076581d4ca914c5.1528355911.git.mrezanin@redhat.com>
+Patchwork-id: 80595
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 5/7] Disable new superio devices
+Bugzilla: 1586357
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+From: Miroslav Rezanina <mrezanin@redhat.com>
+
+We do not want to support new superio devices (fdc37m81x-superio and
+smc37c669-superio).
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/isa/Makefile.objs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/isa/Makefile.objs b/hw/isa/Makefile.objs
+index 83e06f6..7de4f44 100644
+--- a/hw/isa/Makefile.objs
++++ b/hw/isa/Makefile.objs
+@@ -1,5 +1,5 @@
+ common-obj-$(CONFIG_ISA_BUS) += isa-bus.o
+-common-obj-$(CONFIG_ISA_BUS) += isa-superio.o smc37c669-superio.o
++#common-obj-$(CONFIG_ISA_BUS) += isa-superio.o smc37c669-superio.o
+ common-obj-$(CONFIG_APM) += apm.o
+ common-obj-$(CONFIG_I82378) += i82378.o
+ common-obj-$(CONFIG_PC87312) += pc87312.o
+-- 
+1.8.3.1
+

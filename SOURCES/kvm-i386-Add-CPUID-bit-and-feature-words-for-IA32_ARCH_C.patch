@@ -1,0 +1,68 @@
+From f326041af5bd8ebebee83dbc296ab853955cd806 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Tue, 4 Jun 2019 21:47:21 +0200
+Subject: [PATCH 02/23] i386: Add CPUID bit and feature words for
+ IA32_ARCH_CAPABILITIES MSR
+
+RH-Author: plai@redhat.com
+Message-id: <1559684847-10889-3-git-send-email-plai@redhat.com>
+Patchwork-id: 88533
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH v4 2/8] i386: Add CPUID bit and feature words for IA32_ARCH_CAPABILITIES MSR
+Bugzilla: 1709972
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Robert Hoo <robert.hu@linux.intel.com>
+
+Support of IA32_PRED_CMD MSR already be enumerated by same CPUID bit as
+SPEC_CTRL.
+
+At present, mark CPUID_7_0_EDX_ARCH_CAPABILITIES unmigratable, per Paolo's
+comment.
+
+Signed-off-by: Robert Hoo <robert.hu@linux.intel.com>
+Message-Id: <1530781798-183214-3-git-send-email-robert.hu@linux.intel.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 3fc7c73139d2d38ae80c3b0bc963b1ac1555924c)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 3 ++-
+ target/i386/cpu.h | 1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 4558b1a..4c7364b 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1008,12 +1008,13 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, "spec-ctrl", "stibp",
+-            NULL, NULL, NULL, "ssbd",
++            NULL, "arch-capabilities", NULL, "ssbd",
+         },
+         .cpuid_eax = 7,
+         .cpuid_needs_ecx = true, .cpuid_ecx = 0,
+         .cpuid_reg = R_EDX,
+         .tcg_features = TCG_7_0_EDX_FEATURES,
++        .unmigratable_flags = CPUID_7_0_EDX_ARCH_CAPABILITIES,
+     },
+     [FEAT_8000_0007_EDX] = {
+         .feat_names = {
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index aabb6c8..eb39724 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -689,6 +689,7 @@ typedef uint32_t FeatureWordArray[FEATURE_WORDS];
+ #define CPUID_7_0_EDX_AVX512_4VNNIW (1U << 2) /* AVX512 Neural Network Instructions */
+ #define CPUID_7_0_EDX_AVX512_4FMAPS (1U << 3) /* AVX512 Multiply Accumulation Single Precision */
+ #define CPUID_7_0_EDX_SPEC_CTRL     (1U << 26) /* Speculation Control */
++#define CPUID_7_0_EDX_ARCH_CAPABILITIES (1U << 29)  /*Arch Capabilities*/
+ #define CPUID_7_0_EDX_SPEC_CTRL_SSBD  (1U << 31) /* Speculative Store Bypass Disable */
+ 
+ #define KVM_HINTS_DEDICATED (1U << 0)
+-- 
+1.8.3.1
+

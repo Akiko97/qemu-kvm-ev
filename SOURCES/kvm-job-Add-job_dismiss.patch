@@ -1,0 +1,174 @@
+From ba27464d8206fba129745e7b7eb38d59ef05fd5c Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:26 +0200
+Subject: [PATCH 57/89] job: Add job_dismiss()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-44-kwolf@redhat.com>
+Patchwork-id: 81125
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 43/73] job: Add job_dismiss()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This moves block_job_dismiss() to the Job layer.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 5f9a6a08e8f65e01746d2485fc65a3a78e74865f)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c               | 10 ++++++----
+ blockjob.c               | 13 -------------
+ include/block/blockjob.h |  9 ---------
+ include/qemu/job.h       |  7 ++++++-
+ job.c                    | 15 ++++++++++++++-
+ tests/test-blockjob.c    |  4 ++--
+ 6 files changed, 28 insertions(+), 30 deletions(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index d6cd8ed..d8b6520 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3962,14 +3962,16 @@ void qmp_block_job_finalize(const char *id, Error **errp)
+ void qmp_block_job_dismiss(const char *id, Error **errp)
+ {
+     AioContext *aio_context;
+-    BlockJob *job = find_block_job(id, &aio_context, errp);
++    BlockJob *bjob = find_block_job(id, &aio_context, errp);
++    Job *job;
+ 
+-    if (!job) {
++    if (!bjob) {
+         return;
+     }
+ 
+-    trace_qmp_block_job_dismiss(job);
+-    block_job_dismiss(&job, errp);
++    trace_qmp_block_job_dismiss(bjob);
++    job = &bjob->job;
++    job_dismiss(&job, errp);
+     aio_context_release(aio_context);
+ }
+ 
+diff --git a/blockjob.c b/blockjob.c
+index f146fe0..3ca009b 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -242,19 +242,6 @@ int64_t block_job_ratelimit_get_delay(BlockJob *job, uint64_t n)
+     return ratelimit_calculate_delay(&job->limit, n);
+ }
+ 
+-void block_job_dismiss(BlockJob **jobptr, Error **errp)
+-{
+-    BlockJob *job = *jobptr;
+-    /* similarly to _complete, this is QMP-interface only. */
+-    assert(job->job.id);
+-    if (job_apply_verb(&job->job, JOB_VERB_DISMISS, errp)) {
+-        return;
+-    }
+-
+-    job_do_dismiss(&job->job);
+-    *jobptr = NULL;
+-}
+-
+ void block_job_progress_update(BlockJob *job, uint64_t done)
+ {
+     job->offset += done;
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index e9ed7b8..5a81afc 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -141,15 +141,6 @@ void block_job_remove_all_bdrv(BlockJob *job);
+ void block_job_set_speed(BlockJob *job, int64_t speed, Error **errp);
+ 
+ /**
+- * block_job_dismiss:
+- * @job: The job to be dismissed.
+- * @errp: Error object.
+- *
+- * Remove a concluded job from the query list.
+- */
+-void block_job_dismiss(BlockJob **job, Error **errp);
+-
+-/**
+  * block_job_progress_update:
+  * @job: The job that has made progress
+  * @done: How much progress the job made
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 94900ec..1e8050c 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -487,6 +487,12 @@ int job_complete_sync(Job *job, Error **errp);
+  */
+ void job_finalize(Job *job, Error **errp);
+ 
++/**
++ * Remove the concluded @job from the query list and resets the passed pointer
++ * to %NULL. Returns an error if the job is not actually concluded.
++ */
++void job_dismiss(Job **job, Error **errp);
++
+ typedef void JobDeferToMainLoopFn(Job *job, void *opaque);
+ 
+ /**
+@@ -515,6 +521,5 @@ int job_finish_sync(Job *job, void (*finish)(Job *, Error **errp), Error **errp)
+ 
+ /* TODO To be removed from the public interface */
+ void job_state_transition(Job *job, JobStatus s1);
+-void job_do_dismiss(Job *job);
+ 
+ #endif
+diff --git a/job.c b/job.c
+index eede680..7cd3602 100644
+--- a/job.c
++++ b/job.c
+@@ -568,7 +568,7 @@ void job_user_resume(Job *job, Error **errp)
+     job_resume(job);
+ }
+ 
+-void job_do_dismiss(Job *job)
++static void job_do_dismiss(Job *job)
+ {
+     assert(job);
+     job->busy = false;
+@@ -581,6 +581,19 @@ void job_do_dismiss(Job *job)
+     job_unref(job);
+ }
+ 
++void job_dismiss(Job **jobptr, Error **errp)
++{
++    Job *job = *jobptr;
++    /* similarly to _complete, this is QMP-interface only. */
++    assert(job->id);
++    if (job_apply_verb(job, JOB_VERB_DISMISS, errp)) {
++        return;
++    }
++
++    job_do_dismiss(job);
++    *jobptr = NULL;
++}
++
+ void job_early_fail(Job *job)
+ {
+     assert(job->status == JOB_STATUS_CREATED);
+diff --git a/tests/test-blockjob.c b/tests/test-blockjob.c
+index 46a7873..7131cab 100644
+--- a/tests/test-blockjob.c
++++ b/tests/test-blockjob.c
+@@ -233,8 +233,8 @@ static void cancel_common(CancelJob *s)
+ 
+     job_cancel_sync(&job->job);
+     if (sts != JOB_STATUS_CREATED && sts != JOB_STATUS_CONCLUDED) {
+-        BlockJob *dummy = job;
+-        block_job_dismiss(&dummy, &error_abort);
++        Job *dummy = &job->job;
++        job_dismiss(&dummy, &error_abort);
+     }
+     assert(job->job.status == JOB_STATUS_NULL);
+     job_unref(&job->job);
+-- 
+1.8.3.1
+

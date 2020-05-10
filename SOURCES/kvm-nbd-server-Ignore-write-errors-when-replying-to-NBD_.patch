@@ -1,0 +1,65 @@
+From d706e465682307df95a723e1a74b32c0db93e259 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:30 +0100
+Subject: [PATCH 063/163] nbd/server: Ignore write errors when replying to
+ NBD_OPT_ABORT
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-18-jsnow@redhat.com>
+Patchwork-id: 85105
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 17/28] nbd/server: Ignore write errors when replying to NBD_OPT_ABORT
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Commit 37ec36f6 intentionally ignores errors when trying to reply
+to an NBD_OPT_ABORT request for plaintext clients, but did not make
+the same change for a TLS server.  Since NBD_OPT_ABORT is
+documented as being a potential for an EPIPE when the client hangs
+up without waiting for our reply, we don't need to pollute the
+server's output with that failure.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20181117223221.2198751-1-eblake@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+(cherry picked from commit 3e99ebb9d3df15ce0ecf1b435816c9c46ee9a1ad)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 418b1d4..e8fd6b4 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1134,12 +1134,16 @@ static int nbd_negotiate_options(NBDClient *client, uint16_t myflags,
+                 return -EINVAL;
+ 
+             default:
+-                ret = nbd_opt_drop(client, NBD_REP_ERR_TLS_REQD, errp,
++                /* Let the client keep trying, unless they asked to
++                 * quit. Always try to give an error back to the
++                 * client; but when replying to OPT_ABORT, be aware
++                 * that the client may hang up before receiving the
++                 * error, in which case we are fine ignoring the
++                 * resulting EPIPE. */
++                ret = nbd_opt_drop(client, NBD_REP_ERR_TLS_REQD,
++                                   option == NBD_OPT_ABORT ? NULL : errp,
+                                    "Option 0x%" PRIx32
+                                    " not permitted before TLS", option);
+-                /* Let the client keep trying, unless they asked to
+-                 * quit. In this mode, we've already sent an error, so
+-                 * we can't ack the abort.  */
+                 if (option == NBD_OPT_ABORT) {
+                     return 1;
+                 }
+-- 
+1.8.3.1
+

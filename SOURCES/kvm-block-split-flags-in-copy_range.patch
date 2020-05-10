@@ -1,0 +1,466 @@
+From 86b0f689bdc89a928f41ba737b43079df6574359 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 24 Jul 2018 13:01:08 +0200
+Subject: [PATCH 71/89] block: split flags in copy_range
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-21-jsnow@redhat.com>
+Patchwork-id: 81415
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 20/35] block: split flags in copy_range
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Pass read flags and write flags separately. This is needed to handle
+coming BDRV_REQ_NO_SERIALISING clearly in following patches.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 67b51fb998c697afb5d744066fcbde53e04fe941)
+Signed-off-by: John Snow <jsnow@redhat.com>
+---
+ block/backup.c                 |  2 +-
+ block/block-backend.c          |  5 +++--
+ block/file-posix.c             | 21 +++++++++++--------
+ block/io.c                     | 46 +++++++++++++++++++++++-------------------
+ block/iscsi.c                  |  9 ++++++---
+ block/qcow2.c                  | 20 +++++++++---------
+ block/raw-format.c             | 24 ++++++++++++++--------
+ include/block/block.h          |  3 ++-
+ include/block/block_int.h      | 14 +++++++++----
+ include/sysemu/block-backend.h |  3 ++-
+ qemu-img.c                     |  2 +-
+ 11 files changed, 90 insertions(+), 59 deletions(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index adb3cbd..369155a 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -163,7 +163,7 @@ static int coroutine_fn backup_cow_with_offload(BackupBlockJob *job,
+     hbitmap_reset(job->copy_bitmap, start / job->cluster_size,
+                   nr_clusters);
+     ret = blk_co_copy_range(blk, start, job->target, start, nbytes,
+-                            is_write_notifier ? BDRV_REQ_NO_SERIALISING : 0);
++                            is_write_notifier ? BDRV_REQ_NO_SERIALISING : 0, 0);
+     if (ret < 0) {
+         trace_backup_do_cow_copy_range_fail(job, start, ret);
+         hbitmap_set(job->copy_bitmap, start / job->cluster_size,
+diff --git a/block/block-backend.c b/block/block-backend.c
+index a469fc6..2262506 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -2244,7 +2244,8 @@ void blk_unregister_buf(BlockBackend *blk, void *host)
+ 
+ int coroutine_fn blk_co_copy_range(BlockBackend *blk_in, int64_t off_in,
+                                    BlockBackend *blk_out, int64_t off_out,
+-                                   int bytes, BdrvRequestFlags flags)
++                                   int bytes, BdrvRequestFlags read_flags,
++                                   BdrvRequestFlags write_flags)
+ {
+     int r;
+     r = blk_check_byte_request(blk_in, off_in, bytes);
+@@ -2257,5 +2258,5 @@ int coroutine_fn blk_co_copy_range(BlockBackend *blk_in, int64_t off_in,
+     }
+     return bdrv_co_copy_range(blk_in->root, off_in,
+                               blk_out->root, off_out,
+-                              bytes, flags);
++                              bytes, read_flags, write_flags);
+ }
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 06ec67d..c12cdb7 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -2476,18 +2476,23 @@ static void raw_abort_perm_update(BlockDriverState *bs)
+     raw_handle_perm_lock(bs, RAW_PL_ABORT, 0, 0, NULL);
+ }
+ 
+-static int coroutine_fn raw_co_copy_range_from(BlockDriverState *bs,
+-                                               BdrvChild *src, uint64_t src_offset,
+-                                               BdrvChild *dst, uint64_t dst_offset,
+-                                               uint64_t bytes, BdrvRequestFlags flags)
++static int coroutine_fn raw_co_copy_range_from(
++        BlockDriverState *bs, BdrvChild *src, uint64_t src_offset,
++        BdrvChild *dst, uint64_t dst_offset, uint64_t bytes,
++        BdrvRequestFlags read_flags, BdrvRequestFlags write_flags)
+ {
+-    return bdrv_co_copy_range_to(src, src_offset, dst, dst_offset, bytes, flags);
++    return bdrv_co_copy_range_to(src, src_offset, dst, dst_offset, bytes,
++                                 read_flags, write_flags);
+ }
+ 
+ static int coroutine_fn raw_co_copy_range_to(BlockDriverState *bs,
+-                                             BdrvChild *src, uint64_t src_offset,
+-                                             BdrvChild *dst, uint64_t dst_offset,
+-                                             uint64_t bytes, BdrvRequestFlags flags)
++                                             BdrvChild *src,
++                                             uint64_t src_offset,
++                                             BdrvChild *dst,
++                                             uint64_t dst_offset,
++                                             uint64_t bytes,
++                                             BdrvRequestFlags read_flags,
++                                             BdrvRequestFlags write_flags)
+ {
+     BDRVRawState *s = bs->opaque;
+     BDRVRawState *src_s;
+diff --git a/block/io.c b/block/io.c
+index f8de42f..2d04289 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -2841,13 +2841,11 @@ void bdrv_unregister_buf(BlockDriverState *bs, void *host)
+     }
+ }
+ 
+-static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+-                                                    uint64_t src_offset,
+-                                                    BdrvChild *dst,
+-                                                    uint64_t dst_offset,
+-                                                    uint64_t bytes,
+-                                                    BdrvRequestFlags flags,
+-                                                    bool recurse_src)
++static int coroutine_fn bdrv_co_copy_range_internal(
++        BdrvChild *src, uint64_t src_offset, BdrvChild *dst,
++        uint64_t dst_offset, uint64_t bytes,
++        BdrvRequestFlags read_flags, BdrvRequestFlags write_flags,
++        bool recurse_src)
+ {
+     BdrvTrackedRequest req;
+     int ret;
+@@ -2860,8 +2858,8 @@ static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+     if (ret) {
+         return ret;
+     }
+-    if (flags & BDRV_REQ_ZERO_WRITE) {
+-        return bdrv_co_pwrite_zeroes(dst, dst_offset, bytes, flags);
++    if (write_flags & BDRV_REQ_ZERO_WRITE) {
++        return bdrv_co_pwrite_zeroes(dst, dst_offset, bytes, write_flags);
+     }
+ 
+     if (!src || !src->bs) {
+@@ -2883,14 +2881,15 @@ static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+         tracked_request_begin(&req, src->bs, src_offset, bytes,
+                               BDRV_TRACKED_READ);
+ 
+-        if (!(flags & BDRV_REQ_NO_SERIALISING)) {
++        if (!(read_flags & BDRV_REQ_NO_SERIALISING)) {
+             wait_serialising_requests(&req);
+         }
+ 
+         ret = src->bs->drv->bdrv_co_copy_range_from(src->bs,
+                                                     src, src_offset,
+                                                     dst, dst_offset,
+-                                                    bytes, flags);
++                                                    bytes,
++                                                    read_flags, write_flags);
+ 
+         tracked_request_end(&req);
+         bdrv_dec_in_flight(src->bs);
+@@ -2899,15 +2898,15 @@ static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+         tracked_request_begin(&req, dst->bs, dst_offset, bytes,
+                               BDRV_TRACKED_WRITE);
+ 
+-        /* BDRV_REQ_NO_SERIALISING is only for read operation,
+-         * so we ignore it in flags.
+-         */
++        /* BDRV_REQ_NO_SERIALISING is only for read operation */
++        assert(!(write_flags & BDRV_REQ_NO_SERIALISING));
+         wait_serialising_requests(&req);
+ 
+         ret = dst->bs->drv->bdrv_co_copy_range_to(dst->bs,
+                                                   src, src_offset,
+                                                   dst, dst_offset,
+-                                                  bytes, flags);
++                                                  bytes,
++                                                  read_flags, write_flags);
+ 
+         tracked_request_end(&req);
+         bdrv_dec_in_flight(dst->bs);
+@@ -2922,10 +2921,12 @@ static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+  * semantics. */
+ int coroutine_fn bdrv_co_copy_range_from(BdrvChild *src, uint64_t src_offset,
+                                          BdrvChild *dst, uint64_t dst_offset,
+-                                         uint64_t bytes, BdrvRequestFlags flags)
++                                         uint64_t bytes,
++                                         BdrvRequestFlags read_flags,
++                                         BdrvRequestFlags write_flags)
+ {
+     return bdrv_co_copy_range_internal(src, src_offset, dst, dst_offset,
+-                                       bytes, flags, true);
++                                       bytes, read_flags, write_flags, true);
+ }
+ 
+ /* Copy range from @src to @dst.
+@@ -2934,19 +2935,22 @@ int coroutine_fn bdrv_co_copy_range_from(BdrvChild *src, uint64_t src_offset,
+  * semantics. */
+ int coroutine_fn bdrv_co_copy_range_to(BdrvChild *src, uint64_t src_offset,
+                                        BdrvChild *dst, uint64_t dst_offset,
+-                                       uint64_t bytes, BdrvRequestFlags flags)
++                                       uint64_t bytes,
++                                       BdrvRequestFlags read_flags,
++                                       BdrvRequestFlags write_flags)
+ {
+     return bdrv_co_copy_range_internal(src, src_offset, dst, dst_offset,
+-                                       bytes, flags, false);
++                                       bytes, read_flags, write_flags, false);
+ }
+ 
+ int coroutine_fn bdrv_co_copy_range(BdrvChild *src, uint64_t src_offset,
+                                     BdrvChild *dst, uint64_t dst_offset,
+-                                    uint64_t bytes, BdrvRequestFlags flags)
++                                    uint64_t bytes, BdrvRequestFlags read_flags,
++                                    BdrvRequestFlags write_flags)
+ {
+     return bdrv_co_copy_range_from(src, src_offset,
+                                    dst, dst_offset,
+-                                   bytes, flags);
++                                   bytes, read_flags, write_flags);
+ }
+ 
+ static void bdrv_parent_cb_resize(BlockDriverState *bs)
+diff --git a/block/iscsi.c b/block/iscsi.c
+index 5047e83..2b45458 100644
+--- a/block/iscsi.c
++++ b/block/iscsi.c
+@@ -2193,9 +2193,11 @@ static int coroutine_fn iscsi_co_copy_range_from(BlockDriverState *bs,
+                                                  BdrvChild *dst,
+                                                  uint64_t dst_offset,
+                                                  uint64_t bytes,
+-                                                 BdrvRequestFlags flags)
++                                                 BdrvRequestFlags read_flags,
++                                                 BdrvRequestFlags write_flags)
+ {
+-    return bdrv_co_copy_range_to(src, src_offset, dst, dst_offset, bytes, flags);
++    return bdrv_co_copy_range_to(src, src_offset, dst, dst_offset, bytes,
++                                 read_flags, write_flags);
+ }
+ 
+ static struct scsi_task *iscsi_xcopy_task(int param_len)
+@@ -2332,7 +2334,8 @@ static int coroutine_fn iscsi_co_copy_range_to(BlockDriverState *bs,
+                                                BdrvChild *dst,
+                                                uint64_t dst_offset,
+                                                uint64_t bytes,
+-                                               BdrvRequestFlags flags)
++                                               BdrvRequestFlags read_flags,
++                                               BdrvRequestFlags write_flags)
+ {
+     IscsiLun *dst_lun = dst->bs->opaque;
+     IscsiLun *src_lun;
+diff --git a/block/qcow2.c b/block/qcow2.c
+index e171a99..1ea7203 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -3248,13 +3248,14 @@ static int coroutine_fn
+ qcow2_co_copy_range_from(BlockDriverState *bs,
+                          BdrvChild *src, uint64_t src_offset,
+                          BdrvChild *dst, uint64_t dst_offset,
+-                         uint64_t bytes, BdrvRequestFlags flags)
++                         uint64_t bytes, BdrvRequestFlags read_flags,
++                         BdrvRequestFlags write_flags)
+ {
+     BDRVQcow2State *s = bs->opaque;
+     int ret;
+     unsigned int cur_bytes; /* number of bytes in current iteration */
+     BdrvChild *child = NULL;
+-    BdrvRequestFlags cur_flags;
++    BdrvRequestFlags cur_write_flags;
+ 
+     assert(!bs->encrypted);
+     qemu_co_mutex_lock(&s->lock);
+@@ -3263,7 +3264,7 @@ qcow2_co_copy_range_from(BlockDriverState *bs,
+         uint64_t copy_offset = 0;
+         /* prepare next request */
+         cur_bytes = MIN(bytes, INT_MAX);
+-        cur_flags = flags;
++        cur_write_flags = write_flags;
+ 
+         ret = qcow2_get_cluster_offset(bs, src_offset, &cur_bytes, &copy_offset);
+         if (ret < 0) {
+@@ -3275,20 +3276,20 @@ qcow2_co_copy_range_from(BlockDriverState *bs,
+             if (bs->backing && bs->backing->bs) {
+                 int64_t backing_length = bdrv_getlength(bs->backing->bs);
+                 if (src_offset >= backing_length) {
+-                    cur_flags |= BDRV_REQ_ZERO_WRITE;
++                    cur_write_flags |= BDRV_REQ_ZERO_WRITE;
+                 } else {
+                     child = bs->backing;
+                     cur_bytes = MIN(cur_bytes, backing_length - src_offset);
+                     copy_offset = src_offset;
+                 }
+             } else {
+-                cur_flags |= BDRV_REQ_ZERO_WRITE;
++                cur_write_flags |= BDRV_REQ_ZERO_WRITE;
+             }
+             break;
+ 
+         case QCOW2_CLUSTER_ZERO_PLAIN:
+         case QCOW2_CLUSTER_ZERO_ALLOC:
+-            cur_flags |= BDRV_REQ_ZERO_WRITE;
++            cur_write_flags |= BDRV_REQ_ZERO_WRITE;
+             break;
+ 
+         case QCOW2_CLUSTER_COMPRESSED:
+@@ -3312,7 +3313,7 @@ qcow2_co_copy_range_from(BlockDriverState *bs,
+         ret = bdrv_co_copy_range_from(child,
+                                       copy_offset,
+                                       dst, dst_offset,
+-                                      cur_bytes, cur_flags);
++                                      cur_bytes, read_flags, cur_write_flags);
+         qemu_co_mutex_lock(&s->lock);
+         if (ret < 0) {
+             goto out;
+@@ -3333,7 +3334,8 @@ static int coroutine_fn
+ qcow2_co_copy_range_to(BlockDriverState *bs,
+                        BdrvChild *src, uint64_t src_offset,
+                        BdrvChild *dst, uint64_t dst_offset,
+-                       uint64_t bytes, BdrvRequestFlags flags)
++                       uint64_t bytes, BdrvRequestFlags read_flags,
++                       BdrvRequestFlags write_flags)
+ {
+     BDRVQcow2State *s = bs->opaque;
+     int offset_in_cluster;
+@@ -3377,7 +3379,7 @@ qcow2_co_copy_range_to(BlockDriverState *bs,
+         ret = bdrv_co_copy_range_to(src, src_offset,
+                                     bs->file,
+                                     cluster_offset + offset_in_cluster,
+-                                    cur_bytes, flags);
++                                    cur_bytes, read_flags, write_flags);
+         qemu_co_mutex_lock(&s->lock);
+         if (ret < 0) {
+             goto fail;
+diff --git a/block/raw-format.c b/block/raw-format.c
+index b78da56..a359198 100644
+--- a/block/raw-format.c
++++ b/block/raw-format.c
+@@ -498,9 +498,13 @@ static int raw_probe_geometry(BlockDriverState *bs, HDGeometry *geo)
+ }
+ 
+ static int coroutine_fn raw_co_copy_range_from(BlockDriverState *bs,
+-                                               BdrvChild *src, uint64_t src_offset,
+-                                               BdrvChild *dst, uint64_t dst_offset,
+-                                               uint64_t bytes, BdrvRequestFlags flags)
++                                               BdrvChild *src,
++                                               uint64_t src_offset,
++                                               BdrvChild *dst,
++                                               uint64_t dst_offset,
++                                               uint64_t bytes,
++                                               BdrvRequestFlags read_flags,
++                                               BdrvRequestFlags write_flags)
+ {
+     int ret;
+ 
+@@ -509,13 +513,17 @@ static int coroutine_fn raw_co_copy_range_from(BlockDriverState *bs,
+         return ret;
+     }
+     return bdrv_co_copy_range_from(bs->file, src_offset, dst, dst_offset,
+-                                   bytes, flags);
++                                   bytes, read_flags, write_flags);
+ }
+ 
+ static int coroutine_fn raw_co_copy_range_to(BlockDriverState *bs,
+-                                             BdrvChild *src, uint64_t src_offset,
+-                                             BdrvChild *dst, uint64_t dst_offset,
+-                                             uint64_t bytes, BdrvRequestFlags flags)
++                                             BdrvChild *src,
++                                             uint64_t src_offset,
++                                             BdrvChild *dst,
++                                             uint64_t dst_offset,
++                                             uint64_t bytes,
++                                             BdrvRequestFlags read_flags,
++                                             BdrvRequestFlags write_flags)
+ {
+     int ret;
+ 
+@@ -524,7 +532,7 @@ static int coroutine_fn raw_co_copy_range_to(BlockDriverState *bs,
+         return ret;
+     }
+     return bdrv_co_copy_range_to(src, src_offset, bs->file, dst_offset, bytes,
+-                                 flags);
++                                 read_flags, write_flags);
+ }
+ 
+ BlockDriver bdrv_raw = {
+diff --git a/include/block/block.h b/include/block/block.h
+index 716fb5b..409db21 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -661,5 +661,6 @@ void bdrv_unregister_buf(BlockDriverState *bs, void *host);
+  **/
+ int coroutine_fn bdrv_co_copy_range(BdrvChild *src, uint64_t src_offset,
+                                     BdrvChild *dst, uint64_t dst_offset,
+-                                    uint64_t bytes, BdrvRequestFlags flags);
++                                    uint64_t bytes, BdrvRequestFlags read_flags,
++                                    BdrvRequestFlags write_flags);
+ #endif
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index 27e168f..b05cf11 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -220,7 +220,8 @@ struct BlockDriver {
+                                                 BdrvChild *dst,
+                                                 uint64_t dst_offset,
+                                                 uint64_t bytes,
+-                                                BdrvRequestFlags flags);
++                                                BdrvRequestFlags read_flags,
++                                                BdrvRequestFlags write_flags);
+ 
+     /* Map [offset, offset + nbytes) range onto a child of bs to copy data to,
+      * and invoke bdrv_co_copy_range_to(child, src, ...), or perform the copy
+@@ -236,7 +237,8 @@ struct BlockDriver {
+                                               BdrvChild *dst,
+                                               uint64_t dst_offset,
+                                               uint64_t bytes,
+-                                              BdrvRequestFlags flags);
++                                              BdrvRequestFlags read_flags,
++                                              BdrvRequestFlags write_flags);
+ 
+     /*
+      * Building block for bdrv_block_status[_above] and
+@@ -1125,10 +1127,14 @@ void blockdev_close_all_bdrv_states(void);
+ 
+ int coroutine_fn bdrv_co_copy_range_from(BdrvChild *src, uint64_t src_offset,
+                                          BdrvChild *dst, uint64_t dst_offset,
+-                                         uint64_t bytes, BdrvRequestFlags flags);
++                                         uint64_t bytes,
++                                         BdrvRequestFlags read_flags,
++                                         BdrvRequestFlags write_flags);
+ int coroutine_fn bdrv_co_copy_range_to(BdrvChild *src, uint64_t src_offset,
+                                        BdrvChild *dst, uint64_t dst_offset,
+-                                       uint64_t bytes, BdrvRequestFlags flags);
++                                       uint64_t bytes,
++                                       BdrvRequestFlags read_flags,
++                                       BdrvRequestFlags write_flags);
+ 
+ int refresh_total_sectors(BlockDriverState *bs, int64_t hint);
+ 
+diff --git a/include/sysemu/block-backend.h b/include/sysemu/block-backend.h
+index 8d03d49..830d873 100644
+--- a/include/sysemu/block-backend.h
++++ b/include/sysemu/block-backend.h
+@@ -234,6 +234,7 @@ void blk_unregister_buf(BlockBackend *blk, void *host);
+ 
+ int coroutine_fn blk_co_copy_range(BlockBackend *blk_in, int64_t off_in,
+                                    BlockBackend *blk_out, int64_t off_out,
+-                                   int bytes, BdrvRequestFlags flags);
++                                   int bytes, BdrvRequestFlags read_flags,
++                                   BdrvRequestFlags write_flags);
+ 
+ #endif
+diff --git a/qemu-img.c b/qemu-img.c
+index b2ef54e..eaee6d6 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -1786,7 +1786,7 @@ static int coroutine_fn convert_co_copy_range(ImgConvertState *s, int64_t sector
+ 
+         ret = blk_co_copy_range(blk, offset, s->target,
+                                 sector_num << BDRV_SECTOR_BITS,
+-                                n << BDRV_SECTOR_BITS, 0);
++                                n << BDRV_SECTOR_BITS, 0, 0);
+         if (ret < 0) {
+             return ret;
+         }
+-- 
+1.8.3.1
+

@@ -1,0 +1,61 @@
+From 3fb57e060f7c7a01f4061eab781b03ad789f5bf5 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:18 +0100
+Subject: [PATCH 079/163] nbd/client: Trace all server option error messages
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-6-jsnow@redhat.com>
+Patchwork-id: 85181
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 05/55] nbd/client: Trace all server option error messages
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Not all servers send free-form text alongside option error replies, but
+for servers that do (such as qemu), we pass the server's message as a
+hint alongside our own error reporting.  However, it would also be
+useful to trace such server messages, since we can't guarantee how the
+hint may be consumed.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20181218225714.284495-3-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit bee21ef0950c8b109d3bad05a3c3f2d94ec1a3af)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/client.c     | 2 ++
+ nbd/trace-events | 1 +
+ 2 files changed, 3 insertions(+)
+
+diff --git a/nbd/client.c b/nbd/client.c
+index b4d457a..0ad7147 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -171,6 +171,8 @@ static int nbd_handle_reply_err(QIOChannel *ioc, NBDOptionReply *reply,
+             goto cleanup;
+         }
+         msg[reply->length] = '\0';
++        trace_nbd_server_error_msg(reply->type,
++                                   nbd_reply_type_lookup(reply->type), msg);
+     }
+ 
+     switch (reply->type) {
+diff --git a/nbd/trace-events b/nbd/trace-events
+index 5e1d4af..5492042 100644
+--- a/nbd/trace-events
++++ b/nbd/trace-events
+@@ -1,6 +1,7 @@
+ # nbd/client.c
+ nbd_send_option_request(uint32_t opt, const char *name, uint32_t len) "Sending option request %" PRIu32" (%s), len %" PRIu32
+ nbd_receive_option_reply(uint32_t option, const char *optname, uint32_t type, const char *typename, uint32_t length) "Received option reply %" PRIu32" (%s), type %" PRIu32" (%s), len %" PRIu32
++nbd_server_error_msg(uint32_t err, const char *type, const char *msg) "server reported error 0x%" PRIx32 " (%s) with additional message: %s"
+ nbd_reply_err_unsup(uint32_t option, const char *name) "server doesn't understand request %" PRIu32 " (%s), attempting fallback"
+ nbd_opt_go_start(const char *name) "Attempting NBD_OPT_GO for export '%s'"
+ nbd_opt_go_success(void) "Export is good to go"
+-- 
+1.8.3.1
+

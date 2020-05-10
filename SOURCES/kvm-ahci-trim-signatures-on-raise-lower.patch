@@ -1,0 +1,66 @@
+From 2b9789734ace2edd99aab3e76a559f29201e0d8d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 10 Jul 2018 23:06:14 +0200
+Subject: [PATCH 31/89] ahci: trim signatures on raise/lower
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180710230616.11000-2-jsnow@redhat.com>
+Patchwork-id: 81295
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/3] ahci: trim signatures on raise/lower
+Bugzilla: 1584914
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+These functions work on the AHCI device, not the individual
+AHCI devices, so trim the AHCIDevice argument.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Message-id: 20180531004323.4611-2-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit dc5a43eda68fff32c7b0b43847332db325b094f3)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ide/ahci.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/hw/ide/ahci.c b/hw/ide/ahci.c
+index e22d7be..b7a6f68 100644
+--- a/hw/ide/ahci.c
++++ b/hw/ide/ahci.c
+@@ -131,7 +131,7 @@ static uint32_t  ahci_port_read(AHCIState *s, int port, int offset)
+     return val;
+ }
+ 
+-static void ahci_irq_raise(AHCIState *s, AHCIDevice *dev)
++static void ahci_irq_raise(AHCIState *s)
+ {
+     DeviceState *dev_state = s->container;
+     PCIDevice *pci_dev = (PCIDevice *) object_dynamic_cast(OBJECT(dev_state),
+@@ -146,7 +146,7 @@ static void ahci_irq_raise(AHCIState *s, AHCIDevice *dev)
+     }
+ }
+ 
+-static void ahci_irq_lower(AHCIState *s, AHCIDevice *dev)
++static void ahci_irq_lower(AHCIState *s)
+ {
+     DeviceState *dev_state = s->container;
+     PCIDevice *pci_dev = (PCIDevice *) object_dynamic_cast(OBJECT(dev_state),
+@@ -174,9 +174,9 @@ static void ahci_check_irq(AHCIState *s)
+     trace_ahci_check_irq(s, old_irq, s->control_regs.irqstatus);
+     if (s->control_regs.irqstatus &&
+         (s->control_regs.ghc & HOST_CTL_IRQ_EN)) {
+-            ahci_irq_raise(s, NULL);
++            ahci_irq_raise(s);
+     } else {
+-        ahci_irq_lower(s, NULL);
++        ahci_irq_lower(s);
+     }
+ }
+ 
+-- 
+1.8.3.1
+

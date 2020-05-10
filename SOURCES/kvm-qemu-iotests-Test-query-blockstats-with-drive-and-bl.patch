@@ -1,0 +1,362 @@
+From fa169d0d6e7109c79f3fb517e0ce695ed1954965 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 7 Aug 2018 14:04:01 +0200
+Subject: [PATCH 08/13] qemu-iotests: Test query-blockstats with -drive and
+ -blockdev
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180807140401.23995-4-kwolf@redhat.com>
+Patchwork-id: 81665
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 3/3] qemu-iotests: Test query-blockstats with -drive and -blockdev
+Bugzilla: 1612114
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+Make sure that query-blockstats returns information for every
+BlockBackend that is named or attached to a device model (or both).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 1239ac241fe170bb9fcf0be74bfff04f6f1c2560)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/227     | 101 ++++++++++++++++++++++
+ tests/qemu-iotests/227.out | 205 +++++++++++++++++++++++++++++++++++++++++++++
+ tests/qemu-iotests/group   |   1 +
+ 3 files changed, 307 insertions(+)
+ create mode 100755 tests/qemu-iotests/227
+ create mode 100644 tests/qemu-iotests/227.out
+
+diff --git a/tests/qemu-iotests/227 b/tests/qemu-iotests/227
+new file mode 100755
+index 0000000..9a5f7f9
+--- /dev/null
++++ b/tests/qemu-iotests/227
+@@ -0,0 +1,101 @@
++#!/bin/bash
++#
++# Test query-blockstats with different ways to create a BB
++#
++# Copyright (C) 2018 Red Hat, Inc.
++#
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 2 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++#
++
++# creator
++owner=kwolf@redhat.com
++
++seq=$(basename $0)
++echo "QA output created by $seq"
++
++here=$PWD
++status=1	# failure is the default!
++
++_cleanup()
++{
++    _cleanup_test_img
++}
++trap "_cleanup; exit \$status" 0 1 2 3 15
++
++# get standard environment, filters and checks
++. ./common.rc
++. ./common.filter
++
++_supported_fmt generic
++_supported_proto file
++_supported_os Linux
++
++function do_run_qemu()
++{
++    echo Testing: "$@"
++    $QEMU -nographic -qmp-pretty stdio -serial none "$@"
++    echo
++}
++
++function run_qemu()
++{
++    do_run_qemu "$@" 2>&1 | _filter_testdir | _filter_qmp \
++                          | _filter_qemu | _filter_imgfmt \
++                          | _filter_generated_node_ids
++}
++
++echo
++echo '=== blockstats with -drive if=virtio ==='
++echo
++
++run_qemu -drive driver=null-co,if=virtio <<EOF
++{ "execute": "qmp_capabilities" }
++{ "execute": "query-blockstats"}
++{ "execute": "quit" }
++EOF
++
++echo
++echo '=== blockstats with -drive if=none ==='
++echo
++
++run_qemu -drive driver=null-co,if=none <<EOF
++{ "execute": "qmp_capabilities" }
++{ "execute": "query-blockstats"}
++{ "execute": "quit" }
++EOF
++
++echo
++echo '=== blockstats with -blockdev ==='
++echo
++
++run_qemu -blockdev driver=null-co,node-name=null <<EOF
++{ "execute": "qmp_capabilities" }
++{ "execute": "query-blockstats"}
++{ "execute": "quit" }
++EOF
++
++echo
++echo '=== blockstats with -blockdev and -device ==='
++echo
++
++run_qemu -blockdev driver=null-co,node-name=null -device virtio-blk,drive=null,id=virtio0 <<EOF
++{ "execute": "qmp_capabilities" }
++{ "execute": "query-blockstats"}
++{ "execute": "quit" }
++EOF
++
++# success, all done
++echo "*** done"
++rm -f $seq.full
++status=0
+diff --git a/tests/qemu-iotests/227.out b/tests/qemu-iotests/227.out
+new file mode 100644
+index 0000000..736f2e3
+--- /dev/null
++++ b/tests/qemu-iotests/227.out
+@@ -0,0 +1,205 @@
++QA output created by 227
++
++=== blockstats with -drive if=virtio ===
++
++Testing: -drive driver=null-co,if=virtio
++{
++    QMP_VERSION
++}
++{
++    "return": {
++    }
++}
++{
++    "return": [
++        {
++            "device": "virtio0",
++            "stats": {
++                "flush_total_time_ns": 0,
++                "wr_highest_offset": 0,
++                "wr_total_time_ns": 0,
++                "failed_wr_operations": 0,
++                "failed_rd_operations": 0,
++                "wr_merged": 0,
++                "wr_bytes": 0,
++                "timed_stats": [
++                ],
++                "failed_flush_operations": 0,
++                "account_invalid": true,
++                "rd_total_time_ns": 0,
++                "flush_operations": 0,
++                "wr_operations": 0,
++                "rd_merged": 0,
++                "rd_bytes": 0,
++                "invalid_flush_operations": 0,
++                "account_failed": true,
++                "rd_operations": 0,
++                "invalid_wr_operations": 0,
++                "invalid_rd_operations": 0
++            },
++            "node-name": "NODE_NAME",
++            "qdev": "/machine/peripheral-anon/device[0]/virtio-backend"
++        }
++    ]
++}
++{
++    "return": {
++    }
++}
++{
++    "timestamp": {
++        "seconds":  TIMESTAMP,
++        "microseconds":  TIMESTAMP
++    },
++    "event": "SHUTDOWN",
++    "data": {
++        "guest": false
++    }
++}
++
++
++=== blockstats with -drive if=none ===
++
++Testing: -drive driver=null-co,if=none
++{
++    QMP_VERSION
++}
++{
++    "return": {
++    }
++}
++{
++    "return": [
++        {
++            "device": "none0",
++            "stats": {
++                "flush_total_time_ns": 0,
++                "wr_highest_offset": 0,
++                "wr_total_time_ns": 0,
++                "failed_wr_operations": 0,
++                "failed_rd_operations": 0,
++                "wr_merged": 0,
++                "wr_bytes": 0,
++                "timed_stats": [
++                ],
++                "failed_flush_operations": 0,
++                "account_invalid": true,
++                "rd_total_time_ns": 0,
++                "flush_operations": 0,
++                "wr_operations": 0,
++                "rd_merged": 0,
++                "rd_bytes": 0,
++                "invalid_flush_operations": 0,
++                "account_failed": true,
++                "rd_operations": 0,
++                "invalid_wr_operations": 0,
++                "invalid_rd_operations": 0
++            },
++            "node-name": "NODE_NAME"
++        }
++    ]
++}
++{
++    "return": {
++    }
++}
++{
++    "timestamp": {
++        "seconds":  TIMESTAMP,
++        "microseconds":  TIMESTAMP
++    },
++    "event": "SHUTDOWN",
++    "data": {
++        "guest": false
++    }
++}
++
++
++=== blockstats with -blockdev ===
++
++Testing: -blockdev driver=null-co,node-name=null
++{
++    QMP_VERSION
++}
++{
++    "return": {
++    }
++}
++{
++    "return": [
++    ]
++}
++{
++    "return": {
++    }
++}
++{
++    "timestamp": {
++        "seconds":  TIMESTAMP,
++        "microseconds":  TIMESTAMP
++    },
++    "event": "SHUTDOWN",
++    "data": {
++        "guest": false
++    }
++}
++
++
++=== blockstats with -blockdev and -device ===
++
++Testing: -blockdev driver=null-co,node-name=null -device virtio-blk,drive=null,id=virtio0
++{
++    QMP_VERSION
++}
++{
++    "return": {
++    }
++}
++{
++    "return": [
++        {
++            "device": "",
++            "stats": {
++                "flush_total_time_ns": 0,
++                "wr_highest_offset": 0,
++                "wr_total_time_ns": 0,
++                "failed_wr_operations": 0,
++                "failed_rd_operations": 0,
++                "wr_merged": 0,
++                "wr_bytes": 0,
++                "timed_stats": [
++                ],
++                "failed_flush_operations": 0,
++                "account_invalid": false,
++                "rd_total_time_ns": 0,
++                "flush_operations": 0,
++                "wr_operations": 0,
++                "rd_merged": 0,
++                "rd_bytes": 0,
++                "invalid_flush_operations": 0,
++                "account_failed": false,
++                "rd_operations": 0,
++                "invalid_wr_operations": 0,
++                "invalid_rd_operations": 0
++            },
++            "node-name": "null",
++            "qdev": "/machine/peripheral/virtio0/virtio-backend"
++        }
++    ]
++}
++{
++    "return": {
++    }
++}
++{
++    "timestamp": {
++        "seconds":  TIMESTAMP,
++        "microseconds":  TIMESTAMP
++    },
++    "event": "SHUTDOWN",
++    "data": {
++        "guest": false
++    }
++}
++
++*** done
+diff --git a/tests/qemu-iotests/group b/tests/qemu-iotests/group
+index e479fe1..6dd146a 100644
+--- a/tests/qemu-iotests/group
++++ b/tests/qemu-iotests/group
+@@ -222,3 +222,4 @@
+ 222 rw auto quick
+ 223 rw auto quick
+ 226 auto quick
++227 auto quick
+-- 
+1.8.3.1
+

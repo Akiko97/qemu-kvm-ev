@@ -1,0 +1,80 @@
+From 5d79960f00eebe7a8a8bcd423f39c4e72f3366d1 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Fri, 29 Jun 2018 06:11:43 +0200
+Subject: [PATCH 39/57] raw: Implement copy offloading
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180629061153.12687-4-famz@redhat.com>
+Patchwork-id: 81155
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 03/13] raw: Implement copy offloading
+Bugzilla: 1482537
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Just pass down to ->file.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: 20180601092648.24614-4-famz@redhat.com
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit 72d219e2f916adeec9845473d239571a267f3314)
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/raw-format.c | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/block/raw-format.c b/block/raw-format.c
+index b69a067..f2e468d 100644
+--- a/block/raw-format.c
++++ b/block/raw-format.c
+@@ -497,6 +497,36 @@ static int raw_probe_geometry(BlockDriverState *bs, HDGeometry *geo)
+     return bdrv_probe_geometry(bs->file->bs, geo);
+ }
+ 
++static int coroutine_fn raw_co_copy_range_from(BlockDriverState *bs,
++                                               BdrvChild *src, uint64_t src_offset,
++                                               BdrvChild *dst, uint64_t dst_offset,
++                                               uint64_t bytes, BdrvRequestFlags flags)
++{
++    int ret;
++
++    ret = raw_adjust_offset(bs, &src_offset, bytes, false);
++    if (ret) {
++        return ret;
++    }
++    return bdrv_co_copy_range_from(bs->file, src_offset, dst, dst_offset,
++                                   bytes, flags);
++}
++
++static int coroutine_fn raw_co_copy_range_to(BlockDriverState *bs,
++                                             BdrvChild *src, uint64_t src_offset,
++                                             BdrvChild *dst, uint64_t dst_offset,
++                                             uint64_t bytes, BdrvRequestFlags flags)
++{
++    int ret;
++
++    ret = raw_adjust_offset(bs, &dst_offset, bytes, true);
++    if (ret) {
++        return ret;
++    }
++    return bdrv_co_copy_range_to(src, src_offset, bs->file, dst_offset, bytes,
++                                 flags);
++}
++
+ BlockDriver bdrv_raw = {
+     .format_name          = "raw",
+     .instance_size        = sizeof(BDRVRawState),
+@@ -513,6 +543,8 @@ BlockDriver bdrv_raw = {
+     .bdrv_co_pwrite_zeroes = &raw_co_pwrite_zeroes,
+     .bdrv_co_pdiscard     = &raw_co_pdiscard,
+     .bdrv_co_block_status = &raw_co_block_status,
++    .bdrv_co_copy_range_from = &raw_co_copy_range_from,
++    .bdrv_co_copy_range_to  = &raw_co_copy_range_to,
+     .bdrv_truncate        = &raw_truncate,
+     .bdrv_getlength       = &raw_getlength,
+     .has_variable_length  = true,
+-- 
+1.8.3.1
+

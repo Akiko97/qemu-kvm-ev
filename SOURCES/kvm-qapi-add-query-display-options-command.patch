@@ -1,0 +1,95 @@
+From 8c923259c0880336125c05adb5b7e8001776cd79 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Tue, 5 Mar 2019 08:26:16 +0100
+Subject: [PATCH 8/9] qapi: add query-display-options command
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20190305082617.14614-4-kraxel@redhat.com>
+Patchwork-id: 84795
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/4] qapi: add query-display-options command
+Bugzilla: 1648236
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Erik Skultety <eskultet@redhat.com>
+
+Add query-display-options command, which allows querying the qemu
+display configuration.  This isn't particularly useful, except it
+exposes QAPI type DisplayOptions in query-qmp-schema, so that libvirt
+can discover recently added -display parameter rendernode (commit
+d4dc4ab133b).  Works around lack of sufficiently powerful command line
+introspection.
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Tested-by: Eric Blake <eblake@redhat.com>
+Tested-by: Erik Skultety <eskultet@redhat.com>
+Message-id: 20181122071613.2889-1-kraxel@redhat.com
+
+[ kraxel: reworded commit message as suggested by armbru ]
+
+(cherry picked from commit e1ca8f7e1915496148f6e0ce1f7c2309af013312)
+
+[ kraxel: No QAPI_CLONE() in rhel-7.  So do a manual clone of the
+          one essential field: DisplayOptions->type ]
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qapi/ui.json | 13 +++++++++++++
+ vl.c         |  9 +++++++++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/qapi/ui.json b/qapi/ui.json
+index 3e8aeee..1475867 100644
+--- a/qapi/ui.json
++++ b/qapi/ui.json
+@@ -1071,3 +1071,16 @@
+                 'egl-headless'   : 'DisplayEGLHeadless',
+                 'curses'         : 'DisplayNoOpts',
+                 'cocoa'          : 'DisplayNoOpts' } }
++
++##
++# @query-display-options:
++#
++# Returns information about display configuration
++#
++# Returns: @DisplayOptions
++#
++# Since: 3.1
++#
++##
++{ 'command': 'query-display-options',
++  'returns': 'DisplayOptions' }
+diff --git a/vl.c b/vl.c
+index 713f899..8b79eb9 100644
+--- a/vl.c
++++ b/vl.c
+@@ -129,6 +129,7 @@ int main(int argc, char **argv)
+ #include "qapi/qapi-commands-block-core.h"
+ #include "qapi/qapi-commands-misc.h"
+ #include "qapi/qapi-commands-run-state.h"
++#include "qapi/qapi-commands-ui.h"
+ #include "qapi/qmp/qerror.h"
+ #include "sysemu/iothread.h"
+ 
+@@ -2119,6 +2120,14 @@ static void select_vgahw(const char *p)
+     }
+ }
+ 
++DisplayOptions *qmp_query_display_options(Error **errp)
++{
++    DisplayOptions *r = g_new0(DisplayOptions, 1);
++
++    r->type = dpy.type;
++    return r;
++}
++
+ static void parse_display(const char *p)
+ {
+     const char *opts;
+-- 
+1.8.3.1
+

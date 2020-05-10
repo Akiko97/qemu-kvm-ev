@@ -1,0 +1,90 @@
+From 03240b36532d828a71fd3c9fee7b1ed6e8faa7a5 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:47:45 +0200
+Subject: [PATCH 16/89] qemu-iotests: reduce chance of races in 185
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-3-kwolf@redhat.com>
+Patchwork-id: 81061
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 02/73] qemu-iotests: reduce chance of races in 185
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Stefan Hajnoczi <stefanha@redhat.com>
+
+Commit 8565c3ab537e78f3e69977ec2c609dc9417a806e ("qemu-iotests: fix
+185") identified a race condition in a sub-test.
+
+Similar issues also affect the other sub-tests.  If disk I/O completes
+quickly, it races with the QMP 'quit' command.  This causes spurious
+test failures because QMP events are emitted in an unpredictable order.
+
+This test relies on QEMU internals and there is no QMP API for getting
+deterministic behavior needed to make this test 100% reliable.  At the
+same time, the test is useful and it would be a shame to remove it.
+
+Add sleep 0.5 to reduce the chance of races.  This is not a real fix but
+appears to reduce spurious failures in practice.
+
+Cc: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-id: 20180508135436.30140-2-stefanha@redhat.com
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit ddf2d98a94c8a98a661a217fb629cfd15f4dcec7)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/185 | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/tests/qemu-iotests/185 b/tests/qemu-iotests/185
+index 298d88d..975404c 100755
+--- a/tests/qemu-iotests/185
++++ b/tests/qemu-iotests/185
+@@ -118,6 +118,9 @@ _send_qemu_cmd $h \
+                       'speed': 65536 } }" \
+     "return"
+ 
++# If we don't sleep here 'quit' command races with disk I/O
++sleep 0.5
++
+ _send_qemu_cmd $h "{ 'execute': 'quit' }" "return"
+ wait=1 _cleanup_qemu
+ 
+@@ -137,6 +140,9 @@ _send_qemu_cmd $h \
+                       'speed': 65536 } }" \
+     "return"
+ 
++# If we don't sleep here 'quit' command races with disk I/O
++sleep 0.5
++
+ _send_qemu_cmd $h "{ 'execute': 'quit' }" "return"
+ wait=1 _cleanup_qemu
+ 
+@@ -183,6 +189,9 @@ _send_qemu_cmd $h \
+                       'speed': 65536 } }" \
+     "return"
+ 
++# If we don't sleep here 'quit' command races with disk I/O
++sleep 0.5
++
+ _send_qemu_cmd $h "{ 'execute': 'quit' }" "return"
+ wait=1 _cleanup_qemu
+ 
+@@ -201,6 +210,9 @@ _send_qemu_cmd $h \
+                       'speed': 65536 } }" \
+     "return"
+ 
++# If we don't sleep here 'quit' command races with disk I/O
++sleep 0.5
++
+ _send_qemu_cmd $h "{ 'execute': 'quit' }" "return"
+ wait=1 _cleanup_qemu
+ 
+-- 
+1.8.3.1
+

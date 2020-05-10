@@ -1,0 +1,60 @@
+From f969846f7376f6e33b3af86c498a51cb29ca0cca Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:41 +0200
+Subject: [PATCH 136/163] block/dirty-bitmap: remove set/reset assertions
+ against enabled bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-6-jsnow@redhat.com>
+Patchwork-id: 85426
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 05/21] block/dirty-bitmap: remove set/reset assertions against enabled bit
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+bdrv_set_dirty_bitmap and bdrv_reset_dirty_bitmap are only used as an
+internal API by the mirror and migration areas of our code. These
+calls modify the bitmap, but do so at the behest of QEMU and not the
+guest.
+
+Presently, these bitmaps are always "enabled" anyway, but there's no
+reason they have to be.
+
+Modify these internal APIs to drop this assertion.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190223000614.13894-4-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit c28ddbb07ef39d79a81941d97faa1a1bb1ce2249)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index f8984b8..7dc5b55 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -544,7 +544,6 @@ int64_t bdrv_dirty_iter_next(BdrvDirtyBitmapIter *iter)
+ void bdrv_set_dirty_bitmap_locked(BdrvDirtyBitmap *bitmap,
+                                   int64_t offset, int64_t bytes)
+ {
+-    assert(bdrv_dirty_bitmap_enabled(bitmap));
+     assert(!bdrv_dirty_bitmap_readonly(bitmap));
+     hbitmap_set(bitmap->bitmap, offset, bytes);
+ }
+@@ -561,7 +560,6 @@ void bdrv_set_dirty_bitmap(BdrvDirtyBitmap *bitmap,
+ void bdrv_reset_dirty_bitmap_locked(BdrvDirtyBitmap *bitmap,
+                                     int64_t offset, int64_t bytes)
+ {
+-    assert(bdrv_dirty_bitmap_enabled(bitmap));
+     assert(!bdrv_dirty_bitmap_readonly(bitmap));
+     hbitmap_reset(bitmap->bitmap, offset, bytes);
+ }
+-- 
+1.8.3.1
+

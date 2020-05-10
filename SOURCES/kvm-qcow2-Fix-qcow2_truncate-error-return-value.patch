@@ -1,0 +1,44 @@
+From 2854a11fc02a664688ddc3ccbd7786f0aec219bd Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Thu, 12 Jul 2018 14:42:53 +0200
+Subject: [PATCH 34/89] qcow2: Fix qcow2_truncate() error return value
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180712144258.17303-2-kwolf@redhat.com>
+Patchwork-id: 81325
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/6] qcow2: Fix qcow2_truncate() error return value
+Bugzilla: 1595173
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If qcow2_alloc_clusters_at() returns an error, we do need to negate it
+to get back the positive errno code for error_setg_errno(), but we still
+need to return the negative error code.
+
+Fixes: 772d1f973f87269f6a4a4ea4b880680f3779bbdf
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit ae5475e82fd1ebb24f4f77cf28f59ca6548c6136)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index da74e2a..dbd448c 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -3594,7 +3594,7 @@ static int qcow2_truncate(BlockDriverState *bs, int64_t offset,
+         if (clusters_allocated < 0) {
+             error_setg_errno(errp, -clusters_allocated,
+                              "Failed to allocate data clusters");
+-            return -clusters_allocated;
++            return clusters_allocated;
+         }
+ 
+         assert(clusters_allocated == nb_new_data_clusters);
+-- 
+1.8.3.1
+

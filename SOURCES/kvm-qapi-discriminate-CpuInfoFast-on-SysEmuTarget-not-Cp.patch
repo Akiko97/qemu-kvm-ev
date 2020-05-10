@@ -1,0 +1,246 @@
+From 17a1d383393e879c43e2aa8f2b264cb001cbca78 Mon Sep 17 00:00:00 2001
+From: Laszlo Ersek <lersek@redhat.com>
+Date: Tue, 13 Nov 2018 18:16:37 +0100
+Subject: [PATCH 18/22] qapi: discriminate CpuInfoFast on SysEmuTarget, not
+ CpuInfoArch
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Laszlo Ersek <lersek@redhat.com>
+Message-id: <20181113181639.4999-5-lersek@redhat.com>
+Patchwork-id: 83005
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 4/6] qapi: discriminate CpuInfoFast on SysEmuTarget, not CpuInfoArch
+Bugzilla: 1607406
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+Add a new field @target (of type @SysEmuTarget) to the output of the
+@query-cpus-fast command, which provides more information about the
+emulation target than the field @arch (of type @CpuInfoArch). Make @target
+the new discriminator for the @CpuInfoFast return structure. Keep @arch
+for compatibility.
+
+Cc: "Daniel P. Berrange" <berrange@redhat.com>
+Cc: Eric Blake <eblake@redhat.com>
+Cc: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Laszlo Ersek <lersek@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180427192852.15013-5-lersek@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit daa9d2bc6d73618bc230787ddfa821a6a6560fc2)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ cpus.c         | 87 ++++++++++++++++++++++++++++++++++++++++++----------------
+ qapi/misc.json | 62 +++++++++++++++++++++++++++++++----------
+ 2 files changed, 110 insertions(+), 39 deletions(-)
+
+diff --git a/cpus.c b/cpus.c
+index 4f83f16..be3a4eb 100644
+--- a/cpus.c
++++ b/cpus.c
+@@ -2187,6 +2187,59 @@ CpuInfoList *qmp_query_cpus(Error **errp)
+     return head;
+ }
+ 
++static CpuInfoArch sysemu_target_to_cpuinfo_arch(SysEmuTarget target)
++{
++    /*
++     * The @SysEmuTarget -> @CpuInfoArch mapping below is based on the
++     * TARGET_ARCH -> TARGET_BASE_ARCH mapping in the "configure" script.
++     */
++    switch (target) {
++    case SYS_EMU_TARGET_I386:
++    case SYS_EMU_TARGET_X86_64:
++        return CPU_INFO_ARCH_X86;
++
++    case SYS_EMU_TARGET_PPC:
++    case SYS_EMU_TARGET_PPCEMB:
++    case SYS_EMU_TARGET_PPC64:
++        return CPU_INFO_ARCH_PPC;
++
++    case SYS_EMU_TARGET_SPARC:
++    case SYS_EMU_TARGET_SPARC64:
++        return CPU_INFO_ARCH_SPARC;
++
++    case SYS_EMU_TARGET_MIPS:
++    case SYS_EMU_TARGET_MIPSEL:
++    case SYS_EMU_TARGET_MIPS64:
++    case SYS_EMU_TARGET_MIPS64EL:
++        return CPU_INFO_ARCH_MIPS;
++
++    case SYS_EMU_TARGET_TRICORE:
++        return CPU_INFO_ARCH_TRICORE;
++
++    case SYS_EMU_TARGET_S390X:
++        return CPU_INFO_ARCH_S390;
++
++    case SYS_EMU_TARGET_RISCV32:
++    case SYS_EMU_TARGET_RISCV64:
++        return CPU_INFO_ARCH_RISCV;
++
++    default:
++        return CPU_INFO_ARCH_OTHER;
++    }
++}
++
++static void cpustate_to_cpuinfo_s390(CpuInfoS390 *info, const CPUState *cpu)
++{
++#ifdef TARGET_S390X
++    S390CPU *s390_cpu = S390_CPU(cpu);
++    CPUS390XState *env = &s390_cpu->env;
++
++    info->cpu_state = env->cpu_state;
++#else
++    abort();
++#endif
++}
++
+ /*
+  * fast means: we NEVER interrupt vCPU threads to retrieve
+  * information from KVM.
+@@ -2196,11 +2249,9 @@ CpuInfoFastList *qmp_query_cpus_fast(Error **errp)
+     MachineState *ms = MACHINE(qdev_get_machine());
+     MachineClass *mc = MACHINE_GET_CLASS(ms);
+     CpuInfoFastList *head = NULL, *cur_item = NULL;
++    SysEmuTarget target = qapi_enum_parse(&SysEmuTarget_lookup, TARGET_NAME,
++                                          -1, &error_abort);
+     CPUState *cpu;
+-#if defined(TARGET_S390X)
+-    S390CPU *s390_cpu;
+-    CPUS390XState *env;
+-#endif
+ 
+     CPU_FOREACH(cpu) {
+         CpuInfoFastList *info = g_malloc0(sizeof(*info));
+@@ -2218,26 +2269,14 @@ CpuInfoFastList *qmp_query_cpus_fast(Error **errp)
+             info->value->props = props;
+         }
+ 
+-#if defined(TARGET_I386)
+-        info->value->arch = CPU_INFO_ARCH_X86;
+-#elif defined(TARGET_PPC)
+-        info->value->arch = CPU_INFO_ARCH_PPC;
+-#elif defined(TARGET_SPARC)
+-        info->value->arch = CPU_INFO_ARCH_SPARC;
+-#elif defined(TARGET_MIPS)
+-        info->value->arch = CPU_INFO_ARCH_MIPS;
+-#elif defined(TARGET_TRICORE)
+-        info->value->arch = CPU_INFO_ARCH_TRICORE;
+-#elif defined(TARGET_S390X)
+-        s390_cpu = S390_CPU(cpu);
+-        env = &s390_cpu->env;
+-        info->value->arch = CPU_INFO_ARCH_S390;
+-        info->value->u.s390.cpu_state = env->cpu_state;
+-#elif defined(TARGET_RISCV)
+-        info->value->arch = CPU_INFO_ARCH_RISCV;
+-#else
+-        info->value->arch = CPU_INFO_ARCH_OTHER;
+-#endif
++        info->value->arch = sysemu_target_to_cpuinfo_arch(target);
++        info->value->target = target;
++        if (target == SYS_EMU_TARGET_S390X) {
++            cpustate_to_cpuinfo_s390(&info->value->u.s390x, cpu);
++        } else {
++            /* do nothing for @CpuInfoOther */
++        }
++
+         if (!cur_item) {
+             head = cur_item = info;
+         } else {
+diff --git a/qapi/misc.json b/qapi/misc.json
+index 7cf4fbc..d7fd8bd 100644
+--- a/qapi/misc.json
++++ b/qapi/misc.json
+@@ -558,25 +558,55 @@
+ # @props: properties describing to which node/socket/core/thread
+ #         virtual CPU belongs to, provided if supported by board
+ #
+-# @arch: architecture of the cpu, which determines which additional fields
+-#        will be listed
++# @arch: base architecture of the cpu
++#
++# @target: the QEMU system emulation target, which is more specific than
++#          @arch and determines which additional fields will be listed
++#          (since 2.13)
+ #
+ # Since: 2.12
+ #
+ ##
+-{ 'union': 'CpuInfoFast',
+-  'base': {'cpu-index': 'int', 'qom-path': 'str',
+-           'thread-id': 'int', '*props': 'CpuInstanceProperties',
+-           'arch': 'CpuInfoArch' },
+-  'discriminator': 'arch',
+-  'data': { 'x86': 'CpuInfoOther',
+-            'sparc': 'CpuInfoOther',
+-            'ppc': 'CpuInfoOther',
+-            'mips': 'CpuInfoOther',
+-            'tricore': 'CpuInfoOther',
+-            's390': 'CpuInfoS390',
+-            'riscv': 'CpuInfoOther',
+-            'other': 'CpuInfoOther' } }
++{ 'union'         : 'CpuInfoFast',
++  'base'          : { 'cpu-index'    : 'int',
++                      'qom-path'     : 'str',
++                      'thread-id'    : 'int',
++                      '*props'       : 'CpuInstanceProperties',
++                      'arch'         : 'CpuInfoArch',
++                      'target'       : 'SysEmuTarget' },
++  'discriminator' : 'target',
++  'data'          : { 'aarch64'      : 'CpuInfoOther',
++                      'alpha'        : 'CpuInfoOther',
++                      'arm'          : 'CpuInfoOther',
++                      'cris'         : 'CpuInfoOther',
++                      'hppa'         : 'CpuInfoOther',
++                      'i386'         : 'CpuInfoOther',
++                      'lm32'         : 'CpuInfoOther',
++                      'm68k'         : 'CpuInfoOther',
++                      'microblaze'   : 'CpuInfoOther',
++                      'microblazeel' : 'CpuInfoOther',
++                      'mips'         : 'CpuInfoOther',
++                      'mips64'       : 'CpuInfoOther',
++                      'mips64el'     : 'CpuInfoOther',
++                      'mipsel'       : 'CpuInfoOther',
++                      'moxie'        : 'CpuInfoOther',
++                      'nios2'        : 'CpuInfoOther',
++                      'or1k'         : 'CpuInfoOther',
++                      'ppc'          : 'CpuInfoOther',
++                      'ppc64'        : 'CpuInfoOther',
++                      'ppcemb'       : 'CpuInfoOther',
++                      'riscv32'      : 'CpuInfoOther',
++                      'riscv64'      : 'CpuInfoOther',
++                      's390x'        : 'CpuInfoS390',
++                      'sh4'          : 'CpuInfoOther',
++                      'sh4eb'        : 'CpuInfoOther',
++                      'sparc'        : 'CpuInfoOther',
++                      'sparc64'      : 'CpuInfoOther',
++                      'tricore'      : 'CpuInfoOther',
++                      'unicore32'    : 'CpuInfoOther',
++                      'x86_64'       : 'CpuInfoOther',
++                      'xtensa'       : 'CpuInfoOther',
++                      'xtensaeb'     : 'CpuInfoOther' } }
+ 
+ ##
+ # @query-cpus-fast:
+@@ -602,6 +632,7 @@
+ #             },
+ #             "qom-path": "/machine/unattached/device[0]",
+ #             "arch":"x86",
++#             "target":"x86_64",
+ #             "cpu-index": 0
+ #         },
+ #         {
+@@ -613,6 +644,7 @@
+ #             },
+ #             "qom-path": "/machine/unattached/device[2]",
+ #             "arch":"x86",
++#             "target":"x86_64",
+ #             "cpu-index": 1
+ #         }
+ #     ]
+-- 
+1.8.3.1
+

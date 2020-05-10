@@ -1,0 +1,85 @@
+From 7ea7ac78a4d38bc1873df660406b25949515cf07 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:24 +0200
+Subject: [PATCH 55/89] block: Cancel job in bdrv_close_all() callers
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-42-kwolf@redhat.com>
+Patchwork-id: 81098
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 41/73] block: Cancel job in bdrv_close_all() callers
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Now that we cancel all jobs and not only block jobs on shutdown, doing
+that in bdrv_close_all() isn't really appropriate any more. Move the
+job_cancel_sync_all() call to the callers, and only assert that there
+are no job running in bdrv_close_all().
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit b3b5299d58bce4366c647af40374e6b063f371eb)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c    | 4 +---
+ qemu-nbd.c | 8 +++++++-
+ vl.c       | 1 +
+ 3 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/block.c b/block.c
+index a83787f..afe30ca 100644
+--- a/block.c
++++ b/block.c
+@@ -3374,9 +3374,7 @@ static void bdrv_close(BlockDriverState *bs)
+ 
+ void bdrv_close_all(void)
+ {
+-    /* TODO We do want to cancel all jobs instead of just block jobs on
+-     * shutdown, but bdrv_close_all() isn't the right place any more. */
+-    job_cancel_sync_all();
++    assert(job_next(NULL) == NULL);
+     nbd_export_close_all();
+ 
+     /* Drop references from requests still in flight, such as canceled block
+diff --git a/qemu-nbd.c b/qemu-nbd.c
+index 0af0560..51b9d38 100644
+--- a/qemu-nbd.c
++++ b/qemu-nbd.c
+@@ -482,6 +482,12 @@ static const char *socket_activation_validate_opts(const char *device,
+     return NULL;
+ }
+ 
++static void qemu_nbd_shutdown(void)
++{
++    job_cancel_sync_all();
++    bdrv_close_all();
++}
++
+ int main(int argc, char **argv)
+ {
+     BlockBackend *blk;
+@@ -928,7 +934,7 @@ int main(int argc, char **argv)
+         exit(EXIT_FAILURE);
+     }
+     bdrv_init();
+-    atexit(bdrv_close_all);
++    atexit(qemu_nbd_shutdown);
+ 
+     srcpath = argv[optind];
+     if (imageOpts) {
+diff --git a/vl.c b/vl.c
+index f3acab3..713f899 100644
+--- a/vl.c
++++ b/vl.c
+@@ -4772,6 +4772,7 @@ int main(int argc, char **argv, char **envp)
+     /* No more vcpu or device emulation activity beyond this point */
+     vm_shutdown();
+ 
++    job_cancel_sync_all();
+     bdrv_close_all();
+ 
+     res_free();
+-- 
+1.8.3.1
+

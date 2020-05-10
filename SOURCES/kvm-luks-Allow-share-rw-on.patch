@@ -1,0 +1,54 @@
+From baa218a4170b17e3699272a481ee04616c9432f0 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 4 Feb 2019 21:08:22 +0100
+Subject: [PATCH 8/8] luks: Allow share-rw=on
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20190204210822.10343-2-mreitz@redhat.com>
+Patchwork-id: 84228
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/1] luks: Allow share-rw=on
+Bugzilla: 1598119
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Yash Mankad <ymankad@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+Format drivers such as qcow2 don't allow sharing the same image between
+two QEMU instances in order to prevent image corruptions, because of
+metadata cache. LUKS driver don't modify metadata except for when
+creating image, so it is safe to relax the permission. This makes
+share-rw=on property work on virtual devices.
+
+Suggested-by: Daniel P. Berrangé <berrange@redhat.com>
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 497da8236ab2663a8108858ba7ea59aac21c5fe6)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/crypto.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/block/crypto.c b/block/crypto.c
+index 02f04f3..0bb0db6 100644
+--- a/block/crypto.c
++++ b/block/crypto.c
+@@ -698,7 +698,9 @@ BlockDriver bdrv_crypto_luks = {
+     .bdrv_probe         = block_crypto_probe_luks,
+     .bdrv_open          = block_crypto_open_luks,
+     .bdrv_close         = block_crypto_close,
+-    .bdrv_child_perm    = bdrv_format_default_perms,
++    /* This driver doesn't modify LUKS metadata except when creating image.
++     * Allow share-rw=on as a special case. */
++    .bdrv_child_perm    = bdrv_filter_default_perms,
+     .bdrv_co_create     = block_crypto_co_create_luks,
+     .bdrv_co_create_opts = block_crypto_co_create_opts_luks,
+     .bdrv_co_truncate   = block_crypto_co_truncate,
+-- 
+1.8.3.1
+

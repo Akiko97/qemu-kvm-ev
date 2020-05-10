@@ -1,0 +1,92 @@
+From ca5abb0f6123f6699f84125c7c358e29c5cce2a7 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:21 +0100
+Subject: [PATCH 023/163] iotests: remove default filters from qmp_log
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-10-jsnow@redhat.com>
+Patchwork-id: 84942
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 09/19] iotests: remove default filters from qmp_log
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Several places in iotests deal with serializing objects into JSON
+strings, but to add pretty-printing it seems desirable to localize
+all of those cases.
+
+log() seems like a good candidate for that centralized behavior.
+log() can already serialize json objects, but when it does so,
+it assumes filters=[] operates on QMP objects, not strings.
+
+qmp_log currently operates by dumping outgoing and incoming QMP
+objects into strings and filtering them assuming that filters=[]
+are string filters.
+
+To have qmp_log use log's serialization, qmp_log will need to
+accept only qmp filters, not text filters.
+
+However, only a single caller of qmp_log actually requires any
+filters at all. I remove the default filter and add it explicitly
+to the caller in preparation for refactoring qmp_log to use rich
+filters instead.
+
+test 206 is amended to name the filter explicitly and the default
+is removed.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20181221093529.23855-9-jsnow@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit f8ca8609d8549def45b28e82ecac64adaeee9f12)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/206        | 8 ++++++--
+ tests/qemu-iotests/iotests.py | 2 +-
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/tests/qemu-iotests/206 b/tests/qemu-iotests/206
+index 128c334..e92550f 100755
+--- a/tests/qemu-iotests/206
++++ b/tests/qemu-iotests/206
+@@ -26,7 +26,9 @@ from iotests import imgfmt
+ iotests.verify_image_format(supported_fmts=['qcow2'])
+ 
+ def blockdev_create(vm, options):
+-    result = vm.qmp_log('blockdev-create', job_id='job0', options=options)
++    result = vm.qmp_log('blockdev-create',
++                        filters=[iotests.filter_testfiles],
++                        job_id='job0', options=options)
+ 
+     if 'return' in result:
+         assert result['return'] == {}
+@@ -52,7 +54,9 @@ with iotests.FilePath('t.qcow2') as disk_path, \
+                           'filename': disk_path,
+                           'size': 0 })
+ 
+-    vm.qmp_log('blockdev-add', driver='file', filename=disk_path,
++    vm.qmp_log('blockdev-add',
++               filters=[iotests.filter_testfiles],
++               driver='file', filename=disk_path,
+                node_name='imgfile')
+ 
+     blockdev_create(vm, { 'driver': imgfmt,
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index bd508be..30d198a 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -454,7 +454,7 @@ class VM(qtest.QEMUQtestMachine):
+             result.append(filter_qmp_event(ev))
+         return result
+ 
+-    def qmp_log(self, cmd, filters=[filter_testfiles], **kwargs):
++    def qmp_log(self, cmd, filters=[], **kwargs):
+         full_cmd = OrderedDict((
+             ("execute", cmd),
+             ("arguments", ordered_kwargs(kwargs))
+-- 
+1.8.3.1
+

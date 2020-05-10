@@ -1,0 +1,102 @@
+From fd8563f0e3d4697334188aa25ff92f0655752602 Mon Sep 17 00:00:00 2001
+From: Yash Mankad <ymankad@redhat.com>
+Date: Tue, 17 Jul 2018 23:38:08 +0200
+Subject: [PATCH 51/89] Acceptance tests: add Linux kernel boot and console
+ checking test
+
+RH-Author: Yash Mankad <ymankad@redhat.com>
+Message-id: <3a22fbea648a71abf84257d69931075cafe3340e.1531870629.git.ymankad@redhat.com>
+Patchwork-id: 81380
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 5/5] Acceptance tests: add Linux kernel boot and console checking test
+Bugzilla:
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+
+From: Cleber Rosa <crosa@redhat.com>
+
+This test boots a Linux kernel, and checks that the given command
+line was effective in two ways:
+
+ * It makes the kernel use the set "console device" as a console
+ * The kernel records the command line as expected in the console
+
+Given that way too many error conditions may occur, and detecting the
+kernel boot progress status may not be trivial, this test relies on a
+timeout to handle unexpected situations.  Also, it's *not* tagged as a
+quick test for obvious reasons.
+
+It may be useful, while interactively running/debugging this test, or
+tests similar to this one, to show some of the logging channels.
+Example:
+
+ $ avocado --show=QMP,console run boot_linux_console.py
+
+Signed-off-by: Cleber Rosa <crosa@redhat.com>
+Message-Id: <20180530184156.15634-6-crosa@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit c1cc73f407b890c4e7ab5bf520c0637e0364e92a)
+Signed-off-by: Yash Mankad <ymankad@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/acceptance/boot_linux_console.py | 47 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 47 insertions(+)
+ create mode 100644 tests/acceptance/boot_linux_console.py
+
+diff --git a/tests/acceptance/boot_linux_console.py b/tests/acceptance/boot_linux_console.py
+new file mode 100644
+index 0000000..98324f7
+--- /dev/null
++++ b/tests/acceptance/boot_linux_console.py
+@@ -0,0 +1,47 @@
++# Functional test that boots a Linux kernel and checks the console
++#
++# Copyright (c) 2018 Red Hat, Inc.
++#
++# Author:
++#  Cleber Rosa <crosa@redhat.com>
++#
++# This work is licensed under the terms of the GNU GPL, version 2 or
++# later.  See the COPYING file in the top-level directory.
++
++import logging
++
++from avocado_qemu import Test
++
++
++class BootLinuxConsole(Test):
++    """
++    Boots a x86_64 Linux kernel and checks that the console is operational
++    and the kernel command line is properly passed from QEMU to the kernel
++
++    :avocado: enable
++    :avocado: tags=x86_64
++    """
++
++    timeout = 60
++
++    def test(self):
++        kernel_url = ('https://mirrors.kernel.org/fedora/releases/28/'
++                      'Everything/x86_64/os/images/pxeboot/vmlinuz')
++        kernel_hash = '238e083e114c48200f80d889f7e32eeb2793e02a'
++        kernel_path = self.fetch_asset(kernel_url, asset_hash=kernel_hash)
++
++        self.vm.set_machine('pc')
++        self.vm.set_console()
++        kernel_command_line = 'console=ttyS0'
++        self.vm.add_args('-kernel', kernel_path,
++                         '-append', kernel_command_line)
++        self.vm.launch()
++        console = self.vm.console_socket.makefile()
++        console_logger = logging.getLogger('console')
++        while True:
++            msg = console.readline()
++            console_logger.debug(msg.strip())
++            if 'Kernel command line: %s' % kernel_command_line in msg:
++                break
++            if 'Kernel panic - not syncing' in msg:
++                self.fail("Kernel panic reached")
+-- 
+1.8.3.1
+

@@ -1,0 +1,138 @@
+From 1ac2f161e5585d1ed71b79e8279c9d78b2efe35e Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Mon, 17 Sep 2018 07:48:43 +0200
+Subject: [PATCH 01/49] commit: Add top-node/base-node options
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180911130704.6641-2-kwolf@redhat.com>
+Patchwork-id: 82114
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/2] commit: Add top-node/base-node options
+Bugzilla: 1624012
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+The block-commit QMP command required specifying the top and base nodes
+of the commit jobs using the file name of that node. While this works
+in simple cases (local files with absolute paths), the file names
+generated for more complicated setups can be hard to predict.
+
+The block-commit command has more problems than just this, so we want to
+replace it altogether in the long run, but libvirt needs a reliable way
+to address nodes now. So we don't want to wait for a new, cleaner
+command, but just add the minimal thing needed right now.
+
+This adds two new options top-node and base-node to the command, which
+allow specifying node names instead. They are mutually exclusive with
+the old options.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+---
+ blockdev.c           | 32 ++++++++++++++++++++++++++++++--
+ qapi/block-core.json | 24 ++++++++++++++++++------
+ 2 files changed, 48 insertions(+), 8 deletions(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index 0eb6bba..fb355c8 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3371,7 +3371,9 @@ out:
+ }
+ 
+ void qmp_block_commit(bool has_job_id, const char *job_id, const char *device,
++                      bool has_base_node, const char *base_node,
+                       bool has_base, const char *base,
++                      bool has_top_node, const char *top_node,
+                       bool has_top, const char *top,
+                       bool has_backing_file, const char *backing_file,
+                       bool has_speed, int64_t speed,
+@@ -3432,7 +3434,20 @@ void qmp_block_commit(bool has_job_id, const char *job_id, const char *device,
+     /* default top_bs is the active layer */
+     top_bs = bs;
+ 
+-    if (has_top && top) {
++    if (has_top_node && has_top) {
++        error_setg(errp, "'top-node' and 'top' are mutually exclusive");
++        goto out;
++    } else if (has_top_node) {
++        top_bs = bdrv_lookup_bs(NULL, top_node, errp);
++        if (top_bs == NULL) {
++            goto out;
++        }
++        if (!bdrv_chain_contains(bs, top_bs)) {
++            error_setg(errp, "'%s' is not in this backing file chain",
++                       top_node);
++            goto out;
++        }
++    } else if (has_top && top) {
+         if (strcmp(bs->filename, top) != 0) {
+             top_bs = bdrv_find_backing_image(bs, top);
+         }
+@@ -3445,7 +3460,20 @@ void qmp_block_commit(bool has_job_id, const char *job_id, const char *device,
+ 
+     assert(bdrv_get_aio_context(top_bs) == aio_context);
+ 
+-    if (has_base && base) {
++    if (has_base_node && has_base) {
++        error_setg(errp, "'base-node' and 'base' are mutually exclusive");
++        goto out;
++    } else if (has_base_node) {
++        base_bs = bdrv_lookup_bs(NULL, base_node, errp);
++        if (base_bs == NULL) {
++            goto out;
++        }
++        if (!bdrv_chain_contains(top_bs, base_bs)) {
++            error_setg(errp, "'%s' is not in this backing file chain",
++                       base_node);
++            goto out;
++        }
++    } else if (has_base && base) {
+         base_bs = bdrv_find_backing_image(top_bs, base);
+     } else {
+         base_bs = bdrv_find_base(top_bs);
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 56937db..8da07cd 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1440,12 +1440,23 @@
+ #
+ # @device:  the device name or node-name of a root node
+ #
+-# @base:   The file name of the backing image to write data into.
+-#                    If not specified, this is the deepest backing image.
++# @base-node: The node name of the backing image to write data into.
++#             If not specified, this is the deepest backing image.
++#             (since: 3.1)
+ #
+-# @top:    The file name of the backing image within the image chain,
+-#                    which contains the topmost data to be committed down. If
+-#                    not specified, this is the active layer.
++# @base: Same as @base-node, except that it is a file name rather than a node
++#        name. This must be the exact filename string that was used to open the
++#        node; other strings, even if addressing the same file, are not
++#        accepted (deprecated, use @base-node instead)
++#
++# @top-node: The node name of the backing image within the image chain
++#            which contains the topmost data to be committed down. If
++#            not specified, this is the active layer. (since: 3.1)
++#
++# @top: Same as @top-node, except that it is a file name rather than a node
++#       name. This must be the exact filename string that was used to open the
++#       node; other strings, even if addressing the same file, are not
++#       accepted (deprecated, use @base-node instead)
+ #
+ # @backing-file:  The backing file string to write into the overlay
+ #                           image of 'top'.  If 'top' is the active layer,
+@@ -1514,7 +1525,8 @@
+ #
+ ##
+ { 'command': 'block-commit',
+-  'data': { '*job-id': 'str', 'device': 'str', '*base': 'str', '*top': 'str',
++  'data': { '*job-id': 'str', 'device': 'str', '*base-node': 'str',
++            '*base': 'str', '*top-node': 'str', '*top': 'str',
+             '*backing-file': 'str', '*speed': 'int',
+             '*filter-node-name': 'str',
+             '*auto-finalize': 'bool', '*auto-dismiss': 'bool' } }
+-- 
+1.8.3.1
+

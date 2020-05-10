@@ -1,0 +1,113 @@
+From 035c7c0a1c88284d2628532a70f43c04aa0aba56 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 25 Jan 2019 22:50:02 +0100
+Subject: [PATCH 02/23] exec: small changes to flatview_do_translate
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190125225007.8197-3-jsnow@redhat.com>
+Patchwork-id: 84117
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 2/7] exec: small changes to flatview_do_translate
+Bugzilla: 1597482
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+From: Paolo Bonzini <pbonzini@redhat.com>
+
+Prepare for extracting the IOMMU part to a separate function.  Mostly
+cosmetic; the only semantic change is that, if there is more than one
+cascaded IOMMU and the second one fails to translate, *plen_out is now
+adjusted according to the page mask of the first IOMMU.
+
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit ad2804d9e47df2dab642a253502b5ceef233f450)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ exec.c | 33 ++++++++++++++-------------------
+ 1 file changed, 14 insertions(+), 19 deletions(-)
+
+diff --git a/exec.c b/exec.c
+index 9028700..c6aeded 100644
+--- a/exec.c
++++ b/exec.c
+@@ -459,6 +459,7 @@ address_space_translate_internal(AddressSpaceDispatch *d, hwaddr addr, hwaddr *x
+  *            would tell. It can be @NULL if we don't care about it.
+  * @is_write: whether the translation operation is for write
+  * @is_mmio: whether this can be MMIO, set true if it can
++ * @target_as: the address space targeted by the IOMMU
+  *
+  * This function is called from RCU critical section
+  */
+@@ -478,14 +479,14 @@ static MemoryRegionSection flatview_do_translate(FlatView *fv,
+     hwaddr page_mask = (hwaddr)(-1);
+     hwaddr plen = (hwaddr)(-1);
+ 
+-    if (plen_out) {
+-        plen = *plen_out;
++    if (!plen_out) {
++        plen_out = &plen;
+     }
+ 
+     for (;;) {
+         section = address_space_translate_internal(
+-                flatview_to_dispatch(fv), addr, &addr,
+-                &plen, is_mmio);
++                flatview_to_dispatch(fv), addr, xlat,
++                plen_out, is_mmio);
+ 
+         iommu_mr = memory_region_get_iommu(section->mr);
+         if (!iommu_mr) {
+@@ -493,35 +494,29 @@ static MemoryRegionSection flatview_do_translate(FlatView *fv,
+         }
+         imrc = memory_region_get_iommu_class_nocheck(iommu_mr);
+ 
++        addr = *xlat;
+         iotlb = imrc->translate(iommu_mr, addr, is_write ?
+                                 IOMMU_WO : IOMMU_RO);
+-        addr = ((iotlb.translated_addr & ~iotlb.addr_mask)
+-                | (addr & iotlb.addr_mask));
+-        page_mask &= iotlb.addr_mask;
+-        plen = MIN(plen, (addr | iotlb.addr_mask) - addr + 1);
+         if (!(iotlb.perm & (1 << is_write))) {
+             goto translate_fail;
+         }
+ 
++        addr = ((iotlb.translated_addr & ~iotlb.addr_mask)
++                | (addr & iotlb.addr_mask));
++        page_mask &= iotlb.addr_mask;
++        *plen_out = MIN(*plen_out, (addr | iotlb.addr_mask) - addr + 1);
+         fv = address_space_to_flatview(iotlb.target_as);
+         *target_as = iotlb.target_as;
+     }
+ 
+-    *xlat = addr;
+-
+-    if (page_mask == (hwaddr)(-1)) {
+-        /* Not behind an IOMMU, use default page size. */
+-        page_mask = ~TARGET_PAGE_MASK;
+-    }
+-
+     if (page_mask_out) {
++        if (page_mask == (hwaddr)(-1)) {
++            /* Not behind an IOMMU, use default page size. */
++            page_mask = ~TARGET_PAGE_MASK;
++        }
+         *page_mask_out = page_mask;
+     }
+ 
+-    if (plen_out) {
+-        *plen_out = plen;
+-    }
+-
+     return *section;
+ 
+ translate_fail:
+-- 
+1.8.3.1
+

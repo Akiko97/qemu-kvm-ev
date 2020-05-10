@@ -1,0 +1,63 @@
+From 6e4599e1863990d7f8aa409fb67ca115b99c2fdf Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Mon, 3 Sep 2018 04:52:38 +0200
+Subject: [PATCH 23/29] intel-iommu: pass in address space when page walk
+
+RH-Author: Peter Xu <peterx@redhat.com>
+Message-id: <20180903045241.6456-7-peterx@redhat.com>
+Patchwork-id: 82027
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 6/9] intel-iommu: pass in address space when page walk
+Bugzilla: 1623859
+RH-Acked-by: Xiao Wang <jasowang@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+
+We pass in the VTDAddressSpace too.  It'll be used in the follow up
+patches.
+
+CC: QEMU Stable <qemu-stable@nongnu.org>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 2f764fa87d2a81812b313dd6d998e10126292653)
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/intel_iommu.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/hw/i386/intel_iommu.c b/hw/i386/intel_iommu.c
+index e247269..a882894 100644
+--- a/hw/i386/intel_iommu.c
++++ b/hw/i386/intel_iommu.c
+@@ -754,9 +754,11 @@ typedef int (*vtd_page_walk_hook)(IOMMUTLBEntry *entry, void *private);
+  * @hook_fn: hook func to be called when detected page
+  * @private: private data to be passed into hook func
+  * @notify_unmap: whether we should notify invalid entries
++ * @as: VT-d address space of the device
+  * @aw: maximum address width
+  */
+ typedef struct {
++    VTDAddressSpace *as;
+     vtd_page_walk_hook hook_fn;
+     void *private;
+     bool notify_unmap;
+@@ -1463,6 +1465,7 @@ static void vtd_iotlb_page_invalidate_notify(IntelIOMMUState *s,
+                     .private = (void *)&vtd_as->iommu,
+                     .notify_unmap = true,
+                     .aw = s->aw_bits,
++                    .as = vtd_as,
+                 };
+ 
+                 /*
+@@ -2943,6 +2946,7 @@ static void vtd_iommu_replay(IOMMUMemoryRegion *iommu_mr, IOMMUNotifier *n)
+                 .private = (void *)n,
+                 .notify_unmap = false,
+                 .aw = s->aw_bits,
++                .as = vtd_as,
+             };
+ 
+             vtd_page_walk(&ce, 0, ~0ULL, &info);
+-- 
+1.8.3.1
+

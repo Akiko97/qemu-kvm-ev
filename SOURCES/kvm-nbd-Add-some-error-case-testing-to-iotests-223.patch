@@ -1,0 +1,131 @@
+From 0237c861ddbb4584443c45436c53e0282ecc10fd Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:26 +0100
+Subject: [PATCH 087/163] nbd: Add some error case testing to iotests 223
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-14-jsnow@redhat.com>
+Patchwork-id: 85175
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 13/55] nbd: Add some error case testing to iotests 223
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Testing success paths is important, but it's also nice to highlight
+expected failure handling, to show that we don't crash, and so that
+upcoming tests that change behavior can demonstrate the resulting
+effects on error paths.
+
+Add the following errors:
+Attempting to export without a running server
+Attempting to start a second server
+Attempting to export a bad node name
+Attempting to export a name that is already exported
+Attempting to export an enabled bitmap
+Attempting to remove an already removed export
+Attempting to quit server a second time
+
+All of these properly complain except for a second server-stop,
+which will be fixed next.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190111194720.15671-2-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit 2d2fd67428f0cfbffea16969d2635af3e2d78d3d)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/223     | 19 +++++++++++++++++--
+ tests/qemu-iotests/223.out |  7 +++++++
+ 2 files changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+index 5513dc6..61b46a2 100755
+--- a/tests/qemu-iotests/223
++++ b/tests/qemu-iotests/223
+@@ -107,6 +107,7 @@ echo
+ 
+ _launch_qemu 2> >(_filter_nbd)
+ 
++# Intentionally provoke some errors as well, to check error handling
+ silent=
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"qmp_capabilities"}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"blockdev-add",
+@@ -114,18 +115,29 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"blockdev-add",
+     "file":{"driver":"file", "filename":"'"$TEST_IMG"'"}}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"block-dirty-bitmap-disable",
+   "arguments":{"node":"n", "name":"b"}}' "return"
+-_send_qemu_cmd $QEMU_HANDLE '{"execute":"block-dirty-bitmap-disable",
+-  "arguments":{"node":"n", "name":"b2"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
++  "arguments":{"device":"n"}}' "error" # Attempt add without server
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-start",
+   "arguments":{"addr":{"type":"unix",
+     "data":{"path":"'"$TEST_DIR/nbd"'"}}}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-start",
++  "arguments":{"addr":{"type":"unix",
++    "data":{"path":"'"$TEST_DIR/nbd"1'"}}}}' "error" # Attempt second server
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+   "arguments":{"device":"n"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
++  "arguments":{"device":"nosuch"}}' "error" # Attempt to export missing node
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
++  "arguments":{"device":"n"}}' "error" # Attempt to export same name twice
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
+   "arguments":{"name":"n", "bitmap":"b"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
+   "arguments":{"device":"n", "name":"n2"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
++  "arguments":{"name":"n2", "bitmap":"b2"}}' "error" # Attempt enabled bitmap
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"block-dirty-bitmap-disable",
++  "arguments":{"node":"n", "name":"b2"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
+   "arguments":{"name":"n2", "bitmap":"b2"}}' "return"
+ 
+ echo
+@@ -157,7 +169,10 @@ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
+   "arguments":{"name":"n"}}' "return"
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
+   "arguments":{"name":"n2"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
++  "arguments":{"name":"n2"}}' "error" # Attempt duplicate clean
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "return" # Oops
+ _send_qemu_cmd $QEMU_HANDLE '{"execute":"quit"}' "return"
+ 
+ # success, all done
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+index de41747..c1eed62 100644
+--- a/tests/qemu-iotests/223.out
++++ b/tests/qemu-iotests/223.out
+@@ -27,10 +27,15 @@ wrote 2097152/2097152 bytes at offset 2097152
+ {"return": {}}
+ {"return": {}}
+ {"return": {}}
++{"error": {"class": "GenericError", "desc": "NBD server not running"}}
+ {"return": {}}
++{"error": {"class": "GenericError", "desc": "NBD server already running"}}
+ {"return": {}}
++{"error": {"class": "GenericError", "desc": "Cannot find device=nosuch nor node_name=nosuch"}}
++{"error": {"class": "GenericError", "desc": "NBD server already has export named 'n'"}}
+ {"return": {}}
+ {"return": {}}
++{"error": {"class": "GenericError", "desc": "Bitmap 'b2' is enabled"}}
+ {"return": {}}
+ {"return": {}}
+ 
+@@ -62,6 +67,8 @@ read 2097152/2097152 bytes at offset 2097152
+ 
+ {"return": {}}
+ {"return": {}}
++{"error": {"class": "GenericError", "desc": "Export 'n2' is not found"}}
++{"return": {}}
+ {"return": {}}
+ {"return": {}}
+ *** done
+-- 
+1.8.3.1
+

@@ -1,0 +1,77 @@
+From b700e58ee749512368c40a5f84b01c11d24903b9 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:22 +0200
+Subject: [PATCH 31/49] util/async: use qemu_aio_coroutine_enter in
+ co_schedule_bh_cb
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-25-kwolf@redhat.com>
+Patchwork-id: 82176
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 24/42] util/async: use qemu_aio_coroutine_enter in co_schedule_bh_cb
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Sergio Lopez <slp@redhat.com>
+
+AIO Coroutines shouldn't by managed by an AioContext different than the
+one assigned when they are created. aio_co_enter avoids entering a
+coroutine from a different AioContext, calling aio_co_schedule instead.
+
+Scheduled coroutines are then entered by co_schedule_bh_cb using
+qemu_coroutine_enter, which just calls qemu_aio_coroutine_enter with the
+current AioContext obtained with qemu_get_current_aio_context.
+Eventually, co->ctx will be set to the AioContext passed as an argument
+to qemu_aio_coroutine_enter.
+
+This means that, if an IO Thread's AioConext is being processed by the
+Main Thread (due to aio_poll being called with a BDS AioContext, as it
+happens in AIO_WAIT_WHILE among other places), the AioContext from some
+coroutines may be wrongly replaced with the one from the Main Thread.
+
+This is the root cause behind some crashes, mainly triggered by the
+drain code at block/io.c. The most common are these abort and failed
+assertion:
+
+util/async.c:aio_co_schedule
+456     if (scheduled) {
+457         fprintf(stderr,
+458                 "%s: Co-routine was already scheduled in '%s'\n",
+459                 __func__, scheduled);
+460         abort();
+461     }
+
+util/qemu-coroutine-lock.c:
+286     assert(mutex->holder == self);
+
+But it's also known to cause random errors at different locations, and
+even SIGSEGV with broken coroutine backtraces.
+
+By using qemu_aio_coroutine_enter directly in co_schedule_bh_cb, we can
+pass the correct AioContext as an argument, making sure co->ctx is not
+wrongly altered.
+
+Signed-off-by: Sergio Lopez <slp@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ util/async.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/util/async.c b/util/async.c
+index 4dd9d95..5693191 100644
+--- a/util/async.c
++++ b/util/async.c
+@@ -391,7 +391,7 @@ static void co_schedule_bh_cb(void *opaque)
+ 
+         /* Protected by write barrier in qemu_aio_coroutine_enter */
+         atomic_set(&co->scheduled, NULL);
+-        qemu_coroutine_enter(co);
++        qemu_aio_coroutine_enter(ctx, co);
+         aio_context_release(ctx);
+     }
+ }
+-- 
+1.8.3.1
+

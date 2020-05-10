@@ -1,0 +1,623 @@
+From 71efcd6903a5a857fb6a4b03ee19bb62c47b9dfd Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:49 +0200
+Subject: [PATCH 80/89] qemu-iotests: Rewrite 211 for blockdev-create job
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-67-kwolf@redhat.com>
+Patchwork-id: 81096
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 66/73] qemu-iotests: Rewrite 211 for blockdev-create job
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This rewrites the test case 211 to work with the new x-blockdev-create
+job rather than the old synchronous version of the command.
+
+All of the test cases stay the same as before, but in order to be able
+to implement proper job handling, the test case is rewritten in Python.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit abbab72cad2eafcaf3b0f4e970add813b4264e5f)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/211     | 381 ++++++++++++++++++---------------------------
+ tests/qemu-iotests/211.out | 133 +++++++++-------
+ tests/qemu-iotests/group   |   2 +-
+ 3 files changed, 229 insertions(+), 287 deletions(-)
+
+diff --git a/tests/qemu-iotests/211 b/tests/qemu-iotests/211
+index 1edec26..b45f886 100755
+--- a/tests/qemu-iotests/211
++++ b/tests/qemu-iotests/211
+@@ -1,9 +1,11 @@
+-#!/bin/bash
++#!/usr/bin/env python
+ #
+ # Test VDI and file image creation
+ #
+ # Copyright (C) 2018 Red Hat, Inc.
+ #
++# Creator/Owner: Kevin Wolf <kwolf@redhat.com>
++#
+ # This program is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 2 of the License, or
+@@ -18,229 +20,154 @@
+ # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ #
+ 
+-# creator
+-owner=kwolf@redhat.com
+-
+-seq=`basename $0`
+-echo "QA output created by $seq"
+-
+-here=`pwd`
+-status=1	# failure is the default!
+-
+-# get standard environment, filters and checks
+-. ./common.rc
+-. ./common.filter
+-
+-_supported_fmt vdi
+-_supported_proto file
+-_supported_os Linux
+-
+-function do_run_qemu()
+-{
+-    echo Testing: "$@"
+-    $QEMU -nographic -qmp stdio -serial none "$@"
+-    echo
+-}
+-
+-function run_qemu()
+-{
+-    do_run_qemu "$@" 2>&1 | _filter_testdir | _filter_qmp \
+-                          | _filter_qemu | _filter_imgfmt \
+-                          | _filter_actual_image_size
+-}
+-
+-echo
+-echo "=== Successful image creation (defaults) ==="
+-echo
+-
+-size=$((128 * 1024 * 1024))
+-
+-run_qemu <<EOF
+-{ "execute": "qmp_capabilities" }
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "file",
+-      "filename": "$TEST_IMG",
+-      "size": 0
+-  }
+-}
+-{ "execute": "blockdev-add",
+-  "arguments": {
+-      "driver": "file",
+-      "node-name": "imgfile",
+-      "filename": "$TEST_IMG"
+-  }
+-}
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": "imgfile",
+-      "size": $size
+-  }
+-}
+-{ "execute": "quit" }
+-EOF
+-
+-_img_info --format-specific | _filter_img_info --format-specific
+-$QEMU_IMG map --output=json "$TEST_IMG" | _filter_qemu_img_map
+-
+-echo
+-echo "=== Successful image creation (explicit defaults) ==="
+-echo
+-
+-# Choose a different size to show that we got a new image
+-size=$((64 * 1024 * 1024))
+-
+-run_qemu <<EOF
+-{ "execute": "qmp_capabilities" }
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "file",
+-      "filename": "$TEST_IMG",
+-      "size": 0
+-  }
+-}
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": {
+-          "driver": "file",
+-          "filename": "$TEST_IMG"
+-      },
+-      "size": $size,
+-      "preallocation": "off"
+-  }
+-}
+-{ "execute": "quit" }
+-EOF
+-
+-_img_info --format-specific | _filter_img_info --format-specific
+-$QEMU_IMG map --output=json "$TEST_IMG" | _filter_qemu_img_map
+-
+-echo
+-echo "=== Successful image creation (with non-default options) ==="
+-echo
+-
+-# Choose a different size to show that we got a new image
+-size=$((32 * 1024 * 1024))
+-
+-run_qemu <<EOF
+-{ "execute": "qmp_capabilities" }
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "file",
+-      "filename": "$TEST_IMG",
+-      "size": 0
+-  }
+-}
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": {
+-          "driver": "file",
+-          "filename": "$TEST_IMG"
+-      },
+-      "size": $size,
+-      "preallocation": "metadata"
+-  }
+-}
+-{ "execute": "quit" }
+-EOF
+-
+-_img_info --format-specific | _filter_img_info --format-specific
+-$QEMU_IMG map --output=json "$TEST_IMG" | _filter_qemu_img_map
+-
+-echo
+-echo "=== Invalid BlockdevRef ==="
+-echo
+-
+-run_qemu <<EOF
+-{ "execute": "qmp_capabilities" }
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": "this doesn't exist",
+-      "size": $size
+-  }
+-}
+-{ "execute": "quit" }
+-EOF
+-
+-echo
+-echo "=== Zero size ==="
+-echo
+-
+-run_qemu -blockdev driver=file,filename="$TEST_IMG",node-name=node0 <<EOF
+-{ "execute": "qmp_capabilities" }
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": "node0",
+-      "size": 0
+-  }
+-}
+-{ "execute": "quit" }
+-EOF
+-
+-_img_info | _filter_img_info
+-
+-echo
+-echo "=== Maximum size ==="
+-echo
+-
+-run_qemu -blockdev driver=file,filename="$TEST_IMG",node-name=node0 <<EOF
+-{ "execute": "qmp_capabilities" }
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": "node0",
+-      "size": 562949819203584
+-  }
+-}
+-{ "execute": "quit" }
+-EOF
+-
+-_img_info | _filter_img_info
+-
+-echo
+-echo "=== Invalid sizes ==="
+-echo
+-
+-# TODO Negative image sizes aren't handled correctly, but this is a problem
+-# with QAPI's implementation of the 'size' type and affects other commands as
+-# well. Once this is fixed, we may want to add a test case here.
+-
+-# 1. 2^64 - 512
+-# 2. 2^63 = 8 EB (qemu-img enforces image sizes less than this)
+-# 3. 0x1fffff8000001 (one byte more than maximum image size for VDI)
+-
+-run_qemu -blockdev driver=file,filename="$TEST_IMG",node-name=node0 <<EOF
+-{ "execute": "qmp_capabilities" }
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": "node0",
+-      "size": 18446744073709551104
+-  }
+-}
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": "node0",
+-      "size": 9223372036854775808
+-  }
+-}
+-{ "execute": "x-blockdev-create",
+-  "arguments": {
+-      "driver": "$IMGFMT",
+-      "file": "node0",
+-      "size": 562949819203585
+-  }
+-}
+-{ "execute": "quit" }
+-EOF
+-
+-# success, all done
+-echo "*** done"
+-rm -f $seq.full
+-status=0
++import iotests
++from iotests import imgfmt
++
++iotests.verify_image_format(supported_fmts=['vdi'])
++iotests.verify_protocol(supported=['file'])
++
++def blockdev_create(vm, options):
++    result = vm.qmp_log('x-blockdev-create', job_id='job0', options=options)
++
++    if 'return' in result:
++        assert result['return'] == {}
++        vm.run_job('job0')
++    iotests.log("")
++
++with iotests.FilePath('t.vdi') as disk_path, \
++     iotests.VM() as vm:
++
++    #
++    # Successful image creation (defaults)
++    #
++    iotests.log("=== Successful image creation (defaults) ===")
++    iotests.log("")
++
++    size = 128 * 1024 * 1024
++
++    vm.launch()
++    blockdev_create(vm, { 'driver': 'file',
++                          'filename': disk_path,
++                          'size': 0 })
++
++    vm.qmp_log('blockdev-add', driver='file', filename=disk_path,
++               node_name='imgfile')
++
++    blockdev_create(vm, { 'driver': imgfmt,
++                          'file': 'imgfile',
++                          'size': size })
++    vm.shutdown()
++
++    iotests.img_info_log(disk_path)
++    iotests.log(iotests.qemu_img_pipe('map', '--output=json', disk_path))
++
++    #
++    # Successful image creation (explicit defaults)
++    #
++    iotests.log("=== Successful image creation (explicit defaults) ===")
++    iotests.log("")
++
++    size = 64 * 1024 * 1024
++
++    vm.launch()
++    blockdev_create(vm, { 'driver': 'file',
++                          'filename': disk_path,
++                          'size': 0 })
++    blockdev_create(vm, { 'driver': imgfmt,
++                          'file': {
++                              'driver': 'file',
++                              'filename': disk_path,
++                          },
++                          'size': size,
++                          'preallocation': 'off' })
++    vm.shutdown()
++
++    iotests.img_info_log(disk_path)
++    iotests.log(iotests.qemu_img_pipe('map', '--output=json', disk_path))
++
++    #
++    # Successful image creation (with non-default options)
++    #
++    iotests.log("=== Successful image creation (with non-default options) ===")
++    iotests.log("")
++
++    size = 32 * 1024 * 1024
++
++    vm.launch()
++    blockdev_create(vm, { 'driver': 'file',
++                          'filename': disk_path,
++                          'size': 0 })
++    blockdev_create(vm, { 'driver': imgfmt,
++                          'file': {
++                              'driver': 'file',
++                              'filename': disk_path,
++                          },
++                          'size': size,
++                          'preallocation': 'metadata' })
++    vm.shutdown()
++
++    iotests.img_info_log(disk_path)
++    iotests.log(iotests.qemu_img_pipe('map', '--output=json', disk_path))
++
++    #
++    # Invalid BlockdevRef
++    #
++    iotests.log("=== Invalid BlockdevRef ===")
++    iotests.log("")
++
++    vm.launch()
++    blockdev_create(vm, { 'driver': imgfmt,
++                          'file': "this doesn't exist",
++                          'size': size })
++    vm.shutdown()
++
++    #
++    # Zero size
++    #
++    iotests.log("=== Zero size ===")
++    iotests.log("")
++
++    vm.add_blockdev('driver=file,filename=%s,node-name=node0' % (disk_path))
++    vm.launch()
++    blockdev_create(vm, { 'driver': imgfmt,
++                          'file': 'node0',
++                          'size': 0 })
++    vm.shutdown()
++
++    iotests.img_info_log(disk_path)
++
++    #
++    # Maximum size
++    #
++    iotests.log("=== Maximum size ===")
++    iotests.log("")
++
++    vm.launch()
++    blockdev_create(vm, { 'driver': imgfmt,
++                          'file': 'node0',
++                          'size': 562949819203584 })
++    vm.shutdown()
++
++    iotests.img_info_log(disk_path)
++
++    #
++    # Invalid sizes
++    #
++
++    # TODO Negative image sizes aren't handled correctly, but this is a problem
++    # with QAPI's implementation of the 'size' type and affects other commands
++    # as well. Once this is fixed, we may want to add a test case here.
++
++    # 1. 2^64 - 512
++    # 2. 2^63 = 8 EB (qemu-img enforces image sizes less than this)
++    # 3. 0x1fffff8000001 (one byte more than maximum image size for VDI)
++
++    iotests.log("=== Invalid sizes ===")
++    iotests.log("")
++
++    vm.launch()
++    for size in [ 18446744073709551104, 9223372036854775808, 562949819203585 ]:
++        blockdev_create(vm, { 'driver': imgfmt,
++                              'file': 'node0',
++                              'size': size })
++    vm.shutdown()
+diff --git a/tests/qemu-iotests/211.out b/tests/qemu-iotests/211.out
+index 3247bba..2bf1c4a 100644
+--- a/tests/qemu-iotests/211.out
++++ b/tests/qemu-iotests/211.out
+@@ -1,97 +1,112 @@
+-QA output created by 211
+-
+ === Successful image creation (defaults) ===
+ 
+-Testing:
+-QMP_VERSION
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'size': 0, 'driver': 'file', 'filename': 'TEST_DIR/PID-t.vdi'}}}
++{u'return': {}}
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
++
++{'execute': 'blockdev-add', 'arguments': {'node_name': 'imgfile', 'driver': 'file', 'filename': 'TEST_DIR/PID-t.vdi'}}
++{u'return': {}}
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'driver': 'vdi', 'file': 'imgfile', 'size': 134217728}}}
++{u'return': {}}
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
+ 
+-image: TEST_DIR/t.IMGFMT
++image: TEST_IMG
+ file format: IMGFMT
+ virtual size: 128M (134217728 bytes)
++cluster_size: 1048576
++
+ [{ "start": 0, "length": 134217728, "depth": 0, "zero": true, "data": false}]
+ 
+ === Successful image creation (explicit defaults) ===
+ 
+-Testing:
+-QMP_VERSION
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'size': 0, 'driver': 'file', 'filename': 'TEST_DIR/PID-t.vdi'}}}
++{u'return': {}}
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
+ 
+-image: TEST_DIR/t.IMGFMT
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'preallocation': 'off', 'driver': 'vdi', 'file': {'driver': 'file', 'filename': 'TEST_DIR/PID-t.vdi'}, 'size': 67108864}}}
++{u'return': {}}
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
++
++image: TEST_IMG
+ file format: IMGFMT
+ virtual size: 64M (67108864 bytes)
++cluster_size: 1048576
++
+ [{ "start": 0, "length": 67108864, "depth": 0, "zero": true, "data": false}]
+ 
+ === Successful image creation (with non-default options) ===
+ 
+-Testing:
+-QMP_VERSION
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'size': 0, 'driver': 'file', 'filename': 'TEST_DIR/PID-t.vdi'}}}
++{u'return': {}}
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
+ 
+-image: TEST_DIR/t.IMGFMT
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'preallocation': 'metadata', 'driver': 'vdi', 'file': {'driver': 'file', 'filename': 'TEST_DIR/PID-t.vdi'}, 'size': 33554432}}}
++{u'return': {}}
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
++
++image: TEST_IMG
+ file format: IMGFMT
+ virtual size: 32M (33554432 bytes)
+-[{ "start": 0, "length": 3072, "depth": 0, "zero": false, "data": true, "offset": OFFSET},
+-{ "start": 3072, "length": 33551360, "depth": 0, "zero": true, "data": true, "offset": OFFSET}]
++cluster_size: 1048576
+ 
+-=== Invalid BlockdevRef ===
++[{ "start": 0, "length": 3072, "depth": 0, "zero": false, "data": true, "offset": 1024},
++{ "start": 3072, "length": 33551360, "depth": 0, "zero": true, "data": true, "offset": 4096}]
+ 
+-Testing:
+-QMP_VERSION
+-{"return": {}}
+-{"error": {"class": "GenericError", "desc": "Cannot find device=this doesn't exist nor node_name=this doesn't exist"}}
+-{"return": {}}
+-{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++=== Invalid BlockdevRef ===
+ 
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'driver': 'vdi', 'file': "this doesn't exist", 'size': 33554432}}}
++{u'return': {}}
++Job failed: Cannot find device=this doesn't exist nor node_name=this doesn't exist
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
+ 
+ === Zero size ===
+ 
+-Testing: -blockdev driver=file,filename=TEST_DIR/t.IMGFMT,node-name=node0
+-QMP_VERSION
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'driver': 'vdi', 'file': 'node0', 'size': 0}}}
++{u'return': {}}
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
+ 
+-image: TEST_DIR/t.IMGFMT
++image: TEST_IMG
+ file format: IMGFMT
+ virtual size: 0 (0 bytes)
++cluster_size: 1048576
+ 
+ === Maximum size ===
+ 
+-Testing: -blockdev driver=file,filename=TEST_DIR/t.IMGFMT,node-name=node0
+-QMP_VERSION
+-{"return": {}}
+-{"return": {}}
+-{"return": {}}
+-{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'driver': 'vdi', 'file': 'node0', 'size': 562949819203584}}}
++{u'return': {}}
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
+ 
+-image: TEST_DIR/t.IMGFMT
++image: TEST_IMG
+ file format: IMGFMT
+ virtual size: 512T (562949819203584 bytes)
++cluster_size: 1048576
+ 
+ === Invalid sizes ===
+ 
+-Testing: -blockdev driver=file,filename=TEST_DIR/t.IMGFMT,node-name=node0
+-QMP_VERSION
+-{"return": {}}
+-{"error": {"class": "GenericError", "desc": "Unsupported VDI image size (size is 0xfffffffffffffe00, max supported is 0x1fffff8000000)"}}
+-{"error": {"class": "GenericError", "desc": "Unsupported VDI image size (size is 0x8000000000000000, max supported is 0x1fffff8000000)"}}
+-{"error": {"class": "GenericError", "desc": "Unsupported VDI image size (size is 0x1fffff8000001, max supported is 0x1fffff8000000)"}}
+-{"return": {}}
+-{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'driver': 'vdi', 'file': 'node0', 'size': 18446744073709551104L}}}
++{u'return': {}}
++Job failed: Unsupported VDI image size (size is 0xfffffffffffffe00, max supported is 0x1fffff8000000)
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
++
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'driver': 'vdi', 'file': 'node0', 'size': 9223372036854775808L}}}
++{u'return': {}}
++Job failed: Unsupported VDI image size (size is 0x8000000000000000, max supported is 0x1fffff8000000)
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
++
++{'execute': 'x-blockdev-create', 'arguments': {'job_id': 'job0', 'options': {'driver': 'vdi', 'file': 'node0', 'size': 562949819203585}}}
++{u'return': {}}
++Job failed: Unsupported VDI image size (size is 0x1fffff8000001, max supported is 0x1fffff8000000)
++{'execute': 'job-dismiss', 'arguments': {'id': 'job0'}}
++{u'return': {}}
+ 
+-*** done
+diff --git a/tests/qemu-iotests/group b/tests/qemu-iotests/group
+index 3ecdafa..b920097 100644
+--- a/tests/qemu-iotests/group
++++ b/tests/qemu-iotests/group
+@@ -209,9 +209,9 @@
+ 208 rw auto quick
+ 209 rw auto quick
+ 210 rw auto
++211 rw auto quick
+ # TODO The following commented out tests need to be reworked to work
+ # with the x-blockdev-create job
+-#211 rw auto quick
+ #212 rw auto quick
+ #213 rw auto quick
+ 214 rw auto
+-- 
+1.8.3.1
+

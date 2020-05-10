@@ -1,0 +1,57 @@
+From 7a2aff323f83e6f98f81a2cbe59005e34a094f93 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 5 Jun 2019 13:57:04 +0200
+Subject: [PATCH 16/23] qemu-img: Use BDRV_REQ_NO_FALLBACK for pre-zeroing
+
+RH-Author: Maxim Levitsky <mlevitsk@redhat.com>
+Message-id: <20190605135705.24526-9-mlevitsk@redhat.com>
+Patchwork-id: 88558
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 8/9] qemu-img: Use BDRV_REQ_NO_FALLBACK for pre-zeroing
+Bugzilla: 1648622
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Kevin Wolf <kwolf@redhat.com>
+
+If qemu-img convert sees that the target image isn't zero-initialised
+yet, it tries to do an efficient zero write for the whole image first
+to save the overhead of repeated explicit zero writes during the
+conversion. Obviously, this provides only an advantage if the
+pre-zeroing is actually efficient. Otherwise, we can end up writing
+zeroes slowly while zeroing out the whole image, and then overwrite the
+same blocks again with real data, potentially doubling the written data.
+
+Pass BDRV_REQ_NO_FALLBACK to blk_make_zero() to avoid this case. If we
+can't efficiently zero out, we'll instead write explicit zeroes only if
+there is no data to be written to a block.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Acked-by: Eric Blake <eblake@redhat.com>
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1648622
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+
+(Cherry-picked from c9fdcf202f19fc2acdcb1ee0522ff5d61bf8c906, no conflicts)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index 5be2abf..d588183 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -1916,7 +1916,7 @@ static int convert_do_copy(ImgConvertState *s)
+     if (!s->has_zero_init && !s->target_has_backing &&
+         bdrv_can_write_zeroes_with_unmap(blk_bs(s->target)))
+     {
+-        ret = blk_make_zero(s->target, BDRV_REQ_MAY_UNMAP);
++        ret = blk_make_zero(s->target, BDRV_REQ_MAY_UNMAP | BDRV_REQ_NO_FALLBACK);
+         if (ret == 0) {
+             s->has_zero_init = true;
+         }
+-- 
+1.8.3.1
+

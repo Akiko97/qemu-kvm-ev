@@ -1,0 +1,86 @@
+From 991ad76f13534cd2f22b30ba8b556f284f28c5c6 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 18:59:48 +0200
+Subject: [PATCH 09/57] migration: stop compressing page in migration thread
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-2-dgilbert@redhat.com>
+Patchwork-id: 81005
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 01/18] migration: stop compressing page in migration thread
+Bugzilla: 1584139
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Xiao Guangrong <xiaoguangrong@tencent.com>
+
+As compression is a heavy work, do not do it in migration thread,
+instead, we post it out as a normal page
+
+Reviewed-by: Wei Wang <wei.w.wang@intel.com>
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Xiao Guangrong <xiaoguangrong@tencent.com>
+Message-Id: <20180330075128.26919-2-xiaoguangrong@tencent.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit 263a289ae61c8344a417a95b0142650fdff3af56)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/ram.c | 32 ++++++++++++++++----------------
+ 1 file changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 00c06b5..f27038a 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1138,7 +1138,7 @@ static int ram_save_compressed_page(RAMState *rs, PageSearchStatus *pss,
+     int pages = -1;
+     uint64_t bytes_xmit = 0;
+     uint8_t *p;
+-    int ret, blen;
++    int ret;
+     RAMBlock *block = pss->block;
+     ram_addr_t offset = pss->page << TARGET_PAGE_BITS;
+ 
+@@ -1168,23 +1168,23 @@ static int ram_save_compressed_page(RAMState *rs, PageSearchStatus *pss,
+         if (block != rs->last_sent_block) {
+             flush_compressed_data(rs);
+             pages = save_zero_page(rs, block, offset);
+-            if (pages == -1) {
+-                /* Make sure the first page is sent out before other pages */
+-                bytes_xmit = save_page_header(rs, rs->f, block, offset |
+-                                              RAM_SAVE_FLAG_COMPRESS_PAGE);
+-                blen = qemu_put_compression_data(rs->f, p, TARGET_PAGE_SIZE,
+-                                                 migrate_compress_level());
+-                if (blen > 0) {
+-                    ram_counters.transferred += bytes_xmit + blen;
+-                    ram_counters.normal++;
+-                    pages = 1;
+-                } else {
+-                    qemu_file_set_error(rs->f, blen);
+-                    error_report("compressed data failed!");
+-                }
+-            }
+             if (pages > 0) {
+                 ram_release_pages(block->idstr, offset, pages);
++            } else {
++                /*
++                 * Make sure the first page is sent out before other pages.
++                 *
++                 * we post it as normal page as compression will take much
++                 * CPU resource.
++                 */
++                ram_counters.transferred += save_page_header(rs, rs->f, block,
++                                                offset | RAM_SAVE_FLAG_PAGE);
++                qemu_put_buffer_async(rs->f, p, TARGET_PAGE_SIZE,
++                                      migrate_release_ram() &
++                                      migration_in_postcopy());
++                ram_counters.transferred += TARGET_PAGE_SIZE;
++                ram_counters.normal++;
++                pages = 1;
+             }
+         } else {
+             pages = save_zero_page(rs, block, offset);
+-- 
+1.8.3.1
+

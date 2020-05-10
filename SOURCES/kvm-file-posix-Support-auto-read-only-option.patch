@@ -1,0 +1,61 @@
+From e342033247c37090e1b8e0f99abc849e36521701 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:48 +0100
+Subject: [PATCH 07/34] file-posix: Support auto-read-only option
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-7-kwolf@redhat.com>
+Patchwork-id: 83116
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 06/12] file-posix: Support auto-read-only option
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If read-only=off, but auto-read-only=on is given, open the file
+read-write if we have the permissions, but instead of erroring out for
+read-only files, just degrade to read-only.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 64107dc044a54ebe46348ac0fe87584be2eb3e81)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 19 ++++++++++++++++---
+ 1 file changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index c12cdb7..7e6869d 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -517,9 +517,22 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
+ 
+     s->fd = -1;
+     fd = qemu_open(filename, s->open_flags, 0644);
+-    if (fd < 0) {
+-        ret = -errno;
+-        error_setg_errno(errp, errno, "Could not open '%s'", filename);
++    ret = fd < 0 ? -errno : 0;
++
++    if (ret == -EACCES || ret == -EROFS) {
++        /* Try to degrade to read-only, but if it doesn't work, still use the
++         * normal error message. */
++        if (bdrv_apply_auto_read_only(bs, NULL, NULL) == 0) {
++            bdrv_flags &= ~BDRV_O_RDWR;
++            raw_parse_flags(bdrv_flags, &s->open_flags);
++            assert(!(s->open_flags & O_CREAT));
++            fd = qemu_open(filename, s->open_flags);
++            ret = fd < 0 ? -errno : 0;
++        }
++    }
++
++    if (ret < 0) {
++        error_setg_errno(errp, -ret, "Could not open '%s'", filename);
+         if (ret == -EROFS) {
+             ret = -EACCES;
+         }
+-- 
+1.8.3.1
+

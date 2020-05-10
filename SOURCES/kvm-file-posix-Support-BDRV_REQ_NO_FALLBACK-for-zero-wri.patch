@@ -1,0 +1,103 @@
+From 9a02c0bcafdbf681e76f816ad3f60dfb7dea13fb Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 5 Jun 2019 13:57:03 +0200
+Subject: [PATCH 15/23] file-posix: Support BDRV_REQ_NO_FALLBACK for zero
+ writes
+
+RH-Author: Maxim Levitsky <mlevitsk@redhat.com>
+Message-id: <20190605135705.24526-8-mlevitsk@redhat.com>
+Patchwork-id: 88560
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 7/9] file-posix: Support BDRV_REQ_NO_FALLBACK for zero writes
+Bugzilla: 1648622
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Kevin Wolf <kwolf@redhat.com>
+
+We know that the kernel implements a slow fallback code path for
+BLKZEROOUT, so if BDRV_REQ_NO_FALLBACK is given, we shouldn't call it.
+The other operations we call in the context of .bdrv_co_pwrite_zeroes
+should usually be quick, so no modification should be needed for them.
+If we ever notice that there are additional problematic cases, we can
+still make these conditional as well.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Acked-by: Eric Blake <eblake@redhat.com>
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1648622
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+(Cherry picked from 738301e11758171defaa5a5237d584f8226af89f)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c      | 24 ++++++++++++++++--------
+ include/block/raw-aio.h |  1 +
+ 2 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 90c719f..d1926b3 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -632,7 +632,7 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
+     }
+ #endif
+ 
+-    bs->supported_zero_flags = BDRV_REQ_MAY_UNMAP;
++    bs->supported_zero_flags = BDRV_REQ_MAY_UNMAP | BDRV_REQ_NO_FALLBACK;
+     ret = 0;
+ fail:
+     if (filename && (bdrv_flags & BDRV_O_TEMPORARY)) {
+@@ -1449,14 +1449,19 @@ static ssize_t handle_aiocb_write_zeroes_block(RawPosixAIOData *aiocb)
+     }
+ 
+ #ifdef BLKZEROOUT
+-    do {
+-        uint64_t range[2] = { aiocb->aio_offset, aiocb->aio_nbytes };
+-        if (ioctl(aiocb->aio_fildes, BLKZEROOUT, range) == 0) {
+-            return 0;
+-        }
+-    } while (errno == EINTR);
++    /* The BLKZEROOUT implementation in the kernel doesn't set
++     * BLKDEV_ZERO_NOFALLBACK, so we can't call this if we have to avoid slow
++     * fallbacks. */
++    if (!(aiocb->aio_type & QEMU_AIO_NO_FALLBACK)) {
++        do {
++            uint64_t range[2] = { aiocb->aio_offset, aiocb->aio_nbytes };
++            if (ioctl(aiocb->aio_fildes, BLKZEROOUT, range) == 0) {
++                return 0;
++            }
++        } while (errno == EINTR);
+ 
+-    ret = translate_err(-errno);
++        ret = translate_err(-errno);
++    }
+ #endif
+ 
+     if (ret == -ENOTSUP) {
+@@ -2535,6 +2540,9 @@ raw_do_pwrite_zeroes(BlockDriverState *bs, int64_t offset, int bytes,
+     if (blkdev) {
+         acb.aio_type |= QEMU_AIO_BLKDEV;
+     }
++    if (flags & BDRV_REQ_NO_FALLBACK) {
++        acb.aio_type |= QEMU_AIO_NO_FALLBACK;
++    }
+ 
+     if (flags & BDRV_REQ_MAY_UNMAP) {
+         acb.aio_type |= QEMU_AIO_DISCARD;
+diff --git a/include/block/raw-aio.h b/include/block/raw-aio.h
+index 2ffcd9d..5a926a3 100644
+--- a/include/block/raw-aio.h
++++ b/include/block/raw-aio.h
+@@ -40,6 +40,7 @@
+ /* AIO flags */
+ #define QEMU_AIO_MISALIGNED   0x1000
+ #define QEMU_AIO_BLKDEV       0x2000
++#define QEMU_AIO_NO_FALLBACK  0x4000
+ 
+ 
+ /* linux-aio.c - Linux native implementation */
+-- 
+1.8.3.1
+

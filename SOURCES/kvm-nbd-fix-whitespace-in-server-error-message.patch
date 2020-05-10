@@ -1,0 +1,64 @@
+From 344f6a6e7dbdd6aae5d3564e46ade0970246eaca Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:29 +0100
+Subject: [PATCH 062/163] nbd: fix whitespace in server error message
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-17-jsnow@redhat.com>
+Patchwork-id: 85107
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 16/28] nbd: fix whitespace in server error message
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Daniel P. Berrangé <berrange@redhat.com>
+
+A space was missing after the option number was printed:
+
+  Option 0x8not permitted before TLS
+
+becomes
+
+  Option 0x8 not permitted before TLS
+
+This fixes
+
+  commit 3668328303429f3bc93ab3365c66331600b06a2d
+  Author: Eric Blake <eblake@redhat.com>
+  Date:   Fri Oct 14 13:33:09 2016 -0500
+
+    nbd: Send message along with server NBD_REP_ERR errors
+
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <20181116155325.22428-2-berrange@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+[eblake: move lone space to next line]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 0b0bb124bb797b2fc3389ffa1e933fc34fe6dacb)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index d414861..418b1d4 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1136,7 +1136,7 @@ static int nbd_negotiate_options(NBDClient *client, uint16_t myflags,
+             default:
+                 ret = nbd_opt_drop(client, NBD_REP_ERR_TLS_REQD, errp,
+                                    "Option 0x%" PRIx32
+-                                   "not permitted before TLS", option);
++                                   " not permitted before TLS", option);
+                 /* Let the client keep trying, unless they asked to
+                  * quit. In this mode, we've already sent an error, so
+                  * we can't ack the abort.  */
+-- 
+1.8.3.1
+

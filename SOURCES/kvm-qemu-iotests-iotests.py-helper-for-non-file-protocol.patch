@@ -1,0 +1,65 @@
+From a50830277403643e090bec4bfe7cf77d693f90e8 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:45 +0200
+Subject: [PATCH 76/89] qemu-iotests: iotests.py helper for non-file protocols
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-63-kwolf@redhat.com>
+Patchwork-id: 81081
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 62/73] qemu-iotests: iotests.py helper for non-file protocols
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This adds two helper functions that are useful for test cases that make
+use of a non-file protocol (specifically ssh).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit 5a259e868b308564de9f2bfaef0606074a4f9028)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index 390da6b..9f1759d 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -312,6 +312,13 @@ def file_path(*names):
+ 
+     return paths[0] if len(paths) == 1 else paths
+ 
++def remote_filename(path):
++    if imgproto == 'file':
++        return path
++    elif imgproto == 'ssh':
++        return "ssh://127.0.0.1%s" % (path)
++    else:
++        raise Exception("Protocol %s not supported" % (imgproto))
+ 
+ class VM(qtest.QEMUQtestMachine):
+     '''A QEMU VM'''
+@@ -610,6 +617,16 @@ def verify_image_format(supported_fmts=[], unsupported_fmts=[]):
+     if not_sup or (imgfmt in unsupported_fmts):
+         notrun('not suitable for this image format: %s' % imgfmt)
+ 
++def verify_protocol(supported=[], unsupported=[]):
++    assert not (supported and unsupported)
++
++    if 'generic' in supported:
++        return
++
++    not_sup = supported and (imgproto not in supported)
++    if not_sup or (imgproto in unsupported):
++        notrun('not suitable for this protocol: %s' % imgproto)
++
+ def verify_platform(supported_oses=['linux']):
+     if True not in [sys.platform.startswith(x) for x in supported_oses]:
+         notrun('not suitable for this OS: %s' % sys.platform)
+-- 
+1.8.3.1
+

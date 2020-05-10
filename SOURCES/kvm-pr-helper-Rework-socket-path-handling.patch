@@ -1,0 +1,141 @@
+From 5b8df1e97b5b90c9d41fd10796217bfe06951856 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 6 Jul 2018 17:56:58 +0200
+Subject: [PATCH 24/89] pr-helper: Rework socket path handling
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20180706175659.30615-9-pbonzini@redhat.com>
+Patchwork-id: 81252
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 8/9] pr-helper: Rework socket path handling
+Bugzilla: 1533158
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Michal Privoznik <mprivozn@redhat.com>
+
+From: Michal Privoznik <mprivozn@redhat.com>
+
+When reviewing Paolo's pr-helper patches I've noticed couple of
+problems:
+
+1) socket_path needs to be calculated at two different places
+(one for printing out help, the other if socket activation is NOT
+used),
+
+2) even though the default socket_path is allocated in
+compute_default_paths() it is the only default path the function
+handles. For instance, pidfile is allocated outside of this
+function. And yet again, at different places than 1)
+
+Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+Message-Id: <c791ba035f26ea957e8f3602e3009b621769b1ba.1530611283.git.mprivozn@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 2729d79d4993099782002c9a218de1fc12c32c69)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ scsi/qemu-pr-helper.c | 36 ++++++++++--------------------------
+ 1 file changed, 10 insertions(+), 26 deletions(-)
+
+diff --git a/scsi/qemu-pr-helper.c b/scsi/qemu-pr-helper.c
+index 4d843bd..bae3e55 100644
+--- a/scsi/qemu-pr-helper.c
++++ b/scsi/qemu-pr-helper.c
+@@ -76,14 +76,12 @@ static int gid = -1;
+ 
+ static void compute_default_paths(void)
+ {
+-    if (!socket_path) {
+-        socket_path = qemu_get_local_state_pathname("run/qemu-pr-helper.sock");
+-    }
++    socket_path = qemu_get_local_state_pathname("run/qemu-pr-helper.sock");
++    pidfile = qemu_get_local_state_pathname("run/qemu-pr-helper.pid");
+ }
+ 
+ static void usage(const char *name)
+ {
+-    compute_default_paths();
+     (printf) (
+ "Usage: %s [OPTIONS] FILE\n"
+ "Persistent Reservation helper program for QEMU\n"
+@@ -830,19 +828,6 @@ static gboolean accept_client(QIOChannel *ioc, GIOCondition cond, gpointer opaqu
+     return TRUE;
+ }
+ 
+-
+-/*
+- * Check socket parameters compatibility when socket activation is used.
+- */
+-static const char *socket_activation_validate_opts(void)
+-{
+-    if (socket_path != NULL) {
+-        return "Unix socket can't be set when using socket activation";
+-    }
+-
+-    return NULL;
+-}
+-
+ static void termsig_handler(int signum)
+ {
+     atomic_cmpxchg(&state, RUNNING, TERMINATE);
+@@ -916,6 +901,7 @@ int main(int argc, char **argv)
+     char *trace_file = NULL;
+     bool daemonize = false;
+     bool pidfile_specified = false;
++    bool socket_path_specified = false;
+     unsigned socket_activation;
+ 
+     struct sigaction sa_sigterm;
+@@ -932,12 +918,14 @@ int main(int argc, char **argv)
+     qemu_add_opts(&qemu_trace_opts);
+     qemu_init_exec_dir(argv[0]);
+ 
+-    pidfile = qemu_get_local_state_pathname("run/qemu-pr-helper.pid");
++    compute_default_paths();
+ 
+     while ((ch = getopt_long(argc, argv, sopt, lopt, &opt_ind)) != -1) {
+         switch (ch) {
+         case 'k':
+-            socket_path = optarg;
++            g_free(socket_path);
++            socket_path = g_strdup(optarg);
++            socket_path_specified = true;
+             if (socket_path[0] != '/') {
+                 error_report("socket path must be absolute");
+                 exit(EXIT_FAILURE);
+@@ -1028,10 +1016,9 @@ int main(int argc, char **argv)
+     socket_activation = check_socket_activation();
+     if (socket_activation == 0) {
+         SocketAddress saddr;
+-        compute_default_paths();
+         saddr = (SocketAddress){
+             .type = SOCKET_ADDRESS_TYPE_UNIX,
+-            .u.q_unix.path = g_strdup(socket_path)
++            .u.q_unix.path = socket_path,
+         };
+         server_ioc = qio_channel_socket_new();
+         if (qio_channel_socket_listen_sync(server_ioc, &saddr, &local_err) < 0) {
+@@ -1039,12 +1026,10 @@ int main(int argc, char **argv)
+             error_report_err(local_err);
+             return 1;
+         }
+-        g_free(saddr.u.q_unix.path);
+     } else {
+         /* Using socket activation - check user didn't use -p etc. */
+-        const char *err_msg = socket_activation_validate_opts();
+-        if (err_msg != NULL) {
+-            error_report("%s", err_msg);
++        if (socket_path_specified) {
++            error_report("Unix socket can't be set when using socket activation");
+             exit(EXIT_FAILURE);
+         }
+ 
+@@ -1061,7 +1046,6 @@ int main(int argc, char **argv)
+                          error_get_pretty(local_err));
+             exit(EXIT_FAILURE);
+         }
+-        socket_path = NULL;
+     }
+ 
+     if (qemu_init_main_loop(&local_err)) {
+-- 
+1.8.3.1
+

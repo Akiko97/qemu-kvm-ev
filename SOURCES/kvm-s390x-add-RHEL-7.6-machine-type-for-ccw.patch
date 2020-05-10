@@ -1,0 +1,139 @@
+From ea16161ecfee857c3d83841f806c5fa55837c483 Mon Sep 17 00:00:00 2001
+From: Cornelia Huck <cohuck@redhat.com>
+Date: Thu, 17 May 2018 11:52:08 +0200
+Subject: [PATCH 2/8] s390x: add RHEL 7.6 machine type for ccw
+
+RH-Author: Cornelia Huck <cohuck@redhat.com>
+Message-id: <20180517115208.20738-1-cohuck@redhat.com>
+Patchwork-id: 80375
+O-Subject: [RHEL-7.6 qemu-kvm-ma PATCH v2] s390x: add RHEL 7.6 machine type for ccw
+Bugzilla: 1562138
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1562138
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=16338248
+Branch: rhv7/master-2.12.0
+Upstream: n/a
+Tested: Managedsave/restore between qemu-kvm-ma-2.10 and qemu-kvm-ma-2.12
+        with 7.5.0 machine type; started guest with 7.6.0 machine type
+
+Follows the s390x-specific 2.10->2.12 compat handling (sclp masks,
+qemu cpu model) and introduces generic compat defines for 7.5->7.6
+(even though not applicable on s390x).
+
+Signed-off-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/s390x/s390-virtio-ccw.c | 35 ++++++++++++++++++++++++++++++++---
+ include/hw/compat.h        | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 60 insertions(+), 3 deletions(-)
+
+diff --git a/hw/s390x/s390-virtio-ccw.c b/hw/s390x/s390-virtio-ccw.c
+index 3956ac3..64e2a3b 100644
+--- a/hw/s390x/s390-virtio-ccw.c
++++ b/hw/s390x/s390-virtio-ccw.c
+@@ -671,6 +671,8 @@ bool css_migration_enabled(void)
+     }                                                                         \
+     type_init(ccw_machine_register_##suffix)
+ 
++#if 0 /* Disabled for Red Hat Enterprise Linux */
++
+ #define CCW_COMPAT_2_11 \
+         HW_COMPAT_2_11 \
+         {\
+@@ -682,8 +684,6 @@ bool css_migration_enabled(void)
+ #define CCW_COMPAT_2_10 \
+         HW_COMPAT_2_10
+ 
+-#if 0 /* Disabled for Red Hat Enterprise Linux */
+-
+ #define CCW_COMPAT_2_9 \
+         HW_COMPAT_2_9 \
+         {\
+@@ -883,14 +883,43 @@ DEFINE_CCW_MACHINE(2_4, "2.4", false);
+ 
+ #else
+ 
++/*
++ * like CCW_COMPAT_2_11, but includes HW_COMPAT_RHEL7_5 (derived from
++ * HW_COMPAT_2_11 and HW_COMPAT_2_10) instead of HW_COMPAT_2_11
++ */
++#define CCW_COMPAT_RHEL7_5 \
++        HW_COMPAT_RHEL7_5 \
++        {\
++            .driver   = TYPE_SCLP_EVENT_FACILITY,\
++            .property = "allow_all_mask_sizes",\
++            .value    = "off",\
++        },
++
++static void ccw_machine_rhel760_instance_options(MachineState *machine)
++{
++}
++
++static void ccw_machine_rhel760_class_options(MachineClass *mc)
++{
++}
++DEFINE_CCW_MACHINE(rhel760, "rhel7.6.0", true);
++
+ static void ccw_machine_rhel750_instance_options(MachineState *machine)
+ {
++    static const S390FeatInit qemu_cpu_feat = { S390_FEAT_LIST_QEMU_V2_11 };
++    ccw_machine_rhel760_instance_options(machine);
++
++    /* before 2.12 we emulated the very first z900, and RHEL 7.5 is
++       based on 2.10 */
++    s390_set_qemu_cpu_model(0x2064, 7, 1, qemu_cpu_feat);
+ }
+ 
+ static void ccw_machine_rhel750_class_options(MachineClass *mc)
+ {
++    ccw_machine_rhel760_class_options(mc);
++    SET_MACHINE_COMPAT(mc, CCW_COMPAT_RHEL7_5);
+ }
+-DEFINE_CCW_MACHINE(rhel750, "rhel7.5.0", true);
++DEFINE_CCW_MACHINE(rhel750, "rhel7.5.0", false);
+ 
+ #endif
+ 
+diff --git a/include/hw/compat.h b/include/hw/compat.h
+index 503b5c8..666eed9 100644
+--- a/include/hw/compat.h
++++ b/include/hw/compat.h
+@@ -450,4 +450,32 @@
+         .value    = "off",\
+     },
+ 
++/* The same as HW_COMPAT_2_11 + HW_COMPAT_2_10 */
++#define HW_COMPAT_RHEL7_5 \
++    { /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_11 */ \
++        .driver   = "hpet",\
++        .property = "hpet-offset-saved",\
++        .value    = "false",\
++    },{ /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_11 */ \
++        .driver   = "virtio-blk-pci",\
++        .property = "vectors",\
++        .value    = "2",\
++    },{ /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_11 */ \
++        .driver   = "vhost-user-blk-pci",\
++        .property = "vectors",\
++        .value    = "2",\
++    },{ /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_11 */ \
++        .driver   = "e1000",\
++        .property = "migrate_tso_props",\
++        .value    = "off",\
++    },{ /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_10 */ \
++        .driver   = "virtio-mouse-device",\
++        .property = "wheel-axis",\
++        .value    = "false",\
++    },{ /* HW_COMPAT_RHEL7_5 from HW_COMPAT_2_10 */ \
++        .driver   = "virtio-tablet-device",\
++        .property = "wheel-axis",\
++        .value    = "false",\
++    },
++
+ #endif /* HW_COMPAT_H */
+-- 
+1.8.3.1
+

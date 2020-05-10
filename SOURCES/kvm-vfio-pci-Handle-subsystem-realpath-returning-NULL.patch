@@ -1,0 +1,46 @@
+From 9cf75f15324ca15f013d3dc6a95bb5066a58d375 Mon Sep 17 00:00:00 2001
+From: Alex Williamson <alex.williamson@redhat.com>
+Date: Mon, 3 Dec 2018 21:53:40 +0100
+Subject: [PATCH 22/34] vfio/pci: Handle subsystem realpath() returning NULL
+
+RH-Author: Alex Williamson <alex.williamson@redhat.com>
+Message-id: <154387402054.26945.6430332743475303163.stgit@gimli.home>
+Patchwork-id: 83231
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 5/7] vfio/pci: Handle subsystem realpath() returning NULL
+Bugzilla: 1619778
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+
+Bugzilla: 1619778
+
+Fix error reported by Coverity where realpath can return NULL,
+resulting in a segfault in strcmp().  This should never happen given
+that we're working through regularly structured sysfs paths, but
+trivial enough to easily avoid.
+
+Fixes: 238e91728503 ("vfio/ccw/pci: Allow devices to opt-in for ballooning")
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+(cherry picked from commit a1c0f886496cfb4c336f8eb4155ed424567d653e)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/vfio/pci.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/vfio/pci.c b/hw/vfio/pci.c
+index 3bc7636..ba3a393 100644
+--- a/hw/vfio/pci.c
++++ b/hw/vfio/pci.c
+@@ -2889,7 +2889,7 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
+     tmp = g_strdup_printf("%s/subsystem", vdev->vbasedev.sysfsdev);
+     subsys = realpath(tmp, NULL);
+     g_free(tmp);
+-    is_mdev = (strcmp(subsys, "/sys/bus/mdev") == 0);
++    is_mdev = subsys && (strcmp(subsys, "/sys/bus/mdev") == 0);
+     free(subsys);
+ 
+     trace_vfio_mdev(vdev->vbasedev.name, is_mdev);
+-- 
+1.8.3.1
+

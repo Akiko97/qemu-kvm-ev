@@ -1,0 +1,121 @@
+From e5c3237d56ab85fdf98265ad9893bb532b5575ff Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:21 +0200
+Subject: [PATCH 14/54] block: Make remaining uses of qobject input visitor
+ more robust
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-15-armbru@redhat.com>
+Patchwork-id: 80730
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 14/23] block: Make remaining uses of qobject input visitor more robust
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Remaining uses of qobject_input_visitor_new_keyval() in the block
+subsystem:
+
+* block_crypto_open_opts_init()
+  Currently doesn't visit any non-string scalars, thus safe.  It's
+  called from
+  - block_crypto_open_luks()
+    Creates the QDict with qemu_opts_to_qdict_filtered(), which
+    creates only string scalars, but has a TODO asking for other types.
+  - qcow_open()
+  - qcow2_open(), qcow2_co_invalidate_cache(), qcow2_reopen_prepare()
+
+* block_crypto_create_opts_init(), called from
+  - block_crypto_co_create_opts_luks()
+    Also creates the QDict with qemu_opts_to_qdict_filtered().
+
+* vdi_co_create_opts()
+  Also creates the QDict with qemu_opts_to_qdict_filtered().
+
+Replace these uses by qobject_input_visitor_new_flat_confused() for
+robustness.  This adds crumpling.  Right now, that's a no-op, but if
+we ever extend these things in non-flat ways, crumpling will be
+needed.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit f853465aacb45dbb07e4cc9815e39b55e10dc690)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/crypto.c | 12 +++++++++---
+ block/vdi.c    |  8 ++++++--
+ 2 files changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/block/crypto.c b/block/crypto.c
+index 7e7ad2d..f5151f4 100644
+--- a/block/crypto.c
++++ b/block/crypto.c
+@@ -21,11 +21,11 @@
+ #include "qemu/osdep.h"
+ 
+ #include "block/block_int.h"
++#include "block/qdict.h"
+ #include "sysemu/block-backend.h"
+ #include "crypto/block.h"
+ #include "qapi/opts-visitor.h"
+ #include "qapi/qapi-visit-crypto.h"
+-#include "qapi/qmp/qdict.h"
+ #include "qapi/qobject-input-visitor.h"
+ #include "qapi/error.h"
+ #include "qemu/option.h"
+@@ -159,7 +159,10 @@ block_crypto_open_opts_init(QCryptoBlockFormat format,
+     ret = g_new0(QCryptoBlockOpenOptions, 1);
+     ret->format = format;
+ 
+-    v = qobject_input_visitor_new_keyval(QOBJECT(opts));
++    v = qobject_input_visitor_new_flat_confused(opts, &local_err);
++    if (local_err) {
++        goto out;
++    }
+ 
+     visit_start_struct(v, NULL, NULL, 0, &local_err);
+     if (local_err) {
+@@ -210,7 +213,10 @@ block_crypto_create_opts_init(QCryptoBlockFormat format,
+     ret = g_new0(QCryptoBlockCreateOptions, 1);
+     ret->format = format;
+ 
+-    v = qobject_input_visitor_new_keyval(QOBJECT(opts));
++    v = qobject_input_visitor_new_flat_confused(opts, &local_err);
++    if (local_err) {
++        goto out;
++    }
+ 
+     visit_start_struct(v, NULL, NULL, 0, &local_err);
+     if (local_err) {
+diff --git a/block/vdi.c b/block/vdi.c
+index 96a22b8..41859a8 100644
+--- a/block/vdi.c
++++ b/block/vdi.c
+@@ -51,10 +51,10 @@
+ 
+ #include "qemu/osdep.h"
+ #include "qapi/error.h"
+-#include "qapi/qmp/qdict.h"
+ #include "qapi/qobject-input-visitor.h"
+ #include "qapi/qapi-visit-block-core.h"
+ #include "block/block_int.h"
++#include "block/qdict.h"
+ #include "sysemu/block-backend.h"
+ #include "qemu/module.h"
+ #include "qemu/option.h"
+@@ -933,7 +933,11 @@ static int coroutine_fn vdi_co_create_opts(const char *filename, QemuOpts *opts,
+     }
+ 
+     /* Get the QAPI object */
+-    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
++    v = qobject_input_visitor_new_flat_confused(qdict, errp);
++    if (!v) {
++        ret = -EINVAL;
++        goto done;
++    }
+     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
+     visit_free(v);
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,145 @@
+From fc257e52fc251e4db6cd7ad604391941a2592556 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:50:59 +0200
+Subject: [PATCH 32/53] ppc405_boards: Don't size flash memory to match backing
+ image
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-11-armbru@redhat.com>
+Patchwork-id: 88004
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 10/31] ppc405_boards: Don't size flash memory to match backing image
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Machine "ref405ep" maps its flash memory at address 2^32 - image size.
+Image size is rounded up to the next multiple of 64KiB.  Useless,
+because pflash_cfi02_realize() fails with "failed to read the initial
+flash content" unless the rounding is a no-op.
+
+If the image size exceeds 0x80000 Bytes, we overlap first SRAM, then
+other stuff.  No idea how that would play out, but useful outcomes
+seem unlikely.
+
+Map the flash memory at fixed address 0xFFF80000 with size 512KiB,
+regardless of image size, to match the physical hardware.
+
+Machine "taihu" maps its boot flash memory similarly.  The code even
+has a comment /* XXX: should check that size is 2MB */, followed by
+disabled code to adjust the size to 2MiB regardless of image size.
+
+Its code to map its application flash memory looks the same, except
+there the XXX comment asks for 32MiB, and the code to adjust the size
+isn't disabled.  Note that pflash_cfi02_realize() fails with "failed
+to read the initial flash content" for images smaller than 32MiB.
+
+Map the boot flash memory at fixed address 0xFFE00000 with size 2MiB,
+to match the physical hardware.  Delete dead code from application
+flash mapping, and simplify some.
+
+Cc: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Acked-by: David Gibson <david@gibson.dropbear.id.au>
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Message-Id: <20190308094610.21210-9-armbru@redhat.com>
+(cherry picked from commit dd59bcae7687df4b2ba8e5292607724996e00892)
+[Trivial conflict in hw/ppc/ppc405_boards.c due to lack of
+commit ab3dd749241]
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/ppc405_boards.c | 38 +++++++++++++-------------------------
+ 1 file changed, 13 insertions(+), 25 deletions(-)
+
+diff --git a/hw/ppc/ppc405_boards.c b/hw/ppc/ppc405_boards.c
+index 2c23e8b..bf32672 100644
+--- a/hw/ppc/ppc405_boards.c
++++ b/hw/ppc/ppc405_boards.c
+@@ -196,7 +196,7 @@ static void ref405ep_init(MachineState *machine)
+     target_ulong kernel_base, initrd_base;
+     long kernel_size, initrd_size;
+     int linux_boot;
+-    int fl_idx, fl_sectors, len;
++    int len;
+     DriveInfo *dinfo;
+     MemoryRegion *sysmem = get_system_memory();
+ 
+@@ -224,20 +224,16 @@ static void ref405ep_init(MachineState *machine)
+                            &error_fatal);
+     memory_region_add_subregion(sysmem, 0xFFF00000, sram);
+     /* allocate and load BIOS */
+-    fl_idx = 0;
+ #ifdef USE_FLASH_BIOS
+-    dinfo = drive_get(IF_PFLASH, 0, fl_idx);
++    dinfo = drive_get(IF_PFLASH, 0, 0);
+     if (dinfo) {
+-        BlockBackend *blk = blk_by_legacy_dinfo(dinfo);
+-
+-        bios_size = blk_getlength(blk);
+-        fl_sectors = (bios_size + 65535) >> 16;
++        bios_size = 8 * MiB;
+         pflash_cfi02_register((uint32_t)(-bios_size),
+                               NULL, "ef405ep.bios", bios_size,
+-                              blk, 65536, fl_sectors, 1,
++                              dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
++                              64 * KiB, bios_size / (64 * KiB), 1,
+                               2, 0x0001, 0x22DA, 0x0000, 0x0000, 0x555, 0x2AA,
+                               1);
+-        fl_idx++;
+     } else
+ #endif
+     {
+@@ -470,7 +466,7 @@ static void taihu_405ep_init(MachineState *machine)
+     target_ulong kernel_base, initrd_base;
+     long kernel_size, initrd_size;
+     int linux_boot;
+-    int fl_idx, fl_sectors;
++    int fl_idx;
+     DriveInfo *dinfo;
+ 
+ #ifdef TARGET_PPCEMB
+@@ -502,15 +498,11 @@ static void taihu_405ep_init(MachineState *machine)
+ #if defined(USE_FLASH_BIOS)
+     dinfo = drive_get(IF_PFLASH, 0, fl_idx);
+     if (dinfo) {
+-        BlockBackend *blk = blk_by_legacy_dinfo(dinfo);
+-
+-        bios_size = blk_getlength(blk);
+-        /* XXX: should check that size is 2MB */
+-        //        bios_size = 2 * 1024 * 1024;
+-        fl_sectors = (bios_size + 65535) >> 16;
+-        pflash_cfi02_register((uint32_t)(-bios_size),
++        bios_size = 2 * MiB;
++        pflash_cfi02_register(0xFFE00000,
+                               NULL, "taihu_405ep.bios", bios_size,
+-                              blk, 65536, fl_sectors, 1,
++                              dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
++                              64 * KiB, bios_size / (64 * KiB), 1,
+                               4, 0x0001, 0x22DA, 0x0000, 0x0000, 0x555, 0x2AA,
+                               1);
+         fl_idx++;
+@@ -541,14 +533,10 @@ static void taihu_405ep_init(MachineState *machine)
+     /* Register Linux flash */
+     dinfo = drive_get(IF_PFLASH, 0, fl_idx);
+     if (dinfo) {
+-        BlockBackend *blk = blk_by_legacy_dinfo(dinfo);
+-
+-        bios_size = blk_getlength(blk);
+-        /* XXX: should check that size is 32MB */
+-        bios_size = 32 * 1024 * 1024;
+-        fl_sectors = (bios_size + 65535) >> 16;
++        bios_size = 32 * MiB;
+         pflash_cfi02_register(0xfc000000, NULL, "taihu_405ep.flash", bios_size,
+-                              blk, 65536, fl_sectors, 1,
++                              dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
++                              64 * KiB, bios_size / (64 * KiB), 1,
+                               4, 0x0001, 0x22DA, 0x0000, 0x0000, 0x555, 0x2AA,
+                               1);
+         fl_idx++;
+-- 
+1.8.3.1
+

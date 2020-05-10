@@ -1,0 +1,47 @@
+From b6ffe1491ccf08594837991b5a9ead762b65ca97 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:52 +0100
+Subject: [PATCH 11/34] block: Make auto-read-only=on default for -drive
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-11-kwolf@redhat.com>
+Patchwork-id: 83115
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 10/12] block: Make auto-read-only=on default for -drive
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+While we want machine interfaces like -blockdev and QMP blockdev-add to
+add as little auto-detection as possible so that management tools are
+explicit about their needs, -drive is a convenience option for human
+users. Enabling auto-read-only=on by default there enables users to use
+read-only images for read-only guest devices without having to specify
+read-only=on explicitly. If they try to attach the image to a read-write
+device, they will still get an error message.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 9384a444f6ebcd66bba0ae3c8434120d03c8dfea)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockdev.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/blockdev.c b/blockdev.c
+index 3d73f05..3eb1880 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -631,6 +631,7 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
+         qdict_set_default_str(bs_opts, BDRV_OPT_CACHE_NO_FLUSH, "off");
+         qdict_set_default_str(bs_opts, BDRV_OPT_READ_ONLY,
+                               read_only ? "on" : "off");
++        qdict_set_default_str(bs_opts, BDRV_OPT_AUTO_READ_ONLY, "on");
+         assert((bdrv_flags & BDRV_O_CACHE_MASK) == 0);
+ 
+         if (runstate_check(RUN_STATE_INMIGRATE)) {
+-- 
+1.8.3.1
+

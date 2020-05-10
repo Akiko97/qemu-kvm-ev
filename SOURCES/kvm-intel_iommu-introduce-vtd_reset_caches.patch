@@ -1,0 +1,66 @@
+From 7fc26da32e430d69df4ca9f74047310583c97e79 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Thu, 8 Nov 2018 05:37:18 +0100
+Subject: [PATCH 11/22] intel_iommu: introduce vtd_reset_caches()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Peter Xu <peterx@redhat.com>
+Message-id: <20181108053721.13162-5-peterx@redhat.com>
+Patchwork-id: 82955
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 4/7] intel_iommu: introduce vtd_reset_caches()
+Bugzilla: 1627272
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+Provide the function and use it in vtd_init().  Used to reset both
+context entry cache and iotlb cache for the whole IOMMU unit.
+
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Jason Wang <jasowang@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 06aba4ca52fd2c8718b8ba486f22f0aa7c99ed55)
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/intel_iommu.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/hw/i386/intel_iommu.c b/hw/i386/intel_iommu.c
+index aab86e9..48d0ba3 100644
+--- a/hw/i386/intel_iommu.c
++++ b/hw/i386/intel_iommu.c
+@@ -227,6 +227,14 @@ static void vtd_reset_iotlb(IntelIOMMUState *s)
+     vtd_iommu_unlock(s);
+ }
+ 
++static void vtd_reset_caches(IntelIOMMUState *s)
++{
++    vtd_iommu_lock(s);
++    vtd_reset_iotlb_locked(s);
++    vtd_reset_context_cache_locked(s);
++    vtd_iommu_unlock(s);
++}
++
+ static uint64_t vtd_get_iotlb_key(uint64_t gfn, uint16_t source_id,
+                                   uint32_t level)
+ {
+@@ -3160,10 +3168,7 @@ static void vtd_init(IntelIOMMUState *s)
+         s->cap |= VTD_CAP_CM;
+     }
+ 
+-    vtd_iommu_lock(s);
+-    vtd_reset_context_cache_locked(s);
+-    vtd_reset_iotlb_locked(s);
+-    vtd_iommu_unlock(s);
++    vtd_reset_caches(s);
+ 
+     /* Define registers with default values and bit semantics */
+     vtd_define_long(s, DMAR_VER_REG, 0x10UL, 0, 0);
+-- 
+1.8.3.1
+

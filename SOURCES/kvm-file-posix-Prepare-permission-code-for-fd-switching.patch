@@ -1,0 +1,191 @@
+From a1cc5d5a181559a6f68c459cbae8488303112660 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:10:09 +0100
+Subject: [PATCH 013/163] file-posix: Prepare permission code for fd switching
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-14-kwolf@redhat.com>
+Patchwork-id: 84890
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 13/14] file-posix: Prepare permission code for fd switching
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+In order to be able to dynamically reopen the file read-only or
+read-write, depending on the users that are attached, we need to be able
+to switch to a different file descriptor during the permission change.
+
+This interacts with reopen, which also creates a new file descriptor and
+performs permission changes internally. In this case, the permission
+change code must reuse the reopen file descriptor instead of creating a
+third one.
+
+In turn, reopen can drop its code to copy file locks to the new file
+descriptor because that is now done when applying the new permissions.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 6ceabe6f77e4ae5ac2fa3d2ac1be11dc95021941)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 96 +++++++++++++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 85 insertions(+), 11 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index ae16f2f..f0f8eaf 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -156,6 +156,7 @@ typedef struct BDRVRawState {
+     uint64_t locked_perm;
+     uint64_t locked_shared_perm;
+ 
++    int perm_change_fd;
+     BDRVReopenState *reopen_state;
+ 
+ #ifdef CONFIG_XFS
+@@ -837,7 +838,8 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+ }
+ 
+ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
+-                                 int *open_flags, Error **errp)
++                                 int *open_flags, bool force_dup,
++                                 Error **errp)
+ {
+     BDRVRawState *s = bs->opaque;
+     int fd = -1;
+@@ -863,6 +865,11 @@ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
+     assert((s->open_flags & O_ASYNC) == 0);
+ #endif
+ 
++    if (!force_dup && *open_flags == s->open_flags) {
++        /* We're lucky, the existing fd is fine */
++        return s->fd;
++    }
++
+     if ((*open_flags & ~fcntl_flags) == (s->open_flags & ~fcntl_flags)) {
+         /* dup the original fd */
+         fd = qemu_dup(s->fd);
+@@ -909,7 +916,7 @@ static int raw_reopen_prepare(BDRVReopenState *state,
+     rs = state->opaque;
+ 
+     rs->fd = raw_reconfigure_getfd(state->bs, state->flags, &rs->open_flags,
+-                                   &local_err);
++                                   true, &local_err);
+     if (local_err) {
+         error_propagate(errp, local_err);
+         ret = -1;
+@@ -925,14 +932,6 @@ static int raw_reopen_prepare(BDRVReopenState *state,
+             ret = -EINVAL;
+             goto out_fd;
+         }
+-
+-        /* Copy locks to the new fd */
+-        ret = raw_apply_lock_bytes(NULL, rs->fd, s->locked_perm,
+-                                   s->locked_shared_perm, false, errp);
+-        if (ret < 0) {
+-            ret = -EINVAL;
+-            goto out_fd;
+-        }
+     }
+ 
+     s->reopen_state = state;
+@@ -2524,12 +2523,78 @@ static QemuOptsList raw_create_opts = {
+ static int raw_check_perm(BlockDriverState *bs, uint64_t perm, uint64_t shared,
+                           Error **errp)
+ {
+-    return raw_handle_perm_lock(bs, RAW_PL_PREPARE, perm, shared, errp);
++    BDRVRawState *s = bs->opaque;
++    BDRVRawReopenState *rs = NULL;
++    int open_flags;
++    int ret;
++
++    if (s->perm_change_fd) {
++        /*
++         * In the context of reopen, this function may be called several times
++         * (directly and recursively while change permissions of the parent).
++         * This is even true for children that don't inherit from the original
++         * reopen node, so s->reopen_state is not set.
++         *
++         * Ignore all but the first call.
++         */
++        return 0;
++    }
++
++    if (s->reopen_state) {
++        /* We already have a new file descriptor to set permissions for */
++        assert(s->reopen_state->perm == perm);
++        assert(s->reopen_state->shared_perm == shared);
++        rs = s->reopen_state->opaque;
++        s->perm_change_fd = rs->fd;
++    } else {
++        /* We may need a new fd if auto-read-only switches the mode */
++        ret = raw_reconfigure_getfd(bs, bs->open_flags, &open_flags,
++                                    false, errp);
++        if (ret < 0) {
++            return ret;
++        } else if (ret != s->fd) {
++            s->perm_change_fd = ret;
++        }
++    }
++
++    /* Prepare permissions on old fd to avoid conflicts between old and new,
++     * but keep everything locked that new will need. */
++    ret = raw_handle_perm_lock(bs, RAW_PL_PREPARE, perm, shared, errp);
++    if (ret < 0) {
++        goto fail;
++    }
++
++    /* Copy locks to the new fd */
++    if (s->perm_change_fd) {
++        ret = raw_apply_lock_bytes(NULL, s->perm_change_fd, perm, ~shared,
++                                   false, errp);
++        if (ret < 0) {
++            raw_handle_perm_lock(bs, RAW_PL_ABORT, 0, 0, NULL);
++            goto fail;
++        }
++    }
++    return 0;
++
++fail:
++    if (s->perm_change_fd && !s->reopen_state) {
++        qemu_close(s->perm_change_fd);
++    }
++    s->perm_change_fd = 0;
++    return ret;
+ }
+ 
+ static void raw_set_perm(BlockDriverState *bs, uint64_t perm, uint64_t shared)
+ {
+     BDRVRawState *s = bs->opaque;
++
++    /* For reopen, we have already switched to the new fd (.bdrv_set_perm is
++     * called after .bdrv_reopen_commit) */
++    if (s->perm_change_fd && s->fd != s->perm_change_fd) {
++        qemu_close(s->fd);
++        s->fd = s->perm_change_fd;
++    }
++    s->perm_change_fd = 0;
++
+     raw_handle_perm_lock(bs, RAW_PL_COMMIT, perm, shared, NULL);
+     s->perm = perm;
+     s->shared_perm = shared;
+@@ -2537,6 +2602,15 @@ static void raw_set_perm(BlockDriverState *bs, uint64_t perm, uint64_t shared)
+ 
+ static void raw_abort_perm_update(BlockDriverState *bs)
+ {
++    BDRVRawState *s = bs->opaque;
++
++    /* For reopen, .bdrv_reopen_abort is called afterwards and will close
++     * the file descriptor. */
++    if (s->perm_change_fd && !s->reopen_state) {
++        qemu_close(s->perm_change_fd);
++    }
++    s->perm_change_fd = 0;
++
+     raw_handle_perm_lock(bs, RAW_PL_ABORT, 0, 0, NULL);
+ }
+ 
+-- 
+1.8.3.1
+

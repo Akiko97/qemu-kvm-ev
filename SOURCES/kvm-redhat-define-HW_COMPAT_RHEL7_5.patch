@@ -1,0 +1,61 @@
+From 49805edee0bec708c9f59e87bd17edb03acca9f6 Mon Sep 17 00:00:00 2001
+From: Laurent Vivier <lvivier@redhat.com>
+Date: Fri, 1 Jun 2018 08:30:38 +0200
+Subject: [PATCH 3/8] redhat: define HW_COMPAT_RHEL7_5
+
+RH-Author: Laurent Vivier <lvivier@redhat.com>
+Message-id: <20180524141145.7532-2-lvivier@redhat.com>
+Patchwork-id: 80471
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] redhat: define HW_COMPAT_RHEL7_5
+Bugzilla: 1557054
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+Signed-off-by: Laurent Vivier <lvivier@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/hw/compat.h | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/include/hw/compat.h b/include/hw/compat.h
+index 666eed9..d711b5c5 100644
+--- a/include/hw/compat.h
++++ b/include/hw/compat.h
+@@ -478,4 +478,33 @@
+         .value    = "false",\
+     },
+ 
++/* like HW_COMPAT_2_10 and HW_COMPAT_2_11
++ */
++#define HW_COMPAT_RHEL7_5 \
++    {  /* HW_COMPAT_RHEL7_5 */ \
++        .driver   = "hpet",\
++        .property = "hpet-offset-saved",\
++        .value    = "false",\
++    },{ /* HW_COMPAT_RHEL7_5 */ \
++        .driver   = "virtio-blk-pci",\
++        .property = "vectors",\
++        .value    = "2",\
++    },{ /* HW_COMPAT_RHEL7_5 */ \
++        .driver   = "vhost-user-blk-pci",\
++        .property = "vectors",\
++        .value    = "2",\
++    },{ /* HW_COMPAT_RHEL7_5 */ \
++        .driver   = "e1000",\
++        .property = "migrate_tso_props",\
++        .value    = "off",\
++    },{ /* HW_COMPAT_RHEL7_5 */ \
++        .driver   = "virtio-mouse-device",\
++        .property = "wheel-axis",\
++        .value    = "false",\
++    },{ /* HW_COMPAT_RHEL7_5 */ \
++        .driver   = "virtio-tablet-device",\
++        .property = "wheel-axis",\
++        .value    = "false",\
++    },
++
+ #endif /* HW_COMPAT_H */
+-- 
+1.8.3.1
+

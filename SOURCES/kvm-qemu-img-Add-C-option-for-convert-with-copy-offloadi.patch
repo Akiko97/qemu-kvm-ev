@@ -1,0 +1,147 @@
+From 2d72f0886af14ab032974dd228e1c55e1501f117 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Wed, 1 Aug 2018 06:35:37 +0200
+Subject: [PATCH 01/13] qemu-img: Add -C option for convert with copy
+ offloading
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180801063538.32582-2-famz@redhat.com>
+Patchwork-id: 81560
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/2] qemu-img: Add -C option for convert with copy offloading
+Bugzilla: 1607774
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit e11ce12f5eb26438419e486a3ae2c9bb58a23c1f)
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Conflicts:
+
+	qemu-img-cmds.hx
+	qemu-img.texi
+	qemu-img.c
+
+All contextual conflicts.
+
+1) Downstream doesn't have 46e8d272ba (qemu-img: Remove deprecated -s
+snapshot_id_or_name option).
+2) Downstream doesn't have 88481329c0 (qemu-img: allow compressed
+not-in-order writes).
+---
+ qemu-img-cmds.hx |  2 +-
+ qemu-img.c       | 21 +++++++++++++++++----
+ qemu-img.texi    |  8 +++++++-
+ 3 files changed, 25 insertions(+), 6 deletions(-)
+
+diff --git a/qemu-img-cmds.hx b/qemu-img-cmds.hx
+index 2fe3189..48815c0 100644
+--- a/qemu-img-cmds.hx
++++ b/qemu-img-cmds.hx
+@@ -41,7 +41,7 @@ STEXI
+ ETEXI
+ 
+ DEF("convert", img_convert,
+-    "convert [--object objectdef] [--image-opts] [--target-image-opts] [-U] [-c] [-p] [-q] [-n] [-f fmt] [-t cache] [-T src_cache] [-O output_fmt] [-B backing_file] [-o options] [-s snapshot_id_or_name] [-l snapshot_param] [-S sparse_size] [-m num_coroutines] [-W] filename [filename2 [...]] output_filename")
++    "convert [--object objectdef] [--image-opts] [--target-image-opts] [-U] [-C] [-c] [-p] [-q] [-n] [-f fmt] [-t cache] [-T src_cache] [-O output_fmt] [-B backing_file] [-o options] [-s snapshot_id_or_name] [-l snapshot_param] [-S sparse_size] [-m num_coroutines] [-W] filename [filename2 [...]] output_filename")
+ STEXI
+ @item convert [--object @var{objectdef}] [--image-opts] [--target-image-opts] [-U] [-c] [-p] [-q] [-n] [-f @var{fmt}] [-t @var{cache}] [-T @var{src_cache}] [-O @var{output_fmt}] [-B @var{backing_file}] [-o @var{options}] [-s @var{snapshot_id_or_name}] [-l @var{snapshot_param}] [-S @var{sparse_size}] [-m @var{num_coroutines}] [-W] @var{filename} [@var{filename2} [...]] @var{output_filename}
+ ETEXI
+diff --git a/qemu-img.c b/qemu-img.c
+index eaee6d6..c9ccc1e 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -2000,11 +2000,12 @@ static int img_convert(int argc, char **argv)
+          skip_create = false, progress = false, tgt_image_opts = false;
+     int64_t ret = -EINVAL;
+     bool force_share = false;
++    bool explict_min_sparse = false;
+ 
+     ImgConvertState s = (ImgConvertState) {
+         /* Need at least 4k of zeros for sparse detection */
+         .min_sparse         = 8,
+-        .copy_range         = true,
++        .copy_range         = false,
+         .buf_sectors        = IO_BUF_SIZE / BDRV_SECTOR_SIZE,
+         .wr_in_order        = true,
+         .num_coroutines     = 8,
+@@ -2019,7 +2020,7 @@ static int img_convert(int argc, char **argv)
+             {"target-image-opts", no_argument, 0, OPTION_TARGET_IMAGE_OPTS},
+             {0, 0, 0, 0}
+         };
+-        c = getopt_long(argc, argv, ":hf:O:B:co:s:l:S:pt:T:qnm:WU",
++        c = getopt_long(argc, argv, ":hf:O:B:Cco:s:l:S:pt:T:qnm:WU",
+                         long_options, NULL);
+         if (c == -1) {
+             break;
+@@ -2043,9 +2044,11 @@ static int img_convert(int argc, char **argv)
+         case 'B':
+             out_baseimg = optarg;
+             break;
++        case 'C':
++            s.copy_range = true;
++            break;
+         case 'c':
+             s.compressed = true;
+-            s.copy_range = false;
+             break;
+         case 'o':
+             if (!is_valid_option_list(optarg)) {
+@@ -2087,7 +2090,7 @@ static int img_convert(int argc, char **argv)
+             }
+ 
+             s.min_sparse = sval / BDRV_SECTOR_SIZE;
+-            s.copy_range = false;
++            explict_min_sparse = true;
+             break;
+         }
+         case 'p':
+@@ -2152,6 +2155,16 @@ static int img_convert(int argc, char **argv)
+         goto fail_getopt;
+     }
+ 
++    if (s.compressed && s.copy_range) {
++        error_report("Cannot enable copy offloading when -c is used");
++        goto fail_getopt;
++    }
++
++    if (explict_min_sparse && s.copy_range) {
++        error_report("Cannot enable copy offloading when -S is used");
++        goto fail_getopt;
++    }
++
+     if (tgt_image_opts && !skip_create) {
+         error_report("--target-image-opts requires use of -n flag");
+         goto fail_getopt;
+diff --git a/qemu-img.texi b/qemu-img.texi
+index 8a26400..74d7290 100644
+--- a/qemu-img.texi
++++ b/qemu-img.texi
+@@ -172,6 +172,12 @@ Number of parallel coroutines for the convert process
+ Allow out-of-order writes to the destination. This option improves performance,
+ but is only recommended for preallocated devices like host devices or other
+ raw block devices.
++@item -C
++Try to use copy offloading to move data from source image to target. This may
++improve performance if the data is remote, such as with NFS or iSCSI backends,
++but will not automatically sparsify zero sectors, and may result in a fully
++allocated target image depending on the host support for getting allocation
++information.
+ @end table
+ 
+ Parameters to dd subcommand:
+@@ -340,7 +346,7 @@ Error on reading data
+ 
+ @end table
+ 
+-@item convert [-c] [-p] [-n] [-f @var{fmt}] [-t @var{cache}] [-T @var{src_cache}] [-O @var{output_fmt}] [-B @var{backing_file}] [-o @var{options}] [-s @var{snapshot_id_or_name}] [-l @var{snapshot_param}] [-m @var{num_coroutines}] [-W] [-S @var{sparse_size}] @var{filename} [@var{filename2} [...]] @var{output_filename}
++@item convert [-C] [-c] [-p] [-n] [-f @var{fmt}] [-t @var{cache}] [-T @var{src_cache}] [-O @var{output_fmt}] [-B @var{backing_file}] [-o @var{options}] [-s @var{snapshot_id_or_name}] [-l @var{snapshot_param}] [-m @var{num_coroutines}] [-W] [-S @var{sparse_size}] @var{filename} [@var{filename2} [...]] @var{output_filename}
+ 
+ Convert the disk image @var{filename} or a snapshot @var{snapshot_param}(@var{snapshot_id_or_name} is deprecated)
+ to disk image @var{output_filename} using format @var{output_fmt}. It can be optionally compressed (@code{-c}
+-- 
+1.8.3.1
+

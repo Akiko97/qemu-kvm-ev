@@ -1,0 +1,163 @@
+From 272c652c38c9f9bcce2eb8e4e32ab68d48c3531a Mon Sep 17 00:00:00 2001
+From: "Daniel P. Berrange" <berrange@redhat.com>
+Date: Wed, 24 Apr 2019 10:30:24 +0200
+Subject: [PATCH 05/12] crypto: remove code duplication in tweak
+ encrypt/decrypt
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Daniel P. Berrange <berrange@redhat.com>
+Message-id: <20190424103030.2925-4-berrange@redhat.com>
+Patchwork-id: 85891
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/9] crypto: remove code duplication in tweak encrypt/decrypt
+Bugzilla: 1666336
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+
+The tweak encrypt/decrypt functions are identical except for the
+comments, so can be merged. Profiling data shows that the compiler is
+in fact already merging the two merges in the object files.
+
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+(cherry picked from commit 299ec87838babdf38be618cf2d81aef2500758bd)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ crypto/xts.c | 64 ++++++++++++++----------------------------------------------
+ 1 file changed, 15 insertions(+), 49 deletions(-)
+
+diff --git a/crypto/xts.c b/crypto/xts.c
+index 9521234..3c1a92f 100644
+--- a/crypto/xts.c
++++ b/crypto/xts.c
+@@ -43,20 +43,20 @@ static void xts_mult_x(uint8_t *I)
+ 
+ 
+ /**
+- * xts_tweak_uncrypt:
++ * xts_tweak_encdec:
+  * @param ctxt: the cipher context
+  * @param func: the cipher function
+- * @src: buffer providing the cipher text of XTS_BLOCK_SIZE bytes
+- * @dst: buffer to output the plain text of XTS_BLOCK_SIZE bytes
++ * @src: buffer providing the input text of XTS_BLOCK_SIZE bytes
++ * @dst: buffer to output the output text of XTS_BLOCK_SIZE bytes
+  * @iv: the initialization vector tweak of XTS_BLOCK_SIZE bytes
+  *
+- * Decrypt data with a tweak
++ * Encrypt/decrypt data with a tweak
+  */
+-static void xts_tweak_decrypt(const void *ctx,
+-                              xts_cipher_func *func,
+-                              const uint8_t *src,
+-                              uint8_t *dst,
+-                              uint8_t *iv)
++static void xts_tweak_encdec(const void *ctx,
++                             xts_cipher_func *func,
++                             const uint8_t *src,
++                             uint8_t *dst,
++                             uint8_t *iv)
+ {
+     unsigned long x;
+ 
+@@ -105,7 +105,7 @@ void xts_decrypt(const void *datactx,
+     encfunc(tweakctx, XTS_BLOCK_SIZE, T, iv);
+ 
+     for (i = 0; i < lim; i++) {
+-        xts_tweak_decrypt(datactx, decfunc, src, dst, T);
++        xts_tweak_encdec(datactx, decfunc, src, dst, T);
+ 
+         src += XTS_BLOCK_SIZE;
+         dst += XTS_BLOCK_SIZE;
+@@ -117,7 +117,7 @@ void xts_decrypt(const void *datactx,
+         xts_mult_x(CC);
+ 
+         /* PP = tweak decrypt block m-1 */
+-        xts_tweak_decrypt(datactx, decfunc, src, PP, CC);
++        xts_tweak_encdec(datactx, decfunc, src, PP, CC);
+ 
+         /* Pm = first length % XTS_BLOCK_SIZE bytes of PP */
+         for (i = 0; i < mo; i++) {
+@@ -129,7 +129,7 @@ void xts_decrypt(const void *datactx,
+         }
+ 
+         /* Pm-1 = Tweak uncrypt CC */
+-        xts_tweak_decrypt(datactx, decfunc, CC, dst, T);
++        xts_tweak_encdec(datactx, decfunc, CC, dst, T);
+     }
+ 
+     /* Decrypt the iv back */
+@@ -137,40 +137,6 @@ void xts_decrypt(const void *datactx,
+ }
+ 
+ 
+-/**
+- * xts_tweak_crypt:
+- * @param ctxt: the cipher context
+- * @param func: the cipher function
+- * @src: buffer providing the plain text of XTS_BLOCK_SIZE bytes
+- * @dst: buffer to output the cipher text of XTS_BLOCK_SIZE bytes
+- * @iv: the initialization vector tweak of XTS_BLOCK_SIZE bytes
+- *
+- * Encrypt data with a tweak
+- */
+-static void xts_tweak_encrypt(const void *ctx,
+-                              xts_cipher_func *func,
+-                              const uint8_t *src,
+-                              uint8_t *dst,
+-                              uint8_t *iv)
+-{
+-    unsigned long x;
+-
+-    /* tweak encrypt block i */
+-    for (x = 0; x < XTS_BLOCK_SIZE; x++) {
+-        dst[x] = src[x] ^ iv[x];
+-    }
+-
+-    func(ctx, XTS_BLOCK_SIZE, dst, dst);
+-
+-    for (x = 0; x < XTS_BLOCK_SIZE; x++) {
+-        dst[x] = dst[x] ^ iv[x];
+-    }
+-
+-    /* LFSR the tweak */
+-    xts_mult_x(iv);
+-}
+-
+-
+ void xts_encrypt(const void *datactx,
+                  const void *tweakctx,
+                  xts_cipher_func *encfunc,
+@@ -200,7 +166,7 @@ void xts_encrypt(const void *datactx,
+     encfunc(tweakctx, XTS_BLOCK_SIZE, T, iv);
+ 
+     for (i = 0; i < lim; i++) {
+-        xts_tweak_encrypt(datactx, encfunc, src, dst, T);
++        xts_tweak_encdec(datactx, encfunc, src, dst, T);
+ 
+         dst += XTS_BLOCK_SIZE;
+         src += XTS_BLOCK_SIZE;
+@@ -209,7 +175,7 @@ void xts_encrypt(const void *datactx,
+     /* if length is not a multiple of XTS_BLOCK_SIZE then */
+     if (mo > 0) {
+         /* CC = tweak encrypt block m-1 */
+-        xts_tweak_encrypt(datactx, encfunc, src, CC, T);
++        xts_tweak_encdec(datactx, encfunc, src, CC, T);
+ 
+         /* Cm = first length % XTS_BLOCK_SIZE bytes of CC */
+         for (i = 0; i < mo; i++) {
+@@ -222,7 +188,7 @@ void xts_encrypt(const void *datactx,
+         }
+ 
+         /* Cm-1 = Tweak encrypt PP */
+-        xts_tweak_encrypt(datactx, encfunc, PP, dst, T);
++        xts_tweak_encdec(datactx, encfunc, PP, dst, T);
+     }
+ 
+     /* Decrypt the iv back */
+-- 
+1.8.3.1
+

@@ -1,0 +1,70 @@
+From 44ff04f6ce608282484fa9894d7fc91e8722015d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:33 +0100
+Subject: [PATCH 066/163] tests: check if qemu-nbd is still alive before
+ waiting
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-21-jsnow@redhat.com>
+Patchwork-id: 85102
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 20/28] tests: check if qemu-nbd is still alive before waiting
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Daniel P. Berrangé <berrange@redhat.com>
+
+If the qemu-nbd UNIX socket has not shown up, the tests will sleep a bit
+and then check again repeatedly for up to 30 seconds. This is pointless
+if the qemu-nbd process has quit due to an error, so check whether the
+pid is still alive before waiting and retrying.
+
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <20181116155325.22428-5-berrange@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit b39b58d5d0da3e7057d7d636641018b0fc25139b)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/common.nbd | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/tests/qemu-iotests/common.nbd b/tests/qemu-iotests/common.nbd
+index 27357f3..9f841ab 100644
+--- a/tests/qemu-iotests/common.nbd
++++ b/tests/qemu-iotests/common.nbd
+@@ -37,11 +37,19 @@ function nbd_server_stop()
+ 
+ function nbd_server_wait_for_unix_socket()
+ {
++    pid=$1
++
+     for ((i = 0; i < 300; i++))
+     do
+         if [ -r "$nbd_unix_socket" ]; then
+             return
+         fi
++        kill -s 0 $pid 2>/dev/null
++        if test $? != 0
++        then
++            echo "qemu-nbd unexpectedly quit"
++            exit 1
++        fi
+         sleep 0.1
+     done
+     echo "Failed in check of unix socket created by qemu-nbd"
+@@ -52,5 +60,5 @@ function nbd_server_start_unix_socket()
+ {
+     nbd_server_stop
+     $QEMU_NBD -v -t -k "$nbd_unix_socket" "$@" &
+-    nbd_server_wait_for_unix_socket
++    nbd_server_wait_for_unix_socket $!
+ }
+-- 
+1.8.3.1
+

@@ -1,0 +1,116 @@
+From 4dad2c0644a22a935a87f86b4d63747a9598bb5d Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 16:43:10 +0200
+Subject: [PATCH 42/54] qemu-io: Exit with error when a command failed
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618164312.24423-4-mreitz@redhat.com>
+Patchwork-id: 80780
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 3/5] qemu-io: Exit with error when a command failed
+Bugzilla: 1519617
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Currently, qemu-io basically always returns success when it gets to
+interactive mode (so once the whole command line has been parsed; even
+before the commands on the command line are interpreted).  That is not
+very useful.
+
+This patch makes qemu-io return failure when any of the executed
+commands failed.
+
+Buglink: https://bugzilla.redhat.com/show_bug.cgi?id=1519617
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-id: 20180509194302.21585-4-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 6b3aa8485ca8e61b168f51d465188855cf549bd2)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-io.c | 28 ++++++++++++++++++++++------
+ 1 file changed, 22 insertions(+), 6 deletions(-)
+
+diff --git a/qemu-io.c b/qemu-io.c
+index ec66838..13829f5 100644
+--- a/qemu-io.c
++++ b/qemu-io.c
+@@ -400,17 +400,21 @@ static void prep_fetchline(void *opaque)
+     *fetchable= 1;
+ }
+ 
+-static void command_loop(void)
++static int command_loop(void)
+ {
+     int i, fetchable = 0, prompted = 0;
++    int ret, last_error = 0;
+     char *input;
+ 
+     for (i = 0; !quit_qemu_io && i < ncmdline; i++) {
+-        qemuio_command(qemuio_blk, cmdline[i]);
++        ret = qemuio_command(qemuio_blk, cmdline[i]);
++        if (ret < 0) {
++            last_error = ret;
++        }
+     }
+     if (cmdline) {
+         g_free(cmdline);
+-        return;
++        return last_error;
+     }
+ 
+     while (!quit_qemu_io) {
+@@ -431,13 +435,19 @@ static void command_loop(void)
+         if (input == NULL) {
+             break;
+         }
+-        qemuio_command(qemuio_blk, input);
++        ret = qemuio_command(qemuio_blk, input);
+         g_free(input);
+ 
++        if (ret < 0) {
++            last_error = ret;
++        }
++
+         prompted = 0;
+         fetchable = 0;
+     }
+     qemu_set_fd_handler(STDIN_FILENO, NULL, NULL, NULL);
++
++    return last_error;
+ }
+ 
+ static void add_user_command(char *optarg)
+@@ -502,6 +512,7 @@ int main(int argc, char **argv)
+     int c;
+     int opt_index = 0;
+     int flags = BDRV_O_UNMAP;
++    int ret;
+     bool writethrough = true;
+     Error *local_error = NULL;
+     QDict *opts = NULL;
+@@ -663,7 +674,7 @@ int main(int argc, char **argv)
+             }
+         }
+     }
+-    command_loop();
++    ret = command_loop();
+ 
+     /*
+      * Make sure all outstanding requests complete before the program exits.
+@@ -672,5 +683,10 @@ int main(int argc, char **argv)
+ 
+     blk_unref(qemuio_blk);
+     g_free(readline_state);
+-    return 0;
++
++    if (ret < 0) {
++        return 1;
++    } else {
++        return 0;
++    }
+ }
+-- 
+1.8.3.1
+

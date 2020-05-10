@@ -1,0 +1,74 @@
+From e776fb3350daea9851190d6445b4786f4b1f493f Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:14 +0200
+Subject: [PATCH 23/49] block: Allow AIO_WAIT_WHILE with NULL ctx
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-17-kwolf@redhat.com>
+Patchwork-id: 82168
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 16/42] block: Allow AIO_WAIT_WHILE with NULL ctx
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+bdrv_drain_all() wants to have a single polling loop for draining the
+in-flight requests of all nodes. This means that the AIO_WAIT_WHILE()
+condition relies on activity in multiple AioContexts, which is polled
+from the mainloop context. We must therefore call AIO_WAIT_WHILE() from
+the mainloop thread and use the AioWait notification mechanism.
+
+Just randomly picking the AioContext of any non-mainloop thread would
+work, but instead of bothering to find such a context in the caller, we
+can just as well accept NULL for ctx.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 4d22bbf4ef72583eefdf44db6bf9fc7683fbc4c2)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/block/aio-wait.h | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/include/block/aio-wait.h b/include/block/aio-wait.h
+index 783d367..c85a62f 100644
+--- a/include/block/aio-wait.h
++++ b/include/block/aio-wait.h
+@@ -57,7 +57,8 @@ typedef struct {
+ /**
+  * AIO_WAIT_WHILE:
+  * @wait: the aio wait object
+- * @ctx: the aio context
++ * @ctx: the aio context, or NULL if multiple aio contexts (for which the
++ *       caller does not hold a lock) are involved in the polling condition.
+  * @cond: wait while this conditional expression is true
+  *
+  * Wait while a condition is true.  Use this to implement synchronous
+@@ -75,7 +76,7 @@ typedef struct {
+     bool waited_ = false;                                          \
+     AioWait *wait_ = (wait);                                       \
+     AioContext *ctx_ = (ctx);                                      \
+-    if (in_aio_context_home_thread(ctx_)) {                        \
++    if (ctx_ && in_aio_context_home_thread(ctx_)) {                \
+         while ((cond)) {                                           \
+             aio_poll(ctx_, true);                                  \
+             waited_ = true;                                        \
+@@ -86,9 +87,13 @@ typedef struct {
+         /* Increment wait_->num_waiters before evaluating cond. */ \
+         atomic_inc(&wait_->num_waiters);                           \
+         while ((cond)) {                                           \
+-            aio_context_release(ctx_);                             \
++            if (ctx_) {                                            \
++                aio_context_release(ctx_);                         \
++            }                                                      \
+             aio_poll(qemu_get_aio_context(), true);                \
+-            aio_context_acquire(ctx_);                             \
++            if (ctx_) {                                            \
++                aio_context_acquire(ctx_);                         \
++            }                                                      \
+             waited_ = true;                                        \
+         }                                                          \
+         atomic_dec(&wait_->num_waiters);                           \
+-- 
+1.8.3.1
+

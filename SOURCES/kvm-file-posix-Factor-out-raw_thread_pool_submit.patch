@@ -1,0 +1,90 @@
+From aa184b19787e6f9701c6b273394d502e03d8b0c1 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 5 Jun 2019 13:57:01 +0200
+Subject: [PATCH 13/23] file-posix: Factor out raw_thread_pool_submit()
+
+RH-Author: Maxim Levitsky <mlevitsk@redhat.com>
+Message-id: <20190605135705.24526-6-mlevitsk@redhat.com>
+Patchwork-id: 88556
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 5/9] file-posix: Factor out raw_thread_pool_submit()
+Bugzilla: 1648622
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Kevin Wolf <kwolf@redhat.com>
+
+Getting the thread pool of the AioContext of a block node and scheduling
+some work in it is an operation that is already done twice, and we'll
+get more instances. Factor it out into a separate function.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1648622
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+(Cherry picked from 5d5de250056b0972cde2e88133db702960a32b72 with some conflicts)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 17 ++++++++++-------
+ 1 file changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 5b93d06..74da336 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -1818,13 +1818,20 @@ static int aio_worker(void *arg)
+     return ret;
+ }
+ 
++static int coroutine_fn raw_thread_pool_submit(BlockDriverState *bs,
++                                               ThreadPoolFunc func, void *arg)
++{
++    /* @bs can be NULL, bdrv_get_aio_context() returns the main context then */
++    ThreadPool *pool = aio_get_thread_pool(bdrv_get_aio_context(bs));
++    return thread_pool_submit_co(pool, func, arg);
++}
++
+ static int paio_submit_co_full(BlockDriverState *bs, int fd,
+                                int64_t offset, int fd2, int64_t offset2,
+                                QEMUIOVector *qiov,
+                                int bytes, int type)
+ {
+     RawPosixAIOData *acb = g_new(RawPosixAIOData, 1);
+-    ThreadPool *pool;
+ 
+     acb->bs = bs;
+     acb->aio_type = type;
+@@ -1842,8 +1849,7 @@ static int paio_submit_co_full(BlockDriverState *bs, int fd,
+     }
+ 
+     trace_paio_submit_co(offset, bytes, type);
+-    pool = aio_get_thread_pool(bdrv_get_aio_context(bs));
+-    return thread_pool_submit_co(pool, aio_worker, acb);
++    return raw_thread_pool_submit(bs, aio_worker, acb);
+ }
+ 
+ static inline int paio_submit_co(BlockDriverState *bs, int fd,
+@@ -1976,7 +1982,6 @@ raw_regular_truncate(BlockDriverState *bs, int fd, int64_t offset,
+                      PreallocMode prealloc, Error **errp)
+ {
+     RawPosixAIOData *acb = g_new(RawPosixAIOData, 1);
+-    ThreadPool *pool;
+ 
+     *acb = (RawPosixAIOData) {
+         .bs             = bs,
+@@ -1987,9 +1992,7 @@ raw_regular_truncate(BlockDriverState *bs, int fd, int64_t offset,
+         .errp           = errp,
+     };
+ 
+-    /* @bs can be NULL, bdrv_get_aio_context() returns the main context then */
+-    pool = aio_get_thread_pool(bdrv_get_aio_context(bs));
+-    return thread_pool_submit_co(pool, aio_worker, acb);
++    return raw_thread_pool_submit(bs, aio_worker, acb);
+ }
+ 
+ static int coroutine_fn raw_co_truncate(BlockDriverState *bs, int64_t offset,
+-- 
+1.8.3.1
+

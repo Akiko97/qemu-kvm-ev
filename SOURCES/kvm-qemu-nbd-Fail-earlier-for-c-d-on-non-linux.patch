@@ -1,0 +1,158 @@
+From fd123e372472179657da738e52e87897d0508812 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:23 +0100
+Subject: [PATCH 084/163] qemu-nbd: Fail earlier for -c/-d on non-linux
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-11-jsnow@redhat.com>
+Patchwork-id: 85173
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 10/55] qemu-nbd: Fail earlier for -c/-d on non-linux
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Connecting to a /dev/nbdN device is a Linux-specific action.
+We were already masking -c and -d from 'qemu-nbd --help' on
+non-linux.  However, while -d fails with a sensible error
+message, it took hunting through a couple of files to prove
+that.  What's more, the code for -c doesn't fail until after
+it has created a pthread and tried to open a device - possibly
+even printing an error message with %m on a non-Linux platform
+in spite of the comment that %m is glibc-specific.  Make the
+failure happen sooner, then get rid of stubs that are no
+longer needed because of the early exits.
+
+While at it: tweak the blank newlines in --help output to be
+consistent, whether or not built on Linux.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20181215135324.152629-7-eblake@redhat.com>
+Reviewed-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit 3c1fa35d74aabe9c3ab642d2591b087e53d7a616)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/client.c | 18 +-----------------
+ qemu-nbd.c   | 21 +++++++++++++++++++--
+ 2 files changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/nbd/client.c b/nbd/client.c
+index e774147..5a03a84 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -1031,23 +1031,7 @@ int nbd_disconnect(int fd)
+     return 0;
+ }
+ 
+-#else
+-int nbd_init(int fd, QIOChannelSocket *ioc, NBDExportInfo *info,
+-	     Error **errp)
+-{
+-    error_setg(errp, "nbd_init is only supported on Linux");
+-    return -ENOTSUP;
+-}
+-
+-int nbd_client(int fd)
+-{
+-    return -ENOTSUP;
+-}
+-int nbd_disconnect(int fd)
+-{
+-    return -ENOTSUP;
+-}
+-#endif
++#endif /* __linux__ */
+ 
+ int nbd_send_request(QIOChannel *ioc, NBDRequest *request)
+ {
+diff --git a/qemu-nbd.c b/qemu-nbd.c
+index 7f078b2..652199c 100644
+--- a/qemu-nbd.c
++++ b/qemu-nbd.c
+@@ -43,6 +43,12 @@
+ #include "trace/control.h"
+ #include "qemu-version.h"
+ 
++#ifdef __linux__
++#define HAVE_NBD_DEVICE 1
++#else
++#define HAVE_NBD_DEVICE 0
++#endif
++
+ #define SOCKET_PATH                "/var/lock/qemu-nbd-%s"
+ #define QEMU_NBD_OPT_CACHE         256
+ #define QEMU_NBD_OPT_AIO           257
+@@ -98,11 +104,11 @@ static void usage(const char *name)
+ "                            specify tracing options\n"
+ "  --fork                    fork off the server process and exit the parent\n"
+ "                            once the server is running\n"
+-#ifdef __linux__
++#if HAVE_NBD_DEVICE
++"\n"
+ "Kernel NBD client support:\n"
+ "  -c, --connect=DEV         connect FILE to the local NBD device DEV\n"
+ "  -d, --disconnect          disconnect the specified device\n"
+-"\n"
+ #endif
+ "\n"
+ "Block device options:\n"
+@@ -236,6 +242,7 @@ static void termsig_handler(int signum)
+ }
+ 
+ 
++#if HAVE_NBD_DEVICE
+ static void *show_parts(void *arg)
+ {
+     char *device = arg;
+@@ -321,6 +328,7 @@ out:
+     kill(getpid(), SIGTERM);
+     return (void *) EXIT_FAILURE;
+ }
++#endif /* HAVE_NBD_DEVICE */
+ 
+ static int nbd_can_accept(void)
+ {
+@@ -816,6 +824,12 @@ int main(int argc, char **argv)
+         }
+     }
+ 
++#if !HAVE_NBD_DEVICE
++    if (disconnect || device) {
++        error_report("Kernel /dev/nbdN support not available");
++        exit(EXIT_FAILURE);
++    }
++#else /* HAVE_NBD_DEVICE */
+     if (disconnect) {
+         int nbdfd = open(argv[optind], O_RDWR);
+         if (nbdfd < 0) {
+@@ -831,6 +845,7 @@ int main(int argc, char **argv)
+ 
+         return 0;
+     }
++#endif
+ 
+     if ((device && !verbose) || fork_process) {
+         int stderr_fd[2];
+@@ -1012,6 +1027,7 @@ int main(int argc, char **argv)
+     nbd_export_set_description(exp, export_description);
+ 
+     if (device) {
++#if HAVE_NBD_DEVICE
+         int ret;
+ 
+         ret = pthread_create(&client_thread, NULL, nbd_client_thread, device);
+@@ -1019,6 +1035,7 @@ int main(int argc, char **argv)
+             error_report("Failed to create client thread: %s", strerror(ret));
+             exit(EXIT_FAILURE);
+         }
++#endif
+     } else {
+         /* Shut up GCC warnings.  */
+         memset(&client_thread, 0, sizeof(client_thread));
+-- 
+1.8.3.1
+

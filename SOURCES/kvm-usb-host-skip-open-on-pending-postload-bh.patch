@@ -1,0 +1,78 @@
+From 05af6159ba18882c0bdef512abd3c852b515430b Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Wed, 13 Jun 2018 14:07:30 +0200
+Subject: [PATCH 03/57] usb-host: skip open on pending postload bh
+
+RH-Author: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: <20180613140730.16401-2-kraxel@redhat.com>
+Patchwork-id: 80667
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 1/1] usb-host: skip open on pending postload bh
+Bugzilla: 1572851
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+usb-host emulates a device unplug after live migration, because the
+device state is unknown and unplug/replug makes sure the guest
+re-initializes the device into a working state.  This can't be done in
+post-load though, so post-load just schedules a bottom half which
+executes after vmload is complete.
+
+It can happen that the device autoscan timer hits the race window
+between scheduling and running the bottom half, which in turn can
+triggers an assert().
+
+Fix that issue by just ignoring the usb_host_open() call in case the
+bottom half didn't execute yet.
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1572851
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Message-id: 20180503062932.17233-1-kraxel@redhat.com
+(cherry picked from commit 3280ea8edede3814553aa19fa27a58daedd48ad9)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/usb/host-libusb.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/hw/usb/host-libusb.c b/hw/usb/host-libusb.c
+index 1b0be07..0290fb8 100644
+--- a/hw/usb/host-libusb.c
++++ b/hw/usb/host-libusb.c
+@@ -102,6 +102,7 @@ struct USBHostDevice {
+     /* callbacks & friends */
+     QEMUBH                           *bh_nodev;
+     QEMUBH                           *bh_postld;
++    bool                             bh_postld_pending;
+     Notifier                         exit;
+ 
+     /* request queues */
+@@ -866,6 +867,10 @@ static int usb_host_open(USBHostDevice *s, libusb_device *dev)
+     int rc;
+     Error *local_err = NULL;
+ 
++    if (s->bh_postld_pending) {
++        return -1;
++    }
++
+     trace_usb_host_open_started(bus_num, addr);
+ 
+     if (s->dh != NULL) {
+@@ -1524,6 +1529,7 @@ static void usb_host_post_load_bh(void *opaque)
+     if (udev->attached) {
+         usb_device_detach(udev);
+     }
++    dev->bh_postld_pending = false;
+     usb_host_auto_check(NULL);
+ }
+ 
+@@ -1535,6 +1541,7 @@ static int usb_host_post_load(void *opaque, int version_id)
+         dev->bh_postld = qemu_bh_new(usb_host_post_load_bh, dev);
+     }
+     qemu_bh_schedule(dev->bh_postld);
++    dev->bh_postld_pending = true;
+     return 0;
+ }
+ 
+-- 
+1.8.3.1
+

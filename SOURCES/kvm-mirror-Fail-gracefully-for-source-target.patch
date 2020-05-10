@@ -1,0 +1,87 @@
+From 5d99c3a36234427da6cc0da9c3b1752c52be31e5 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Mon, 3 Sep 2018 11:15:12 +0200
+Subject: [PATCH] mirror: Fail gracefully for source == target
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180903111512.21419-2-kwolf@redhat.com>
+Patchwork-id: 82034
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/1] mirror: Fail gracefully for source == target
+Bugzilla: 1582042
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+blockdev-mirror with the same node for source and target segfaults
+today: A node is in its own backing chain, so mirror_start_job() decides
+that this is an active commit. When adding the intermediate nodes with
+block_job_add_bdrv(), it starts the iteration through the subchain with
+the backing file of source, though, so it never reaches target and
+instead runs into NULL at the base.
+
+While we could fix that by starting with source itself, there is no
+point in allowing mirroring a node into itself and I wouldn't be
+surprised if this caused more problems later.
+
+So just check for this scenario and error out.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 86fae10c64d642256cf019e6829929fa0d259c7a)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/mirror.c             | 5 +++++
+ tests/qemu-iotests/041     | 6 ++++++
+ tests/qemu-iotests/041.out | 4 ++--
+ 3 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index 435268b..65cf43d 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -1133,6 +1133,11 @@ static void mirror_start_job(const char *job_id, BlockDriverState *bs,
+         buf_size = DEFAULT_MIRROR_BUF_SIZE;
+     }
+ 
++    if (bs == target) {
++        error_setg(errp, "Can't mirror node into itself");
++        return;
++    }
++
+     /* In the case of active commit, add dummy driver to provide consistent
+      * reads on the top, while disabling it in the intermediate nodes, and make
+      * the backing chain writable. */
+diff --git a/tests/qemu-iotests/041 b/tests/qemu-iotests/041
+index c20ac7d..9336ab6 100755
+--- a/tests/qemu-iotests/041
++++ b/tests/qemu-iotests/041
+@@ -234,6 +234,12 @@ class TestSingleBlockdev(TestSingleDrive):
+         result = self.vm.qmp("blockdev-add", **args)
+         self.assert_qmp(result, 'return', {})
+ 
++    def test_mirror_to_self(self):
++        result = self.vm.qmp(self.qmp_cmd, job_id='job0',
++                             device=self.qmp_target, sync='full',
++                             target=self.qmp_target)
++        self.assert_qmp(result, 'error/class', 'GenericError')
++
+     test_large_cluster = None
+     test_image_not_found = None
+     test_small_buffer2 = None
+diff --git a/tests/qemu-iotests/041.out b/tests/qemu-iotests/041.out
+index c28b392..e071d0b 100644
+--- a/tests/qemu-iotests/041.out
++++ b/tests/qemu-iotests/041.out
+@@ -1,5 +1,5 @@
+-.....................................................................................
++........................................................................................
+ ----------------------------------------------------------------------
+-Ran 85 tests
++Ran 88 tests
+ 
+ OK
+-- 
+1.8.3.1
+

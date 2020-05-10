@@ -1,0 +1,43 @@
+From 05767713c9bd39d7d035b8edce4f7149d23500b6 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:47:47 +0200
+Subject: [PATCH 18/89] nfs: Fix error path in nfs_options_qdict_to_qapi()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-5-kwolf@redhat.com>
+Patchwork-id: 81057
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 04/73] nfs: Fix error path in nfs_options_qdict_to_qapi()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Don't throw away local_err, but propagate it to errp.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Message-id: 20180516161034.27440-1-kwolf@redhat.com
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit 54b7af4369a37afbd82573d0dcfb27febdb6dd24)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nfs.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block/nfs.c b/block/nfs.c
+index 1e12958..3059ef2 100644
+--- a/block/nfs.c
++++ b/block/nfs.c
+@@ -568,6 +568,7 @@ static BlockdevOptionsNfs *nfs_options_qdict_to_qapi(QDict *options,
+     visit_free(v);
+ 
+     if (local_err) {
++        error_propagate(errp, local_err);
+         return NULL;
+     }
+ 
+-- 
+1.8.3.1
+

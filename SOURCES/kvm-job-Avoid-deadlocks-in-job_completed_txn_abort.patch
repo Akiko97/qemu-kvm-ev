@@ -1,0 +1,83 @@
+From c933e15569c9d9b3db7031d8c54712f819816f39 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:39 +0200
+Subject: [PATCH 48/49] job: Avoid deadlocks in job_completed_txn_abort()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-42-kwolf@redhat.com>
+Patchwork-id: 82194
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 41/42] job: Avoid deadlocks in job_completed_txn_abort()
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Amongst others, job_finalize_single() calls the .prepare/.commit/.abort
+callbacks of the individual job driver. Recently, their use was adapted
+for all block jobs so that they involve code calling AIO_WAIT_WHILE()
+now. Such code must be called under the AioContext lock for the
+respective job, but without holding any other AioContext lock.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ job.c | 16 +++++++++++-----
+ 1 file changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/job.c b/job.c
+index 42af9e2..5b53e43 100644
+--- a/job.c
++++ b/job.c
+@@ -713,6 +713,7 @@ static void job_cancel_async(Job *job, bool force)
+ 
+ static void job_completed_txn_abort(Job *job)
+ {
++    AioContext *outer_ctx = job->aio_context;
+     AioContext *ctx;
+     JobTxn *txn = job->txn;
+     Job *other_job;
+@@ -726,23 +727,26 @@ static void job_completed_txn_abort(Job *job)
+     txn->aborting = true;
+     job_txn_ref(txn);
+ 
+-    /* We are the first failed job. Cancel other jobs. */
+-    QLIST_FOREACH(other_job, &txn->jobs, txn_list) {
+-        ctx = other_job->aio_context;
+-        aio_context_acquire(ctx);
+-    }
++    /* We can only hold the single job's AioContext lock while calling
++     * job_finalize_single() because the finalization callbacks can involve
++     * calls of AIO_WAIT_WHILE(), which could deadlock otherwise. */
++    aio_context_release(outer_ctx);
+ 
+     /* Other jobs are effectively cancelled by us, set the status for
+      * them; this job, however, may or may not be cancelled, depending
+      * on the caller, so leave it. */
+     QLIST_FOREACH(other_job, &txn->jobs, txn_list) {
+         if (other_job != job) {
++            ctx = other_job->aio_context;
++            aio_context_acquire(ctx);
+             job_cancel_async(other_job, false);
++            aio_context_release(ctx);
+         }
+     }
+     while (!QLIST_EMPTY(&txn->jobs)) {
+         other_job = QLIST_FIRST(&txn->jobs);
+         ctx = other_job->aio_context;
++        aio_context_acquire(ctx);
+         if (!job_is_completed(other_job)) {
+             assert(job_is_cancelled(other_job));
+             job_finish_sync(other_job, NULL, NULL);
+@@ -751,6 +755,8 @@ static void job_completed_txn_abort(Job *job)
+         aio_context_release(ctx);
+     }
+ 
++    aio_context_acquire(outer_ctx);
++
+     job_txn_unref(txn);
+ }
+ 
+-- 
+1.8.3.1
+

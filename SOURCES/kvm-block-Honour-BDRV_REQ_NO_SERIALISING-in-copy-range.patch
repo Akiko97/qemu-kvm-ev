@@ -1,0 +1,72 @@
+From d1de83879c75bd2d73e9c4f24d81bfc83b992f5a Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:51 +0200
+Subject: [PATCH 66/89] block: Honour BDRV_REQ_NO_SERIALISING in copy range
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-16-jsnow@redhat.com>
+Patchwork-id: 81402
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 15/35] block: Honour BDRV_REQ_NO_SERIALISING in copy range
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+This semantics is needed by drive-backup so implement it before using
+this API there.
+
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Message-id: 20180703023758.14422-3-famz@redhat.com
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+(cherry picked from commit dee12de89380483656072f775f5ef99f4426f966)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c            | 6 ++++--
+ include/block/block.h | 5 +++--
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 7981239..b6754f3 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -2883,8 +2883,10 @@ static int coroutine_fn bdrv_co_copy_range_internal(BdrvChild *src,
+     tracked_request_begin(&dst_req, dst->bs, dst_offset,
+                           bytes, BDRV_TRACKED_WRITE);
+ 
+-    wait_serialising_requests(&src_req);
+-    wait_serialising_requests(&dst_req);
++    if (!(flags & BDRV_REQ_NO_SERIALISING)) {
++        wait_serialising_requests(&src_req);
++        wait_serialising_requests(&dst_req);
++    }
+     if (recurse_src) {
+         ret = src->bs->drv->bdrv_co_copy_range_from(src->bs,
+                                                     src, src_offset,
+diff --git a/include/block/block.h b/include/block/block.h
+index c3cfb40..e1d5e47 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -636,13 +636,14 @@ void bdrv_unregister_buf(BlockDriverState *bs, void *host);
+  * @dst: Destination child to copy data to
+  * @dst_offset: offset in @dst image to write data
+  * @bytes: number of bytes to copy
+- * @flags: request flags. Must be one of:
+- *         0 - actually read data from src;
++ * @flags: request flags. Supported flags:
+  *         BDRV_REQ_ZERO_WRITE - treat the @src range as zero data and do zero
+  *                               write on @dst as if bdrv_co_pwrite_zeroes is
+  *                               called. Used to simplify caller code, or
+  *                               during BlockDriver.bdrv_co_copy_range_from()
+  *                               recursion.
++ *         BDRV_REQ_NO_SERIALISING - do not serialize with other overlapping
++ *                                   requests currently in flight.
+  *
+  * Returns: 0 if succeeded; negative error code if failed.
+  **/
+-- 
+1.8.3.1
+

@@ -1,0 +1,141 @@
+From afaa0a6c9269fc840a8a48b2ca2693c1c09f78ed Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 21:48:31 +0100
+Subject: [PATCH 038/163] dirty-bitmap: add bdrv_dirty_bitmap_next_dirty_area
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320214838.22027-4-jsnow@redhat.com>
+Patchwork-id: 84998
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 03/10] dirty-bitmap: add bdrv_dirty_bitmap_next_dirty_area
+Bugzilla: 1691048
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+The function alters bdrv_dirty_iter_next_area(), which is wrong and
+less efficient (see further commit
+"block/mirror: fix and improve do_sync_target_write" for description).
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit a78a1a48cd1a2e86f23f113bb05e2d3dd8ae0bf6)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c         |  6 ++++++
+ include/block/dirty-bitmap.h |  2 ++
+ include/qemu/hbitmap.h       | 16 ++++++++++++++++
+ util/hbitmap.c               | 39 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 63 insertions(+)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index b162f4a..c151837 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -787,6 +787,12 @@ int64_t bdrv_dirty_bitmap_next_zero(BdrvDirtyBitmap *bitmap, uint64_t offset,
+     return hbitmap_next_zero(bitmap->bitmap, offset, bytes);
+ }
+ 
++bool bdrv_dirty_bitmap_next_dirty_area(BdrvDirtyBitmap *bitmap,
++                                       uint64_t *offset, uint64_t *bytes)
++{
++    return hbitmap_next_dirty_area(bitmap->bitmap, offset, bytes);
++}
++
+ void bdrv_merge_dirty_bitmap(BdrvDirtyBitmap *dest, const BdrvDirtyBitmap *src,
+                              HBitmap **backup, Error **errp)
+ {
+diff --git a/include/block/dirty-bitmap.h b/include/block/dirty-bitmap.h
+index 102ccdd..4ef00ca 100644
+--- a/include/block/dirty-bitmap.h
++++ b/include/block/dirty-bitmap.h
+@@ -101,6 +101,8 @@ BdrvDirtyBitmap *bdrv_dirty_bitmap_next(BlockDriverState *bs,
+ char *bdrv_dirty_bitmap_sha256(const BdrvDirtyBitmap *bitmap, Error **errp);
+ int64_t bdrv_dirty_bitmap_next_zero(BdrvDirtyBitmap *bitmap, uint64_t offset,
+                                     uint64_t bytes);
++bool bdrv_dirty_bitmap_next_dirty_area(BdrvDirtyBitmap *bitmap,
++                                       uint64_t *offset, uint64_t *bytes);
+ BdrvDirtyBitmap *bdrv_reclaim_dirty_bitmap_locked(BlockDriverState *bs,
+                                                   BdrvDirtyBitmap *bitmap,
+                                                   Error **errp);
+diff --git a/include/qemu/hbitmap.h b/include/qemu/hbitmap.h
+index 1359755..097dce3 100644
+--- a/include/qemu/hbitmap.h
++++ b/include/qemu/hbitmap.h
+@@ -311,6 +311,22 @@ unsigned long hbitmap_iter_skip_words(HBitmapIter *hbi);
+  */
+ int64_t hbitmap_next_zero(const HBitmap *hb, uint64_t start, uint64_t count);
+ 
++/* hbitmap_next_dirty_area:
++ * @hb: The HBitmap to operate on
++ * @start: in-out parameter.
++ *         in: the offset to start from
++ *         out: (if area found) start of found area
++ * @count: in-out parameter.
++ *         in: length of requested region
++ *         out: length of found area
++ *
++ * If dirty area found within [@start, @start + @count), returns true and sets
++ * @offset and @bytes appropriately. Otherwise returns false and leaves @offset
++ * and @bytes unchanged.
++ */
++bool hbitmap_next_dirty_area(const HBitmap *hb, uint64_t *start,
++                             uint64_t *count);
++
+ /* hbitmap_create_meta:
+  * Create a "meta" hbitmap to track dirtiness of the bits in this HBitmap.
+  * The caller owns the created bitmap and must call hbitmap_free_meta(hb) to
+diff --git a/util/hbitmap.c b/util/hbitmap.c
+index 09b3719..fa35652 100644
+--- a/util/hbitmap.c
++++ b/util/hbitmap.c
+@@ -246,6 +246,45 @@ int64_t hbitmap_next_zero(const HBitmap *hb, uint64_t start, uint64_t count)
+     return res;
+ }
+ 
++bool hbitmap_next_dirty_area(const HBitmap *hb, uint64_t *start,
++                             uint64_t *count)
++{
++    HBitmapIter hbi;
++    int64_t firt_dirty_off, area_end;
++    uint32_t granularity = 1UL << hb->granularity;
++    uint64_t end;
++
++    if (*start >= hb->orig_size || *count == 0) {
++        return false;
++    }
++
++    end = *count > hb->orig_size - *start ? hb->orig_size : *start + *count;
++
++    hbitmap_iter_init(&hbi, hb, *start);
++    firt_dirty_off = hbitmap_iter_next(&hbi, false);
++
++    if (firt_dirty_off < 0 || firt_dirty_off >= end) {
++        return false;
++    }
++
++    if (firt_dirty_off + granularity >= end) {
++        area_end = end;
++    } else {
++        area_end = hbitmap_next_zero(hb, firt_dirty_off + granularity,
++                                     end - firt_dirty_off - granularity);
++        if (area_end < 0) {
++            area_end = end;
++        }
++    }
++
++    if (firt_dirty_off > *start) {
++        *start = firt_dirty_off;
++    }
++    *count = area_end - *start;
++
++    return true;
++}
++
+ bool hbitmap_empty(const HBitmap *hb)
+ {
+     return hb->count == 0;
+-- 
+1.8.3.1
+

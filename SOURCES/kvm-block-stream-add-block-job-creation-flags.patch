@@ -1,0 +1,100 @@
+From 360e16997de84bddd37f5262f33d98b96b8aae2f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 10 Sep 2018 18:17:50 +0200
+Subject: [PATCH 12/25] block/stream: add block job creation flags
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180910181803.11781-13-jsnow@redhat.com>
+Patchwork-id: 82089
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 12/25] block/stream: add block job creation flags
+Bugzilla: 1626061
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Add support for taking and passing forward job creation flags.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Message-id: 20180906130225.5118-4-jsnow@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 764cffd288722a4799e7cae0eb679d80fd636fdc)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/stream.c            | 5 +++--
+ blockdev.c                | 3 ++-
+ include/block/block_int.h | 5 ++++-
+ 3 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/block/stream.c b/block/stream.c
+index 67e1e72..700eb23 100644
+--- a/block/stream.c
++++ b/block/stream.c
+@@ -214,7 +214,8 @@ static const BlockJobDriver stream_job_driver = {
+ 
+ void stream_start(const char *job_id, BlockDriverState *bs,
+                   BlockDriverState *base, const char *backing_file_str,
+-                  int64_t speed, BlockdevOnError on_error, Error **errp)
++                  int creation_flags, int64_t speed,
++                  BlockdevOnError on_error, Error **errp)
+ {
+     StreamBlockJob *s;
+     BlockDriverState *iter;
+@@ -236,7 +237,7 @@ void stream_start(const char *job_id, BlockDriverState *bs,
+                          BLK_PERM_GRAPH_MOD,
+                          BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE_UNCHANGED |
+                          BLK_PERM_WRITE,
+-                         speed, JOB_DEFAULT, NULL, NULL, errp);
++                         speed, creation_flags, NULL, NULL, errp);
+     if (!s) {
+         goto fail;
+     }
+diff --git a/blockdev.c b/blockdev.c
+index 5d38e17..c4a1801 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3280,6 +3280,7 @@ void qmp_block_stream(bool has_job_id, const char *job_id, const char *device,
+     AioContext *aio_context;
+     Error *local_err = NULL;
+     const char *base_name = NULL;
++    int job_flags = JOB_DEFAULT;
+ 
+     if (!has_on_error) {
+         on_error = BLOCKDEV_ON_ERROR_REPORT;
+@@ -3342,7 +3343,7 @@ void qmp_block_stream(bool has_job_id, const char *job_id, const char *device,
+     base_name = has_backing_file ? backing_file : base_name;
+ 
+     stream_start(has_job_id ? job_id : NULL, bs, base_bs, base_name,
+-                 has_speed ? speed : 0, on_error, &local_err);
++                 job_flags, has_speed ? speed : 0, on_error, &local_err);
+     if (local_err) {
+         error_propagate(errp, local_err);
+         goto out;
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index 07517cf..341cbe8 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -929,6 +929,8 @@ int is_windows_drive(const char *filename);
+  * flatten the whole backing file chain onto @bs.
+  * @backing_file_str: The file name that will be written to @bs as the
+  * the new backing file if the job completes. Ignored if @base is %NULL.
++ * @creation_flags: Flags that control the behavior of the Job lifetime.
++ *                  See @BlockJobCreateFlags
+  * @speed: The maximum speed, in bytes per second, or 0 for unlimited.
+  * @on_error: The action to take upon error.
+  * @errp: Error object.
+@@ -942,7 +944,8 @@ int is_windows_drive(const char *filename);
+  */
+ void stream_start(const char *job_id, BlockDriverState *bs,
+                   BlockDriverState *base, const char *backing_file_str,
+-                  int64_t speed, BlockdevOnError on_error, Error **errp);
++                  int creation_flags, int64_t speed,
++                  BlockdevOnError on_error, Error **errp);
+ 
+ /**
+  * commit_start:
+-- 
+1.8.3.1
+

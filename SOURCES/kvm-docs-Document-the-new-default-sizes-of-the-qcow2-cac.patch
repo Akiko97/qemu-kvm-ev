@@ -1,0 +1,87 @@
+From f05cd76313a9d1e461eb66ee85f9f45fdb235f85 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 17:00:12 +0100
+Subject: [PATCH 11/23] docs: Document the new default sizes of the qcow2
+ caches
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219170023.27826-3-kwolf@redhat.com>
+Patchwork-id: 84542
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 02/13] docs: Document the new default sizes of the qcow2 caches
+Bugzilla: 1656913
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Alberto Garcia <berto@igalia.com>
+
+We have just reduced the refcount cache size to the minimum unless
+the user explicitly requests a larger one, so we have to update the
+documentation to reflect this change.
+
+Signed-off-by: Alberto Garcia <berto@igalia.com>
+Message-id: c5f0bde23558dd9d33b21fffc76ac9953cc19c56.1523968389.git.berto@igalia.com
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 603790ef3aec6a19b1c095188a1d2171934a27de)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ docs/qcow2-cache.txt | 33 ++++++++++++++++-----------------
+ 1 file changed, 16 insertions(+), 17 deletions(-)
+
+diff --git a/docs/qcow2-cache.txt b/docs/qcow2-cache.txt
+index 170191a..8a09a5c 100644
+--- a/docs/qcow2-cache.txt
++++ b/docs/qcow2-cache.txt
+@@ -116,31 +116,30 @@ There are three options available, and all of them take bytes:
+ "refcount-cache-size":   maximum size of the refcount block cache
+ "cache-size":            maximum size of both caches combined
+ 
+-There are two things that need to be taken into account:
++There are a few things that need to be taken into account:
+ 
+  - Both caches must have a size that is a multiple of the cluster size
+    (or the cache entry size: see "Using smaller cache sizes" below).
+ 
+- - If you only set one of the options above, QEMU will automatically
+-   adjust the others so that the L2 cache is 4 times bigger than the
+-   refcount cache.
++ - The default L2 cache size is 8 clusters or 1MB (whichever is more),
++   and the minimum is 2 clusters (or 2 cache entries, see below).
+ 
+-This means that these options are equivalent:
++ - The default (and minimum) refcount cache size is 4 clusters.
+ 
+-   -drive file=hd.qcow2,l2-cache-size=2097152
+-   -drive file=hd.qcow2,refcount-cache-size=524288
+-   -drive file=hd.qcow2,cache-size=2621440
++ - If only "cache-size" is specified then QEMU will assign as much
++   memory as possible to the L2 cache before increasing the refcount
++   cache size.
+ 
+-The reason for this 1/4 ratio is to ensure that both caches cover the
+-same amount of disk space. Note however that this is only valid with
+-the default value of refcount_bits (16). If you are using a different
+-value you might want to calculate both cache sizes yourself since QEMU
+-will always use the same 1/4 ratio.
++Unlike L2 tables, refcount blocks are not used during normal I/O but
++only during allocations and internal snapshots. In most cases they are
++accessed sequentially (even during random guest I/O) so increasing the
++refcount cache size won't have any measurable effect in performance
++(this can change if you are using internal snapshots, so you may want
++to think about increasing the cache size if you use them heavily).
+ 
+-It's also worth mentioning that there's no strict need for both caches
+-to cover the same amount of disk space. The refcount cache is used
+-much less often than the L2 cache, so it's perfectly reasonable to
+-keep it small.
++Before QEMU 2.12 the refcount cache had a default size of 1/4 of the
++L2 cache size. This resulted in unnecessarily large caches, so now the
++refcount cache is as small as possible unless overridden by the user.
+ 
+ 
+ Using smaller cache entries
+-- 
+1.8.3.1
+

@@ -1,0 +1,44 @@
+From f64b0a4ca1cb685491df47d525909c9a47ecb47e Mon Sep 17 00:00:00 2001
+From: Thomas Huth <thuth@redhat.com>
+Date: Wed, 20 Jun 2018 09:50:28 +0200
+Subject: [PATCH 50/54] s390x/cpumodels: add z14 Model ZR1
+
+RH-Author: Thomas Huth <thuth@redhat.com>
+Message-id: <1529488228-5109-2-git-send-email-thuth@redhat.com>
+Patchwork-id: 80892
+O-Subject: [RHEL-7.6 qemu-kvm-ma PATCH 1/1] s390x/cpumodels: add z14 Model ZR1
+Bugzilla: 1592327
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+
+From: Christian Borntraeger <borntraeger@de.ibm.com>
+
+Introduce the new z14 Model ZR1 cpu model. Mostly identical to z14, only
+the cpu type differs (3906 vs. 3907)
+
+Signed-off-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Message-Id: <20180613081819.147178-1-borntraeger@de.ibm.com>
+Reviewed-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Cornelia Huck <cohuck@redhat.com>
+(cherry picked from commit 23ad956bff98d949057156ea3f68a9763c2dda0e)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/s390x/cpu_models.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/target/s390x/cpu_models.c b/target/s390x/cpu_models.c
+index 70b23bf..0b5d271 100644
+--- a/target/s390x/cpu_models.c
++++ b/target/s390x/cpu_models.c
+@@ -79,6 +79,7 @@ static S390CPUDef s390_cpu_defs[] = {
+     CPUDEF_INIT(0x2964, 13, 2, 47, 0x08000000U, "z13.2", "IBM z13 GA2"),
+     CPUDEF_INIT(0x2965, 13, 2, 47, 0x08000000U, "z13s", "IBM z13s GA1"),
+     CPUDEF_INIT(0x3906, 14, 1, 47, 0x08000000U, "z14", "IBM z14 GA1"),
++    CPUDEF_INIT(0x3907, 14, 1, 47, 0x08000000U, "z14ZR1", "IBM z14 Model ZR1 GA1"),
+ };
+ 
+ #define QEMU_MAX_CPU_TYPE 0x2827
+-- 
+1.8.3.1
+

@@ -1,0 +1,104 @@
+From 222934faee20b22e77f711d6bc5d986c2e1fd297 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Mon, 2 Jul 2018 12:20:17 +0200
+Subject: [PATCH 51/57] usb-storage: Add rerror/werror properties
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180702122017.29664-2-kwolf@redhat.com>
+Patchwork-id: 81183
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/1] usb-storage: Add rerror/werror properties
+Bugzilla: 1595180
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+The error handling policy was traditionally set with -drive, but with
+-blockdev it is no longer possible to set frontend options. scsi-disk
+(and other block devices) have long supported qdev properties to
+configure the error handling policy, so let's add these options to
+usb-storage as well and just forward them to the internal scsi-disk
+instance.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit b8efb36b9e99dbea7370139c0866b97a933f78d4)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/scsi-bus.c     | 11 ++++++++++-
+ hw/usb/dev-storage.c   |  2 ++
+ include/hw/scsi/scsi.h |  2 ++
+ 3 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/hw/scsi/scsi-bus.c b/hw/scsi/scsi-bus.c
+index 9646743..5905f6b 100644
+--- a/hw/scsi/scsi-bus.c
++++ b/hw/scsi/scsi-bus.c
+@@ -226,6 +226,8 @@ static void scsi_qdev_unrealize(DeviceState *qdev, Error **errp)
+ SCSIDevice *scsi_bus_legacy_add_drive(SCSIBus *bus, BlockBackend *blk,
+                                       int unit, bool removable, int bootindex,
+                                       bool share_rw,
++                                      BlockdevOnError rerror,
++                                      BlockdevOnError werror,
+                                       const char *serial, Error **errp)
+ {
+     const char *driver;
+@@ -262,6 +264,10 @@ SCSIDevice *scsi_bus_legacy_add_drive(SCSIBus *bus, BlockBackend *blk,
+         object_unparent(OBJECT(dev));
+         return NULL;
+     }
++
++    qdev_prop_set_enum(dev, "rerror", rerror);
++    qdev_prop_set_enum(dev, "werror", werror);
++
+     object_property_set_bool(OBJECT(dev), true, "realized", &err);
+     if (err != NULL) {
+         error_propagate(errp, err);
+@@ -285,7 +291,10 @@ void scsi_bus_legacy_handle_cmdline(SCSIBus *bus)
+         }
+         qemu_opts_loc_restore(dinfo->opts);
+         scsi_bus_legacy_add_drive(bus, blk_by_legacy_dinfo(dinfo),
+-                                  unit, false, -1, false, NULL, &error_fatal);
++                                  unit, false, -1, false,
++                                  BLOCKDEV_ON_ERROR_AUTO,
++                                  BLOCKDEV_ON_ERROR_AUTO,
++                                  NULL, &error_fatal);
+     }
+     loc_pop(&loc);
+ }
+diff --git a/hw/usb/dev-storage.c b/hw/usb/dev-storage.c
+index b56c75a..68e2062 100644
+--- a/hw/usb/dev-storage.c
++++ b/hw/usb/dev-storage.c
+@@ -634,6 +634,7 @@ static void usb_msd_storage_realize(USBDevice *dev, Error **errp)
+                  &usb_msd_scsi_info_storage, NULL);
+     scsi_dev = scsi_bus_legacy_add_drive(&s->bus, blk, 0, !!s->removable,
+                                          s->conf.bootindex, s->conf.share_rw,
++                                         s->conf.rerror, s->conf.werror,
+                                          dev->serial,
+                                          errp);
+     blk_unref(blk);
+@@ -687,6 +688,7 @@ static const VMStateDescription vmstate_usb_msd = {
+ 
+ static Property msd_properties[] = {
+     DEFINE_BLOCK_PROPERTIES(MSDState, conf),
++    DEFINE_BLOCK_ERROR_PROPERTIES(MSDState, conf),
+     DEFINE_PROP_BIT("removable", MSDState, removable, 0, false),
+     DEFINE_PROP_END_OF_LIST(),
+ };
+diff --git a/include/hw/scsi/scsi.h b/include/hw/scsi/scsi.h
+index e35137e..1a7290d 100644
+--- a/include/hw/scsi/scsi.h
++++ b/include/hw/scsi/scsi.h
+@@ -154,6 +154,8 @@ static inline SCSIBus *scsi_bus_from_device(SCSIDevice *d)
+ SCSIDevice *scsi_bus_legacy_add_drive(SCSIBus *bus, BlockBackend *blk,
+                                       int unit, bool removable, int bootindex,
+                                       bool share_rw,
++                                      BlockdevOnError rerror,
++                                      BlockdevOnError werror,
+                                       const char *serial, Error **errp);
+ void scsi_bus_legacy_handle_cmdline(SCSIBus *bus);
+ void scsi_legacy_handle_cmdline(void);
+-- 
+1.8.3.1
+

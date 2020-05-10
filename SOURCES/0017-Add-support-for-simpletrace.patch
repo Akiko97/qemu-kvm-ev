@@ -1,0 +1,121 @@
+From 7fde5fc94f5007470c1f0dc985fd0e7f1a59cfe4 Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 8 Oct 2015 09:50:17 +0200
+Subject: Add support for simpletrace
+
+As simpletrace is upstream, we just need to properly handle it during rpmbuild.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Rebase notes (2.9.0):
+- Added group argument for tracetool.py (upstream)
+
+Rebase notes (2.8.0):
+- Changed tracetool.py parameters
+
+Merged patches (2.3.0):
+- db959d6 redhat/qemu-kvm.spec.template: Install qemu-kvm-simpletrace.stp
+- 5292fc3 trace: add SystemTap init scripts for simpletrace bridge
+- eda9e5e simpletrace: install simpletrace.py
+- 85c4c8f trace: add systemtap-initscript README file to RPM
+
+(cherry picked from commit bfc1d7f3628f2ffbabbae71d57a506cea6663ddf)
+(cherry picked from commit 4aca5a1b194d1beb690daf4ca9d51b9f791dbf2e)
+(cherry picked from commit f09ad4d02a20aa0d3060d0ff9933b74c78b45ea1)
+(cherry picked from commit 4705eac2bb8026c929bc33c87fe691eeb3c7cffc)
+---
+ .gitignore                              |  2 ++
+ Makefile                                |  4 +++
+ README.systemtap                        | 43 +++++++++++++++++++++++++++++++++
+ redhat/qemu-kvm.spec.template           | 27 +++++++++++++++++++--
+ scripts/systemtap/conf.d/qemu_kvm.conf  |  4 +++
+ scripts/systemtap/script.d/qemu_kvm.stp |  1 +
+ 6 files changed, 79 insertions(+), 2 deletions(-)
+ create mode 100644 README.systemtap
+ create mode 100644 scripts/systemtap/conf.d/qemu_kvm.conf
+ create mode 100644 scripts/systemtap/script.d/qemu_kvm.stp
+
+diff --git a/Makefile b/Makefile
+index 2ffac2b..bdd8223 100644
+--- a/Makefile
++++ b/Makefile
+@@ -867,6 +867,10 @@ endif
+ 		$(INSTALL_DATA) $(SRC_PATH)/pc-bios/keymaps/$$x "$(DESTDIR)$(qemu_datadir)/keymaps"; \
+ 	done
+ 	$(INSTALL_DATA) $(BUILD_DIR)/trace-events-all "$(DESTDIR)$(qemu_datadir)/trace-events-all"
++	$(INSTALL_DIR) "$(DESTDIR)$(qemu_datadir)/systemtap/script.d"
++	$(INSTALL_DATA) $(SRC_PATH)/scripts/systemtap/script.d/qemu_kvm.stp "$(DESTDIR)$(qemu_datadir)/systemtap/script.d/"
++	$(INSTALL_DIR) "$(DESTDIR)$(qemu_datadir)/systemtap/conf.d"
++	$(INSTALL_DATA) $(SRC_PATH)/scripts/systemtap/conf.d/qemu_kvm.conf "$(DESTDIR)$(qemu_datadir)/systemtap/conf.d/"
+ 	for d in $(TARGET_DIRS); do \
+ 	$(MAKE) $(SUBDIR_MAKEFLAGS) TARGET_DIR=$$d/ -C $$d $@ || exit 1 ; \
+         done
+diff --git a/README.systemtap b/README.systemtap
+new file mode 100644
+index 0000000..ad913fc
+--- /dev/null
++++ b/README.systemtap
+@@ -0,0 +1,43 @@
++QEMU tracing using systemtap-initscript
++---------------------------------------
++
++You can capture QEMU trace data all the time using systemtap-initscript.  This
++uses SystemTap's flight recorder mode to trace all running guests to a
++fixed-size buffer on the host.  Old trace entries are overwritten by new
++entries when the buffer size wraps.
++
++1. Install the systemtap-initscript package:
++  # yum install systemtap-initscript
++
++2. Install the systemtap scripts and the conf file:
++  # cp /usr/share/qemu-kvm/systemtap/script.d/qemu_kvm.stp /etc/systemtap/script.d/
++  # cp /usr/share/qemu-kvm/systemtap/conf.d/qemu_kvm.conf /etc/systemtap/conf.d/
++
++The set of trace events to enable is given in qemu_kvm.stp.  This SystemTap
++script can be customized to add or remove trace events provided in
++/usr/share/systemtap/tapset/qemu-kvm-simpletrace.stp.
++
++SystemTap customizations can be made to qemu_kvm.conf to control the flight
++recorder buffer size and whether to store traces in memory only or disk too.
++See stap(1) for option documentation.
++
++3. Start the systemtap service.
++　# service systemtap start qemu_kvm
++
++4. Make the service start at boot time.
++　# chkconfig systemtap on
++
++5. Confirm that the service works.
++  # service systemtap status qemu_kvm
++  qemu_kvm is running...
++
++When you want to inspect the trace buffer, perform the following steps:
++
++1. Dump the trace buffer.
++  # staprun -A qemu_kvm >/tmp/trace.log
++
++2. Start the systemtap service because the preceding step stops the service.
++  # service systemtap start qemu_kvm
++
++3. Translate the trace record to readable format.
++  # /usr/share/qemu-kvm/simpletrace.py --no-header /usr/share/qemu-kvm/trace-events /tmp/trace.log
+diff --git a/scripts/systemtap/conf.d/qemu_kvm.conf b/scripts/systemtap/conf.d/qemu_kvm.conf
+new file mode 100644
+index 0000000..372d816
+--- /dev/null
++++ b/scripts/systemtap/conf.d/qemu_kvm.conf
+@@ -0,0 +1,4 @@
++# Force load uprobes (see BZ#1118352)
++stap -e 'probe process("/usr/libexec/qemu-kvm").function("main") { printf("") }' -c true
++
++qemu_kvm_OPT="-s4" # per-CPU buffer size, in megabytes
+diff --git a/scripts/systemtap/script.d/qemu_kvm.stp b/scripts/systemtap/script.d/qemu_kvm.stp
+new file mode 100644
+index 0000000..c04abf9
+--- /dev/null
++++ b/scripts/systemtap/script.d/qemu_kvm.stp
+@@ -0,0 +1 @@
++probe qemu.kvm.simpletrace.handle_qmp_command,qemu.kvm.simpletrace.monitor_protocol_*,qemu.kvm.simpletrace.migrate_set_state {}
+-- 
+1.8.3.1
+

@@ -1,0 +1,82 @@
+From 320903cac23bb449df8c2e9cf737e16b3f94d684 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 17:00:16 +0100
+Subject: [PATCH 15/23] qcow2: Make sizes more humanly readable
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219170023.27826-7-kwolf@redhat.com>
+Patchwork-id: 84546
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 06/13] qcow2: Make sizes more humanly readable
+Bugzilla: 1656913
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Leonid Bloch <lbloch@janustech.com>
+
+Signed-off-by: Leonid Bloch <lbloch@janustech.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit b6a95c6d10075bb540ce50198bbe22fc0a4392c7)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c | 2 +-
+ block/qcow2.h | 9 +++++----
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index a0f7234..3859112 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -826,7 +826,7 @@ static void read_cache_sizes(BlockDriverState *bs, QemuOpts *opts,
+         }
+     } else {
+         if (!l2_cache_size_set) {
+-            *l2_cache_size = MAX(DEFAULT_L2_CACHE_BYTE_SIZE,
++            *l2_cache_size = MAX(DEFAULT_L2_CACHE_SIZE,
+                                  (uint64_t)DEFAULT_L2_CACHE_CLUSTERS
+                                  * s->cluster_size);
+         }
+diff --git a/block/qcow2.h b/block/qcow2.h
+index 3d92cdb..f73a48a 100644
+--- a/block/qcow2.h
++++ b/block/qcow2.h
+@@ -27,6 +27,7 @@
+ 
+ #include "crypto/block.h"
+ #include "qemu/coroutine.h"
++#include "qemu/units.h"
+ 
+ //#define DEBUG_ALLOC
+ //#define DEBUG_ALLOC2
+@@ -43,11 +44,11 @@
+ 
+ /* 8 MB refcount table is enough for 2 PB images at 64k cluster size
+  * (128 GB for 512 byte clusters, 2 EB for 2 MB clusters) */
+-#define QCOW_MAX_REFTABLE_SIZE 0x800000
++#define QCOW_MAX_REFTABLE_SIZE S_8MiB
+ 
+ /* 32 MB L1 table is enough for 2 PB images at 64k cluster size
+  * (128 GB for 512 byte clusters, 2 EB for 2 MB clusters) */
+-#define QCOW_MAX_L1_SIZE 0x2000000
++#define QCOW_MAX_L1_SIZE S_32MiB
+ 
+ /* Allow for an average of 1k per snapshot table entry, should be plenty of
+  * space for snapshot names and IDs */
+@@ -75,9 +76,9 @@
+ 
+ /* Whichever is more */
+ #define DEFAULT_L2_CACHE_CLUSTERS 8 /* clusters */
+-#define DEFAULT_L2_CACHE_BYTE_SIZE 1048576 /* bytes */
++#define DEFAULT_L2_CACHE_SIZE S_1MiB
+ 
+-#define DEFAULT_CLUSTER_SIZE 65536
++#define DEFAULT_CLUSTER_SIZE S_64KiB
+ 
+ 
+ #define QCOW2_OPT_LAZY_REFCOUNTS "lazy-refcounts"
+-- 
+1.8.3.1
+

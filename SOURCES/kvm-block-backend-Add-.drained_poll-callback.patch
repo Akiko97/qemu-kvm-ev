@@ -1,0 +1,64 @@
+From 79543d4ff66ab2c8f7050e5a5749ea11d1f0c2c0 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:32 +0200
+Subject: [PATCH 41/49] block-backend: Add .drained_poll callback
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-35-kwolf@redhat.com>
+Patchwork-id: 82190
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 34/42] block-backend: Add .drained_poll callback
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+A bdrv_drain operation must ensure that all parents are quiesced, this
+includes BlockBackends. Otherwise, callbacks called by requests that are
+completed on the BDS layer, but not quite yet on the BlockBackend layer
+could still create new requests.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/block-backend.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 2262506..ea85770 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -121,6 +121,7 @@ static void blk_root_inherit_options(int *child_flags, QDict *child_options,
+     abort();
+ }
+ static void blk_root_drained_begin(BdrvChild *child);
++static bool blk_root_drained_poll(BdrvChild *child);
+ static void blk_root_drained_end(BdrvChild *child);
+ 
+ static void blk_root_change_media(BdrvChild *child, bool load);
+@@ -294,6 +295,7 @@ static const BdrvChildRole child_root = {
+     .get_parent_desc    = blk_root_get_parent_desc,
+ 
+     .drained_begin      = blk_root_drained_begin,
++    .drained_poll       = blk_root_drained_poll,
+     .drained_end        = blk_root_drained_end,
+ 
+     .activate           = blk_root_activate,
+@@ -2217,6 +2219,13 @@ static void blk_root_drained_begin(BdrvChild *child)
+     }
+ }
+ 
++static bool blk_root_drained_poll(BdrvChild *child)
++{
++    BlockBackend *blk = child->opaque;
++    assert(blk->quiesce_counter);
++    return !!blk->in_flight;
++}
++
+ static void blk_root_drained_end(BdrvChild *child)
+ {
+     BlockBackend *blk = child->opaque;
+-- 
+1.8.3.1
+

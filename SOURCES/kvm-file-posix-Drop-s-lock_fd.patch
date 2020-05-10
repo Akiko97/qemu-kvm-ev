@@ -1,0 +1,138 @@
+From e56693b6f482bf594b39f751d17f371301e280b5 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 4 Feb 2019 20:42:04 +0100
+Subject: [PATCH 04/33] file-posix: Drop s->lock_fd
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20190204204207.18079-5-mreitz@redhat.com>
+Patchwork-id: 84223
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 4/7] file-posix: Drop s->lock_fd
+Bugzilla: 1551486
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+From: Fam Zheng <famz@redhat.com>
+
+The lock_fd field is not strictly necessary because transferring locked
+bytes from old fd to the new one shouldn't fail anyway. This spares the
+user one fd per image.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit f2e3af29b70624659a50903bd075e1663b64c9da)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 37 +++++++++++++------------------------
+ 1 file changed, 13 insertions(+), 24 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 2a05193..97e7ff2 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -142,7 +142,6 @@ do { \
+ 
+ typedef struct BDRVRawState {
+     int fd;
+-    int lock_fd;
+     bool use_lock;
+     int type;
+     int open_flags;
+@@ -153,7 +152,7 @@ typedef struct BDRVRawState {
+     uint64_t shared_perm;
+ 
+     /* The perms bits whose corresponding bytes are already locked in
+-     * s->lock_fd. */
++     * s->fd. */
+     uint64_t locked_perm;
+     uint64_t locked_shared_perm;
+ 
+@@ -545,18 +544,6 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
+     }
+     s->fd = fd;
+ 
+-    s->lock_fd = -1;
+-    if (s->use_lock) {
+-        fd = qemu_open(filename, s->open_flags);
+-        if (fd < 0) {
+-            ret = -errno;
+-            error_setg_errno(errp, errno, "Could not open '%s' for locking",
+-                             filename);
+-            qemu_close(s->fd);
+-            goto fail;
+-        }
+-        s->lock_fd = fd;
+-    }
+     s->perm = 0;
+     s->shared_perm = BLK_PERM_ALL;
+ 
+@@ -811,15 +798,13 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+         return 0;
+     }
+ 
+-    assert(s->lock_fd > 0);
+-
+     switch (op) {
+     case RAW_PL_PREPARE:
+-        ret = raw_apply_lock_bytes(s, s->lock_fd, s->perm | new_perm,
++        ret = raw_apply_lock_bytes(s, s->fd, s->perm | new_perm,
+                                    ~s->shared_perm | ~new_shared,
+                                    false, errp);
+         if (!ret) {
+-            ret = raw_check_lock_bytes(s->lock_fd, new_perm, new_shared, errp);
++            ret = raw_check_lock_bytes(s->fd, new_perm, new_shared, errp);
+             if (!ret) {
+                 return 0;
+             }
+@@ -830,7 +815,7 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+         op = RAW_PL_ABORT;
+         /* fall through to unlock bytes. */
+     case RAW_PL_ABORT:
+-        raw_apply_lock_bytes(s, s->lock_fd, s->perm, ~s->shared_perm,
++        raw_apply_lock_bytes(s, s->fd, s->perm, ~s->shared_perm,
+                              true, &local_err);
+         if (local_err) {
+             /* Theoretically the above call only unlocks bytes and it cannot
+@@ -840,7 +825,7 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+         }
+         break;
+     case RAW_PL_COMMIT:
+-        raw_apply_lock_bytes(s, s->lock_fd, new_perm, ~new_shared,
++        raw_apply_lock_bytes(s, s->fd, new_perm, ~new_shared,
+                              true, &local_err);
+         if (local_err) {
+             /* Theoretically the above call only unlocks bytes and it cannot
+@@ -938,9 +923,17 @@ static void raw_reopen_commit(BDRVReopenState *state)
+ {
+     BDRVRawReopenState *rs = state->opaque;
+     BDRVRawState *s = state->bs->opaque;
++    Error *local_err = NULL;
+ 
+     s->open_flags = rs->open_flags;
+ 
++    /* Copy locks to the new fd before closing the old one. */
++    raw_apply_lock_bytes(NULL, rs->fd, s->locked_perm,
++                         ~s->locked_shared_perm, false, &local_err);
++    if (local_err) {
++        /* shouldn't fail in a sane host, but report it just in case. */
++        error_report_err(local_err);
++    }
+     qemu_close(s->fd);
+     s->fd = rs->fd;
+ 
+@@ -1903,10 +1896,6 @@ static void raw_close(BlockDriverState *bs)
+         qemu_close(s->fd);
+         s->fd = -1;
+     }
+-    if (s->lock_fd >= 0) {
+-        qemu_close(s->lock_fd);
+-        s->lock_fd = -1;
+-    }
+ }
+ 
+ /**
+-- 
+1.8.3.1
+

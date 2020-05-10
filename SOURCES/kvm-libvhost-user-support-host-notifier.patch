@@ -1,0 +1,239 @@
+From bf38c0c9b897040dddc38456f731006c817e3c39 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Thu, 21 Jun 2018 18:54:45 +0200
+Subject: [PATCH 36/57] libvhost-user: support host notifier
+
+RH-Author: plai@redhat.com
+Message-id: <1529607285-9942-11-git-send-email-plai@redhat.com>
+Patchwork-id: 80939
+O-Subject: [RHEL7.6 PATCH BZ 1526645 10/10] libvhost-user: support host notifier
+Bugzilla: 1526645
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Maxime Coquelin <maxime.coquelin@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Tiwei Bie <tiwei.bie@intel.com>
+
+This patch introduces the host notifier support in
+libvhost-user. A new API is added to support setting
+host notifier for each queue.
+
+Signed-off-by: Tiwei Bie <tiwei.bie@intel.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit d84599f56c820d8c1ac9928a76500dcdfbbf194d)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ contrib/libvhost-user/libvhost-user.c | 81 +++++++++++++++++++++++++++++++----
+ contrib/libvhost-user/libvhost-user.h | 32 ++++++++++++++
+ 2 files changed, 105 insertions(+), 8 deletions(-)
+
+diff --git a/contrib/libvhost-user/libvhost-user.c b/contrib/libvhost-user/libvhost-user.c
+index beeed0c..fa06eee 100644
+--- a/contrib/libvhost-user/libvhost-user.c
++++ b/contrib/libvhost-user/libvhost-user.c
+@@ -314,11 +314,6 @@ vu_message_write(VuDev *dev, int conn_fd, VhostUserMsg *vmsg)
+         msg.msg_controllen = 0;
+     }
+ 
+-    /* Set the version in the flags when sending the reply */
+-    vmsg->flags &= ~VHOST_USER_VERSION_MASK;
+-    vmsg->flags |= VHOST_USER_VERSION;
+-    vmsg->flags |= VHOST_USER_REPLY_MASK;
+-
+     do {
+         rc = sendmsg(conn_fd, &msg, 0);
+     } while (rc < 0 && (errno == EINTR || errno == EAGAIN));
+@@ -339,6 +334,39 @@ vu_message_write(VuDev *dev, int conn_fd, VhostUserMsg *vmsg)
+     return true;
+ }
+ 
++static bool
++vu_send_reply(VuDev *dev, int conn_fd, VhostUserMsg *vmsg)
++{
++    /* Set the version in the flags when sending the reply */
++    vmsg->flags &= ~VHOST_USER_VERSION_MASK;
++    vmsg->flags |= VHOST_USER_VERSION;
++    vmsg->flags |= VHOST_USER_REPLY_MASK;
++
++    return vu_message_write(dev, conn_fd, vmsg);
++}
++
++static bool
++vu_process_message_reply(VuDev *dev, const VhostUserMsg *vmsg)
++{
++    VhostUserMsg msg_reply;
++
++    if ((vmsg->flags & VHOST_USER_NEED_REPLY_MASK) == 0) {
++        return true;
++    }
++
++    if (!vu_message_read(dev, dev->slave_fd, &msg_reply)) {
++        return false;
++    }
++
++    if (msg_reply.request != vmsg->request) {
++        DPRINT("Received unexpected msg type. Expected %d received %d",
++               vmsg->request, msg_reply.request);
++        return false;
++    }
++
++    return msg_reply.payload.u64 == 0;
++}
++
+ /* Kick the log_call_fd if required. */
+ static void
+ vu_log_kick(VuDev *dev)
+@@ -534,7 +562,7 @@ vu_set_mem_table_exec_postcopy(VuDev *dev, VhostUserMsg *vmsg)
+ 
+     /* Send the message back to qemu with the addresses filled in */
+     vmsg->fd_num = 0;
+-    if (!vu_message_write(dev, dev->sock, vmsg)) {
++    if (!vu_send_reply(dev, dev->sock, vmsg)) {
+         vu_panic(dev, "failed to respond to set-mem-table for postcopy");
+         return false;
+     }
+@@ -914,6 +942,41 @@ void vu_set_queue_handler(VuDev *dev, VuVirtq *vq,
+     }
+ }
+ 
++bool vu_set_queue_host_notifier(VuDev *dev, VuVirtq *vq, int fd,
++                                int size, int offset)
++{
++    int qidx = vq - dev->vq;
++    int fd_num = 0;
++    VhostUserMsg vmsg = {
++        .request = VHOST_USER_SLAVE_VRING_HOST_NOTIFIER_MSG,
++        .flags = VHOST_USER_VERSION | VHOST_USER_NEED_REPLY_MASK,
++        .size = sizeof(vmsg.payload.area),
++        .payload.area = {
++            .u64 = qidx & VHOST_USER_VRING_IDX_MASK,
++            .size = size,
++            .offset = offset,
++        },
++    };
++
++    if (fd == -1) {
++        vmsg.payload.area.u64 |= VHOST_USER_VRING_NOFD_MASK;
++    } else {
++        vmsg.fds[fd_num++] = fd;
++    }
++
++    vmsg.fd_num = fd_num;
++
++    if ((dev->protocol_features & VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD) == 0) {
++        return false;
++    }
++
++    if (!vu_message_write(dev, dev->slave_fd, &vmsg)) {
++        return false;
++    }
++
++    return vu_process_message_reply(dev, &vmsg);
++}
++
+ static bool
+ vu_set_vring_call_exec(VuDev *dev, VhostUserMsg *vmsg)
+ {
+@@ -966,7 +1029,9 @@ static bool
+ vu_get_protocol_features_exec(VuDev *dev, VhostUserMsg *vmsg)
+ {
+     uint64_t features = 1ULL << VHOST_USER_PROTOCOL_F_LOG_SHMFD |
+-                        1ULL << VHOST_USER_PROTOCOL_F_SLAVE_REQ;
++                        1ULL << VHOST_USER_PROTOCOL_F_SLAVE_REQ |
++                        1ULL << VHOST_USER_PROTOCOL_F_HOST_NOTIFIER |
++                        1ULL << VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD;
+ 
+     if (have_userfault()) {
+         features |= 1ULL << VHOST_USER_PROTOCOL_F_PAGEFAULT;
+@@ -1250,7 +1315,7 @@ vu_dispatch(VuDev *dev)
+         goto end;
+     }
+ 
+-    if (!vu_message_write(dev, dev->sock, &vmsg)) {
++    if (!vu_send_reply(dev, dev->sock, &vmsg)) {
+         goto end;
+     }
+ 
+diff --git a/contrib/libvhost-user/libvhost-user.h b/contrib/libvhost-user/libvhost-user.h
+index b27075e..4aa55b4 100644
+--- a/contrib/libvhost-user/libvhost-user.h
++++ b/contrib/libvhost-user/libvhost-user.h
+@@ -51,6 +51,8 @@ enum VhostUserProtocolFeature {
+     VHOST_USER_PROTOCOL_F_CRYPTO_SESSION = 7,
+     VHOST_USER_PROTOCOL_F_PAGEFAULT = 8,
+     VHOST_USER_PROTOCOL_F_CONFIG = 9,
++    VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD = 10,
++    VHOST_USER_PROTOCOL_F_HOST_NOTIFIER = 11,
+ 
+     VHOST_USER_PROTOCOL_F_MAX
+ };
+@@ -92,6 +94,14 @@ typedef enum VhostUserRequest {
+     VHOST_USER_MAX
+ } VhostUserRequest;
+ 
++typedef enum VhostUserSlaveRequest {
++    VHOST_USER_SLAVE_NONE = 0,
++    VHOST_USER_SLAVE_IOTLB_MSG = 1,
++    VHOST_USER_SLAVE_CONFIG_CHANGE_MSG = 2,
++    VHOST_USER_SLAVE_VRING_HOST_NOTIFIER_MSG = 3,
++    VHOST_USER_SLAVE_MAX
++}  VhostUserSlaveRequest;
++
+ typedef struct VhostUserMemoryRegion {
+     uint64_t guest_phys_addr;
+     uint64_t memory_size;
+@@ -122,6 +132,12 @@ static VhostUserConfig c __attribute__ ((unused));
+                                    + sizeof(c.size) \
+                                    + sizeof(c.flags))
+ 
++typedef struct VhostUserVringArea {
++    uint64_t u64;
++    uint64_t size;
++    uint64_t offset;
++} VhostUserVringArea;
++
+ #if defined(_WIN32)
+ # define VU_PACKED __attribute__((gcc_struct, packed))
+ #else
+@@ -133,6 +149,7 @@ typedef struct VhostUserMsg {
+ 
+ #define VHOST_USER_VERSION_MASK     (0x3)
+ #define VHOST_USER_REPLY_MASK       (0x1 << 2)
++#define VHOST_USER_NEED_REPLY_MASK  (0x1 << 3)
+     uint32_t flags;
+     uint32_t size; /* the following payload size */
+ 
+@@ -145,6 +162,7 @@ typedef struct VhostUserMsg {
+         VhostUserMemory memory;
+         VhostUserLog log;
+         VhostUserConfig config;
++        VhostUserVringArea area;
+     } payload;
+ 
+     int fds[VHOST_MEMORY_MAX_NREGIONS];
+@@ -368,6 +386,20 @@ VuVirtq *vu_get_queue(VuDev *dev, int qidx);
+ void vu_set_queue_handler(VuDev *dev, VuVirtq *vq,
+                           vu_queue_handler_cb handler);
+ 
++/**
++ * vu_set_queue_host_notifier:
++ * @dev: a VuDev context
++ * @vq: a VuVirtq queue
++ * @fd: a file descriptor
++ * @size: host page size
++ * @offset: notifier offset in @fd file
++ *
++ * Set queue's host notifier. This function may be called several
++ * times for the same queue. If called with -1 @fd, the notifier
++ * is removed.
++ */
++bool vu_set_queue_host_notifier(VuDev *dev, VuVirtq *vq, int fd,
++                                int size, int offset);
+ 
+ /**
+  * vu_queue_set_notification:
+-- 
+1.8.3.1
+

@@ -1,0 +1,79 @@
+From ec929cb5c98bd8148bff965f80cd0472348199ba Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:23 +0100
+Subject: [PATCH 025/163] iotests: implement pretty-print for log and qmp_log
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-12-jsnow@redhat.com>
+Patchwork-id: 84952
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 11/19] iotests: implement pretty-print for log and qmp_log
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+If iotests have lines exceeding >998 characters long, git doesn't
+want to send it plaintext to the list. We can solve this by allowing
+the iotests to use pretty printed QMP output that we can match against
+instead.
+
+As a bonus, it's much nicer for human eyes too.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20181221093529.23855-11-jsnow@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 55cd64eab5cb7958c629edbf5f2233b87dfbd1b0)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/iotests.py | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/tests/qemu-iotests/iotests.py b/tests/qemu-iotests/iotests.py
+index d2a8fbd..d178469 100644
+--- a/tests/qemu-iotests/iotests.py
++++ b/tests/qemu-iotests/iotests.py
+@@ -282,13 +282,18 @@ def filter_img_info(output, filename):
+         lines.append(line)
+     return '\n'.join(lines)
+ 
+-def log(msg, filters=[]):
++def log(msg, filters=[], indent=None):
++    '''Logs either a string message or a JSON serializable message (like QMP).
++    If indent is provided, JSON serializable messages are pretty-printed.'''
+     for flt in filters:
+         msg = flt(msg)
+     if isinstance(msg, dict) or isinstance(msg, list):
++        # Python < 3.4 needs to know not to add whitespace when pretty-printing:
++        separators = (', ', ': ') if indent is None else (',', ': ')
+         # Don't sort if it's already sorted
+         do_sort = not isinstance(msg, OrderedDict)
+-        print(json.dumps(msg, sort_keys=do_sort))
++        print(json.dumps(msg, sort_keys=do_sort,
++                         indent=indent, separators=separators))
+     else:
+         print(msg)
+ 
+@@ -477,14 +482,14 @@ class VM(qtest.QEMUQtestMachine):
+             result.append(filter_qmp_event(ev))
+         return result
+ 
+-    def qmp_log(self, cmd, filters=[], **kwargs):
++    def qmp_log(self, cmd, filters=[], indent=None, **kwargs):
+         full_cmd = OrderedDict((
+             ("execute", cmd),
+             ("arguments", ordered_kwargs(kwargs))
+         ))
+-        log(full_cmd, filters)
++        log(full_cmd, filters, indent=indent)
+         result = self.qmp(cmd, **kwargs)
+-        log(result, filters)
++        log(result, filters, indent=indent)
+         return result
+ 
+     def run_job(self, job, auto_finalize=True, auto_dismiss=False):
+-- 
+1.8.3.1
+

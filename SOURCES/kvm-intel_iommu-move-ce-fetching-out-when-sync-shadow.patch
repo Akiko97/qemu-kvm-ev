@@ -1,0 +1,110 @@
+From 5caab2b4c1876c564f8f9afee0a80a00e1a8880f Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Thu, 8 Nov 2018 05:37:20 +0100
+Subject: [PATCH 13/22] intel_iommu: move ce fetching out when sync shadow
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Peter Xu <peterx@redhat.com>
+Message-id: <20181108053721.13162-7-peterx@redhat.com>
+Patchwork-id: 82957
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 6/7] intel_iommu: move ce fetching out when sync shadow
+Bugzilla: 1627272
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+There are two callers for vtd_sync_shadow_page_table_range(): one
+provided a valid context entry and one not.  Move that fetching
+operation into the caller vtd_sync_shadow_page_table() where we need to
+fetch the context entry.
+
+Meanwhile, remove the error_report_once() directly since we're already
+tracing all the error cases in the previous call.  Instead, return error
+number back to caller.  This will not change anything functional since
+callers are dropping it after all.
+
+We do this move majorly because we want to do something more later in
+vtd_sync_shadow_page_table().
+
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Maxime Coquelin <maxime.coquelin@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 95ecd3df7815b4bc4f9a0f47e1c64d81434715aa)
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/intel_iommu.c | 41 +++++++++++++----------------------------
+ 1 file changed, 13 insertions(+), 28 deletions(-)
+
+diff --git a/hw/i386/intel_iommu.c b/hw/i386/intel_iommu.c
+index a6e87a9..c95128d 100644
+--- a/hw/i386/intel_iommu.c
++++ b/hw/i386/intel_iommu.c
+@@ -1045,7 +1045,6 @@ static int vtd_sync_shadow_page_hook(IOMMUTLBEntry *entry,
+     return 0;
+ }
+ 
+-/* If context entry is NULL, we'll try to fetch it on our own. */
+ static int vtd_sync_shadow_page_table_range(VTDAddressSpace *vtd_as,
+                                             VTDContextEntry *ce,
+                                             hwaddr addr, hwaddr size)
+@@ -1057,39 +1056,25 @@ static int vtd_sync_shadow_page_table_range(VTDAddressSpace *vtd_as,
+         .notify_unmap = true,
+         .aw = s->aw_bits,
+         .as = vtd_as,
++        .domain_id = VTD_CONTEXT_ENTRY_DID(ce->hi),
+     };
+-    VTDContextEntry ce_cache;
+-    int ret;
+-
+-    if (ce) {
+-        /* If the caller provided context entry, use it */
+-        ce_cache = *ce;
+-    } else {
+-        /* If the caller didn't provide ce, try to fetch */
+-        ret = vtd_dev_to_context_entry(s, pci_bus_num(vtd_as->bus),
+-                                       vtd_as->devfn, &ce_cache);
+-        if (ret) {
+-            /*
+-             * This should not really happen, but in case it happens,
+-             * we just skip the sync for this time.  After all we even
+-             * don't have the root table pointer!
+-             */
+-            error_report_once("%s: invalid context entry for bus 0x%x"
+-                              " devfn 0x%x",
+-                              __func__, pci_bus_num(vtd_as->bus),
+-                              vtd_as->devfn);
+-            return 0;
+-        }
+-    }
+ 
+-    info.domain_id = VTD_CONTEXT_ENTRY_DID(ce_cache.hi);
+-
+-    return vtd_page_walk(&ce_cache, addr, addr + size, &info);
++    return vtd_page_walk(ce, addr, addr + size, &info);
+ }
+ 
+ static int vtd_sync_shadow_page_table(VTDAddressSpace *vtd_as)
+ {
+-    return vtd_sync_shadow_page_table_range(vtd_as, NULL, 0, UINT64_MAX);
++    int ret;
++    VTDContextEntry ce;
++
++    ret = vtd_dev_to_context_entry(vtd_as->iommu_state,
++                                   pci_bus_num(vtd_as->bus),
++                                   vtd_as->devfn, &ce);
++    if (ret) {
++        return ret;
++    }
++
++    return vtd_sync_shadow_page_table_range(vtd_as, &ce, 0, UINT64_MAX);
+ }
+ 
+ /*
+-- 
+1.8.3.1
+

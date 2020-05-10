@@ -1,0 +1,84 @@
+From 1d06e4e316610a2ffc805d8cc122dab5494bb8e5 Mon Sep 17 00:00:00 2001
+From: Laszlo Ersek <lersek@redhat.com>
+Date: Tue, 13 Nov 2018 18:16:38 +0100
+Subject: [PATCH 19/22] qapi: deprecate CpuInfoFast.arch
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Laszlo Ersek <lersek@redhat.com>
+Message-id: <20181113181639.4999-6-lersek@redhat.com>
+Patchwork-id: 83006
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 5/6] qapi: deprecate CpuInfoFast.arch
+Bugzilla: 1607406
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+The TARGET_BASE_ARCH values from "configure" don't all map to the
+@CpuInfoArch enum constants; in particular "s390x" from the former does
+not match @s390 in the latter. Clients are known to rely on the @s390
+constant specifically, so we can't change it silently. Instead, deprecate
+the @CpuInfoFast.@arch member (in favor of @CpuInfoFast.@target) using the
+regular deprecation process.
+
+(No deprecation reminder is added to sysemu_target_to_cpuinfo_arch(): once
+@CpuInfoFast.@arch is removed, the assignment expression that calls
+sysemu_target_to_cpuinfo_arch() from qmp_query_cpus_fast() will have to
+disappear; in turn the static function left without callers will also
+break the build, thus it'll have to go.)
+
+Cc: "Daniel P. Berrange" <berrange@redhat.com>
+Cc: Eric Blake <eblake@redhat.com>
+Cc: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Laszlo Ersek <lersek@redhat.com>
+Message-Id: <20180427192852.15013-6-lersek@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit 6ffa3ab453b431ec047ff1fc87120059b5266014)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qapi/misc.json | 8 ++++----
+ qemu-doc.texi  | 5 +++++
+ 2 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/qapi/misc.json b/qapi/misc.json
+index d7fd8bd..e6291fd 100644
+--- a/qapi/misc.json
++++ b/qapi/misc.json
+@@ -558,11 +558,11 @@
+ # @props: properties describing to which node/socket/core/thread
+ #         virtual CPU belongs to, provided if supported by board
+ #
+-# @arch: base architecture of the cpu
++# @arch: base architecture of the cpu; deprecated since 2.13.0 in favor
++#        of @target
+ #
+-# @target: the QEMU system emulation target, which is more specific than
+-#          @arch and determines which additional fields will be listed
+-#          (since 2.13)
++# @target: the QEMU system emulation target, which determines which
++#          additional fields will be listed (since 2.13)
+ #
+ # Since: 2.12
+ #
+diff --git a/qemu-doc.texi b/qemu-doc.texi
+index 985e0f2..88358be 100644
+--- a/qemu-doc.texi
++++ b/qemu-doc.texi
+@@ -2955,6 +2955,11 @@ from qcow2 images.
+ 
+ The ``query-cpus'' command is replaced by the ``query-cpus-fast'' command.
+ 
++@subsection query-cpus-fast "arch" output member (since 2.13.0)
++
++The ``arch'' output member of the ``query-cpus-fast'' command is
++replaced by the ``target'' output member.
++
+ @section System emulator devices
+ 
+ @subsection ivshmem (since 2.6.0)
+-- 
+1.8.3.1
+

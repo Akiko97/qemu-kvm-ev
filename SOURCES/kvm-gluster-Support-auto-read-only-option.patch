@@ -1,0 +1,54 @@
+From 8c49a93129fc9faf8cdb0eb7599f625a2069a0fd Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:50 +0100
+Subject: [PATCH 09/34] gluster: Support auto-read-only option
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-9-kwolf@redhat.com>
+Patchwork-id: 83118
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 08/12] gluster: Support auto-read-only option
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+If read-only=off, but auto-read-only=on is given, open the file
+read-write if we have the permissions, but instead of erroring out for
+read-only files, just degrade to read-only.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Niels de Vos <ndevos@redhat.com>
+(cherry picked from commit 54ea21bd16202c4a3e43c67b573b5d1aa2ec1c0c)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/gluster.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/block/gluster.c b/block/gluster.c
+index cecfe09..8c13002 100644
+--- a/block/gluster.c
++++ b/block/gluster.c
+@@ -849,8 +849,16 @@ static int qemu_gluster_open(BlockDriverState *bs,  QDict *options,
+     qemu_gluster_parse_flags(bdrv_flags, &open_flags);
+ 
+     s->fd = glfs_open(s->glfs, gconf->path, open_flags);
+-    if (!s->fd) {
+-        ret = -errno;
++    ret = s->fd ? 0 : -errno;
++
++    if (ret == -EACCES || ret == -EROFS) {
++        /* Try to degrade to read-only, but if it doesn't work, still use the
++         * normal error message. */
++        if (bdrv_apply_auto_read_only(bs, NULL, NULL) == 0) {
++            open_flags = (open_flags & ~O_RDWR) | O_RDONLY;
++            s->fd = glfs_open(s->glfs, gconf->path, open_flags);
++            ret = s->fd ? 0 : -errno;
++        }
+     }
+ 
+     s->supports_seek_data = qemu_gluster_test_seek(s->fd);
+-- 
+1.8.3.1
+

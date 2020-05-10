@@ -1,0 +1,109 @@
+From 5ad7c32387034a02c9a932018e60580872431db9 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 5 Jun 2019 13:56:58 +0200
+Subject: [PATCH 10/23] block: Add BDRV_REQ_NO_FALLBACK
+
+RH-Author: Maxim Levitsky <mlevitsk@redhat.com>
+Message-id: <20190605135705.24526-3-mlevitsk@redhat.com>
+Patchwork-id: 88557
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 2/9] block: Add BDRV_REQ_NO_FALLBACK
+Bugzilla: 1648622
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Kevin Wolf <kwolf@redhat.com>
+
+For qemu-img convert, we want an operation that zeroes out the whole
+image if this can be done efficiently, but that returns an error
+otherwise so we don't write explicit zeroes and immediately overwrite
+them with the real data, potentially doubling the amount of data to be
+written.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Acked-by: Eric Blake <eblake@redhat.com>
+
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1648622
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+(Cherry picked from fe0480d6294270ff0d6fb60e66bb725a6aad2043)
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c            | 12 +++++++++++-
+ include/block/block.h |  7 ++++++-
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 18bf3c2..26c4075 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -1029,6 +1029,7 @@ static int coroutine_fn bdrv_driver_preadv(BlockDriverState *bs,
+     unsigned int nb_sectors;
+ 
+     assert(!(flags & ~BDRV_REQ_MASK));
++    assert(!(flags & BDRV_REQ_NO_FALLBACK));
+ 
+     if (!drv) {
+         return -ENOMEDIUM;
+@@ -1074,6 +1075,7 @@ static int coroutine_fn bdrv_driver_pwritev(BlockDriverState *bs,
+     int ret;
+ 
+     assert(!(flags & ~BDRV_REQ_MASK));
++    assert(!(flags & BDRV_REQ_NO_FALLBACK));
+ 
+     if (!drv) {
+         return -ENOMEDIUM;
+@@ -1499,6 +1501,10 @@ static int coroutine_fn bdrv_co_do_pwrite_zeroes(BlockDriverState *bs,
+         return -ENOMEDIUM;
+     }
+ 
++    if ((flags & ~bs->supported_zero_flags) & BDRV_REQ_NO_FALLBACK) {
++        return -ENOTSUP;
++    }
++
+     assert(alignment % bs->bl.request_alignment == 0);
+     head = offset % alignment;
+     tail = (offset + bytes) % alignment;
+@@ -1542,7 +1548,7 @@ static int coroutine_fn bdrv_co_do_pwrite_zeroes(BlockDriverState *bs,
+             assert(!bs->supported_zero_flags);
+         }
+ 
+-        if (ret == -ENOTSUP) {
++        if (ret == -ENOTSUP && !(flags & BDRV_REQ_NO_FALLBACK)) {
+             /* Fall back to bounce buffer if write zeroes is unsupported */
+             BdrvRequestFlags write_flags = flags & ~BDRV_REQ_ZERO_WRITE;
+ 
+@@ -2973,6 +2979,10 @@ static int coroutine_fn bdrv_co_copy_range_internal(
+     BdrvTrackedRequest req;
+     int ret;
+ 
++    /* TODO We can support BDRV_REQ_NO_FALLBACK here */
++    assert(!(read_flags & BDRV_REQ_NO_FALLBACK));
++    assert(!(write_flags & BDRV_REQ_NO_FALLBACK));
++
+     if (!dst || !dst->bs) {
+         return -ENOMEDIUM;
+     }
+diff --git a/include/block/block.h b/include/block/block.h
+index 5f40140..33fb60c 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -82,8 +82,13 @@ typedef enum {
+      */
+     BDRV_REQ_SERIALISING        = 0x80,
+ 
++    /* Execute the request only if the operation can be offloaded or otherwise
++     * be executed efficiently, but return an error instead of using a slow
++     * fallback. */
++    BDRV_REQ_NO_FALLBACK        = 0x100,
++
+     /* Mask of valid flags */
+-    BDRV_REQ_MASK               = 0xff,
++    BDRV_REQ_MASK               = 0x1ff,
+ } BdrvRequestFlags;
+ 
+ typedef struct BlockSizes {
+-- 
+1.8.3.1
+

@@ -1,0 +1,53 @@
+From 68265b080cec07c5a6ba6b1c6fbd867f4d9cf9ba Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:34 +0200
+Subject: [PATCH 43/49] block-backend: Decrease in_flight only after callback
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-37-kwolf@redhat.com>
+Patchwork-id: 82187
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 36/42] block-backend: Decrease in_flight only after callback
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Request callbacks can do pretty much anything, including operations that
+will yield from the coroutine (such as draining the backend). In that
+case, a decreased in_flight would be visible to other code and could
+lead to a drain completing while the callback hasn't actually completed
+yet.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/block-backend.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 1adf76b..466bc27 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -1341,8 +1341,16 @@ static const AIOCBInfo blk_aio_em_aiocb_info = {
+ static void blk_aio_complete(BlkAioEmAIOCB *acb)
+ {
+     if (acb->has_returned) {
+-        blk_dec_in_flight(acb->rwco.blk);
++        if (qemu_get_current_aio_context() == qemu_get_aio_context()) {
++            /* If we are in the main thread, the callback is allowed to unref
++             * the BlockBackend, so we have to hold an additional reference */
++            blk_ref(acb->rwco.blk);
++        }
+         acb->common.cb(acb->common.opaque, acb->rwco.ret);
++        blk_dec_in_flight(acb->rwco.blk);
++        if (qemu_get_current_aio_context() == qemu_get_aio_context()) {
++            blk_unref(acb->rwco.blk);
++        }
+         qemu_aio_unref(acb);
+     }
+ }
+-- 
+1.8.3.1
+

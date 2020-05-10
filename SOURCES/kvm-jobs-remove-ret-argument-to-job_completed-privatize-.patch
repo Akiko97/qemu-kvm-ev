@@ -1,0 +1,154 @@
+From 8a39bfe61aa3e30907f583f7f2e90e7d90004f56 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 10 Sep 2018 18:17:46 +0200
+Subject: [PATCH 08/25] jobs: remove ret argument to job_completed; privatize
+ it
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180910181803.11781-9-jsnow@redhat.com>
+Patchwork-id: 82095
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 08/25] jobs: remove ret argument to job_completed; privatize it
+Bugzilla: 1626061
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Jobs are now expected to return their retcode on the stack, from the
+.run callback, so we can remove that argument.
+
+job_cancel does not need to set -ECANCELED because job_completed will
+update the return code itself if the job was canceled.
+
+While we're here, make job_completed static to job.c and remove it from
+job.h; move the documentation of return code to the .run() callback and
+to the job->ret property, accordingly.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Message-id: 20180830015734.19765-9-jsnow@redhat.com
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 404ff28d6ae59fc1c24d631710d4063fc68aed03)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/job.h | 28 +++++++++++++++-------------
+ job.c              | 11 ++++++-----
+ trace-events       |  2 +-
+ 3 files changed, 22 insertions(+), 19 deletions(-)
+
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 24b5f3f..952ac3a 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -124,7 +124,11 @@ typedef struct Job {
+     /** Estimated progress_current value at the completion of the job */
+     int64_t progress_total;
+ 
+-    /** ret code passed to job_completed. */
++    /**
++     * Return code from @run and/or @prepare callback(s).
++     * Not final until the job has reached the CONCLUDED status.
++     * 0 on success, -errno on failure.
++     */
+     int ret;
+ 
+     /**
+@@ -172,7 +176,16 @@ struct JobDriver {
+     /** Enum describing the operation */
+     JobType job_type;
+ 
+-    /** Mandatory: Entrypoint for the Coroutine. */
++    /**
++     * Mandatory: Entrypoint for the Coroutine.
++     *
++     * This callback will be invoked when moving from CREATED to RUNNING.
++     *
++     * If this callback returns nonzero, the job transaction it is part of is
++     * aborted. If it returns zero, the job moves into the WAITING state. If it
++     * is the last job to complete in its transaction, all jobs in the
++     * transaction move from WAITING to PENDING.
++     */
+     int coroutine_fn (*run)(Job *job, Error **errp);
+ 
+     /**
+@@ -481,17 +494,6 @@ void job_early_fail(Job *job);
+ /** Moves the @job from RUNNING to READY */
+ void job_transition_to_ready(Job *job);
+ 
+-/**
+- * @job: The job being completed.
+- * @ret: The status code.
+- *
+- * Marks @job as completed. If @ret is non-zero, the job transaction it is part
+- * of is aborted. If @ret is zero, the job moves into the WAITING state. If it
+- * is the last job to complete in its transaction, all jobs in the transaction
+- * move from WAITING to PENDING.
+- */
+-void job_completed(Job *job, int ret);
+-
+ /** Asynchronously complete the specified @job. */
+ void job_complete(Job *job, Error **errp);
+ 
+diff --git a/job.c b/job.c
+index a814857..1acbcbc 100644
+--- a/job.c
++++ b/job.c
+@@ -530,6 +530,8 @@ void job_drain(Job *job)
+     }
+ }
+ 
++static void job_completed(Job *job);
++
+ static void job_exit(void *opaque)
+ {
+     Job *job = (Job *)opaque;
+@@ -540,7 +542,7 @@ static void job_exit(void *opaque)
+         job->driver->exit(job);
+         aio_context_release(aio_context);
+     }
+-    job_completed(job, job->ret);
++    job_completed(job);
+ }
+ 
+ /**
+@@ -878,13 +880,12 @@ static void job_completed_txn_success(Job *job)
+     }
+ }
+ 
+-void job_completed(Job *job, int ret)
++static void job_completed(Job *job)
+ {
+     assert(job && job->txn && !job_is_completed(job));
+ 
+-    job->ret = ret;
+     job_update_rc(job);
+-    trace_job_completed(job, ret, job->ret);
++    trace_job_completed(job, job->ret);
+     if (job->ret) {
+         job_completed_txn_abort(job);
+     } else {
+@@ -900,7 +901,7 @@ void job_cancel(Job *job, bool force)
+     }
+     job_cancel_async(job, force);
+     if (!job_started(job)) {
+-        job_completed(job, -ECANCELED);
++        job_completed(job);
+     } else if (job->deferred_to_main_loop) {
+         job_completed_txn_abort(job);
+     } else {
+diff --git a/trace-events b/trace-events
+index c445f54..4fd2cb4 100644
+--- a/trace-events
++++ b/trace-events
+@@ -107,7 +107,7 @@ gdbstub_err_checksum_incorrect(uint8_t expected, uint8_t got) "got command packe
+ # job.c
+ job_state_transition(void *job,  int ret, const char *legal, const char *s0, const char *s1) "job %p (ret: %d) attempting %s transition (%s-->%s)"
+ job_apply_verb(void *job, const char *state, const char *verb, const char *legal) "job %p in state %s; applying verb %s (%s)"
+-job_completed(void *job, int ret, int jret) "job %p ret %d corrected ret %d"
++job_completed(void *job, int ret) "job %p ret %d"
+ 
+ # job-qmp.c
+ qmp_job_cancel(void *job) "job %p"
+-- 
+1.8.3.1
+

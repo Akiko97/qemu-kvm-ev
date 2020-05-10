@@ -1,0 +1,70 @@
+From 6f8e77a19dc072d428624f521e35a82a80893d25 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Fri, 29 Jun 2018 06:11:49 +0200
+Subject: [PATCH 45/57] block-backend: Add blk_co_copy_range
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180629061153.12687-10-famz@redhat.com>
+Patchwork-id: 81161
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 09/13] block-backend: Add blk_co_copy_range
+Bugzilla: 1482537
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+It's a BlockBackend wrapper of the BDS interface.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: 20180601092648.24614-10-famz@redhat.com
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit b5679fa49c9a70efa7bf01f6efad1a65e2349a0b)
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/block-backend.c          | 18 ++++++++++++++++++
+ include/sysemu/block-backend.h |  4 ++++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index fd342db..56ae535 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -2236,3 +2236,21 @@ void blk_unregister_buf(BlockBackend *blk, void *host)
+ {
+     bdrv_unregister_buf(blk_bs(blk), host);
+ }
++
++int coroutine_fn blk_co_copy_range(BlockBackend *blk_in, int64_t off_in,
++                                   BlockBackend *blk_out, int64_t off_out,
++                                   int bytes, BdrvRequestFlags flags)
++{
++    int r;
++    r = blk_check_byte_request(blk_in, off_in, bytes);
++    if (r) {
++        return r;
++    }
++    r = blk_check_byte_request(blk_out, off_out, bytes);
++    if (r) {
++        return r;
++    }
++    return bdrv_co_copy_range(blk_in->root, off_in,
++                              blk_out->root, off_out,
++                              bytes, flags);
++}
+diff --git a/include/sysemu/block-backend.h b/include/sysemu/block-backend.h
+index 92ab624..8d03d49 100644
+--- a/include/sysemu/block-backend.h
++++ b/include/sysemu/block-backend.h
+@@ -232,4 +232,8 @@ void blk_set_force_allow_inactivate(BlockBackend *blk);
+ void blk_register_buf(BlockBackend *blk, void *host, size_t size);
+ void blk_unregister_buf(BlockBackend *blk, void *host);
+ 
++int coroutine_fn blk_co_copy_range(BlockBackend *blk_in, int64_t off_in,
++                                   BlockBackend *blk_out, int64_t off_out,
++                                   int bytes, BdrvRequestFlags flags);
++
+ #endif
+-- 
+1.8.3.1
+

@@ -1,0 +1,52 @@
+From 7ccfbb9865064e0b41b6acf9e451c6c1471fe86e Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 16:16:28 +0100
+Subject: [PATCH 030/163] iotests: Fix 232 for LUKS
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320161631.14841-17-jsnow@redhat.com>
+Patchwork-id: 84955
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 16/19] iotests: Fix 232 for LUKS
+Bugzilla: 1668956
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Max Reitz <mreitz@redhat.com>
+
+With IMGOPTSSYNTAX, $TEST_IMG is useless for this test (it only tests
+the file-posix protocol driver).  Therefore, if $TEST_IMG_FILE is set,
+use that instead.
+
+Because this test requires the file protocol, $TEST_IMG_FILE will always
+be set if $IMGOPTSSYNTAX is true.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Message-id: 20190210145736.1486-5-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit c48221aa91d9078b86e23b19484227dc35d71840)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/232 | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/tests/qemu-iotests/232 b/tests/qemu-iotests/232
+index de884cd..2ed39d2 100755
+--- a/tests/qemu-iotests/232
++++ b/tests/qemu-iotests/232
+@@ -70,6 +70,10 @@ size=128M
+ 
+ _make_test_img $size
+ 
++if [ -n "$TEST_IMG_FILE" ]; then
++    TEST_IMG=$TEST_IMG_FILE
++fi
++
+ echo
+ echo "=== -drive with read-write image: read-only/auto-read-only combinations ==="
+ echo
+-- 
+1.8.3.1
+

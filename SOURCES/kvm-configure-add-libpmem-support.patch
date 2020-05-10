@@ -1,0 +1,130 @@
+From 17e8fa1ceb357d0008f651cd88a72f2630b24fc5 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Fri, 31 Aug 2018 16:25:55 +0200
+Subject: [PATCH 13/29] configure: add libpmem support
+
+RH-Author: plai@redhat.com
+Message-id: <1535732759-22481-6-git-send-email-plai@redhat.com>
+Patchwork-id: 82010
+O-Subject: [RHEL7.6 PATCH BZ 1539280 5/9] configure: add libpmem support
+Bugzilla: 1539280
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Junyan He <junyan.he@intel.com>
+
+Add a pair of configure options --{enable,disable}-libpmem to control
+whether QEMU is compiled with PMDK libpmem [1].
+
+QEMU may write to the host persistent memory (e.g. in vNVDIMM label
+emulation and live migration), so it must take the proper operations
+to ensure the persistence of its own writes. Depending on the CPU
+models and available instructions, the optimal operation can vary [2].
+PMDK libpmem have already implemented those operations on multiple CPU
+models (x86 and ARM) and the logic to select the optimal ones, so QEMU
+can just use libpmem rather than re-implement them.
+
+Libpem is a part of PMDK project(formerly known as NMVL).
+The project's home page is: http://pmem.io/pmdk/
+And the project's repository is: https://github.com/pmem/pmdk/
+
+For more information about libpmem APIs, you can refer to the comments
+in source code of: pmdk/src/libpmem/pmem.c, begin at line 33.
+
+Signed-off-by: Junyan He <junyan.he@intel.com>
+Signed-off-by: Haozhong Zhang <haozhong.zhang@intel.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 17824406fa55b303379f2e4af715c1e876c3535f)
+Signed-off-by: Paul Lai <plai@redhat.com>
+
+Resolved Conflicts:
+	configure
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ configure | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/configure b/configure
+index a869f19..f9c8365 100755
+--- a/configure
++++ b/configure
+@@ -454,6 +454,7 @@ vxhs=""
+ libxml2=""
+ vtd="yes"
+ rhel_target="rhv"
++libpmem=""
+ 
+ supported_cpu="no"
+ supported_os="no"
+@@ -1387,6 +1388,10 @@ for opt do
+   ;;
+   --rhel-target=*) rhel_target="$optarg"
+   ;;
++  --enable-libpmem) libpmem=yes
++  ;;
++  --disable-libpmem) libpmem=no
++  ;;
+   *)
+       echo "ERROR: unknown option $opt"
+       echo "Try '$0 --help' for more information"
+@@ -1648,6 +1653,7 @@ disabled with --disable-FEATURE, default is enabled if available:
+   crypto-afalg    Linux AF_ALG crypto backend driver
+   vhost-user      vhost-user support
+   capstone        capstone disassembler support
++  libpmem         libpmem support
+ 
+ NOTE: The object files are built at the place where configure is launched
+ EOF
+@@ -5410,6 +5416,24 @@ EOF
+ fi
+ 
+ ##########################################
++# check for libpmem
++
++if test "$libpmem" != "no"; then
++	if $pkg_config --exists "libpmem"; then
++		libpmem="yes"
++		libpmem_libs=$($pkg_config --libs libpmem)
++		libpmem_cflags=$($pkg_config --cflags libpmem)
++		libs_softmmu="$libs_softmmu $libpmem_libs"
++		QEMU_CFLAGS="$QEMU_CFLAGS $libpmem_cflags"
++	else
++		if test "$libpmem" = "yes" ; then
++			feature_not_found "libpmem" "Install nvml or pmdk"
++		fi
++		libpmem="no"
++	fi
++fi
++
++##########################################
+ # End of CC checks
+ # After here, no more $cc or $ld runs
+ 
+@@ -5873,6 +5897,7 @@ echo "VxHS block device $vxhs"
+ echo "capstone          $capstone"
+ echo "VT-d emulation    $vtd"
+ echo "RHEL target       $rhel_target"
++echo "libpmem support   $libpmem"
+ 
+ if test "$sdl_too_old" = "yes"; then
+ echo "-> Your SDL version is too old - please upgrade to have SDL support"
+@@ -6632,6 +6657,10 @@ if test "$rhel_target" = "rhv" ; then
+   echo "CONFIG_RHV=y" >> $config_host_mak
+ fi
+ 
++if test "$libpmem" = "yes" ; then
++  echo "CONFIG_LIBPMEM=y" >> $config_host_mak
++fi
++
+ if test "$tcg_interpreter" = "yes"; then
+   QEMU_INCLUDES="-iquote \$(SRC_PATH)/tcg/tci $QEMU_INCLUDES"
+ elif test "$ARCH" = "sparc64" ; then
+-- 
+1.8.3.1
+

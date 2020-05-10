@@ -1,0 +1,62 @@
+From fe68ddea8e2283fad78a3596ee0682d49294987f Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 1 Mar 2019 14:27:43 +0100
+Subject: [PATCH 1/9] block-backend: Make blk_inc/dec_in_flight public
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190301142747.12251-2-kwolf@redhat.com>
+Patchwork-id: 84764
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/5] block-backend: Make blk_inc/dec_in_flight public
+Bugzilla: 1671173
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+For some users of BlockBackends, just increasing the in_flight counter
+is easier than implementing separate handlers in BlockDevOps. Make the
+helper functions for this public.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit c90e2a9cfd94bd02d92c53b97f04fd595001de7e)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/block-backend.c          | 4 ++--
+ include/sysemu/block-backend.h | 2 ++
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index ddec869..52eebeb 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -1294,12 +1294,12 @@ int blk_make_zero(BlockBackend *blk, BdrvRequestFlags flags)
+     return bdrv_make_zero(blk->root, flags);
+ }
+ 
+-static void blk_inc_in_flight(BlockBackend *blk)
++void blk_inc_in_flight(BlockBackend *blk)
+ {
+     atomic_inc(&blk->in_flight);
+ }
+ 
+-static void blk_dec_in_flight(BlockBackend *blk)
++void blk_dec_in_flight(BlockBackend *blk)
+ {
+     atomic_dec(&blk->in_flight);
+     aio_wait_kick();
+diff --git a/include/sysemu/block-backend.h b/include/sysemu/block-backend.h
+index 830d873..6b6d882 100644
+--- a/include/sysemu/block-backend.h
++++ b/include/sysemu/block-backend.h
+@@ -157,6 +157,8 @@ int blk_co_pdiscard(BlockBackend *blk, int64_t offset, int bytes);
+ int blk_co_flush(BlockBackend *blk);
+ int blk_flush(BlockBackend *blk);
+ int blk_commit_all(void);
++void blk_inc_in_flight(BlockBackend *blk);
++void blk_dec_in_flight(BlockBackend *blk);
+ void blk_drain(BlockBackend *blk);
+ void blk_drain_all(void);
+ void blk_set_on_error(BlockBackend *blk, BlockdevOnError on_read_error,
+-- 
+1.8.3.1
+

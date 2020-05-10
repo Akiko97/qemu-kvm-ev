@@ -1,0 +1,65 @@
+From 9075cb2c3c074b395192ce166fe17664b0d9543c Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Fri, 29 Jun 2018 06:11:53 +0200
+Subject: [PATCH 49/57] file-posix: Fix EINTR handling
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180629061153.12687-14-famz@redhat.com>
+Patchwork-id: 81164
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 13/13] file-posix: Fix EINTR handling
+Bugzilla: 1482537
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+EINTR should be checked against errno, not ret. While fixing the bug,
+collect the branches with a switch block.
+
+Also, change the return value from -ENOSTUP to -ENOSPC when the actual
+issue is request range passes EOF, which should be distinguishable from
+the case of error == ENOSYS by the caller, so that it could still retry
+with other byte ranges, whereas it shouldn't retry anymore upon ENOSYS.
+
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 17 +++++++++--------
+ 1 file changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 29ff699..0a9df5b 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -1449,20 +1449,21 @@ static ssize_t handle_aiocb_copy_range(RawPosixAIOData *aiocb)
+         ssize_t ret = copy_file_range(aiocb->aio_fildes, &in_off,
+                                       aiocb->aio_fd2, &out_off,
+                                       bytes, 0);
+-        if (ret == -EINTR) {
+-            continue;
++        if (ret == 0) {
++            /* No progress (e.g. when beyond EOF), let the caller fall back to
++             * buffer I/O. */
++            return -ENOSPC;
+         }
+         if (ret < 0) {
+-            if (errno == ENOSYS) {
++            switch (errno) {
++            case ENOSYS:
+                 return -ENOTSUP;
+-            } else {
++            case EINTR:
++                continue;
++            default:
+                 return -errno;
+             }
+         }
+-        if (!ret) {
+-            /* No progress (e.g. when beyond EOF), fall back to buffer I/O. */
+-            return -ENOTSUP;
+-        }
+         bytes -= ret;
+     }
+     return 0;
+-- 
+1.8.3.1
+

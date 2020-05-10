@@ -1,0 +1,85 @@
+From 55d59dd99ea53889b67956467fb8b25fb57df019 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:09 +0200
+Subject: [PATCH 42/53] vl: Fix latent bug with -global and onboard devices
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-21-armbru@redhat.com>
+Patchwork-id: 87991
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 20/31] vl: Fix latent bug with -global and onboard devices
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+main() registers the user's -global only after we create the machine
+object, i.e. too late for devices created in the machine's
+.instance_init().
+
+Fortunately, we know the bug is only latent: the commit before
+previous fixed a bug that would've crashed any attempt to create a
+device in an .instance_init().
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-Id: <20190308131445.17502-4-armbru@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit fc4a473482d595da08ae20ce239f0b62fa55d0f2)
+[The commit message's "we know the bug is only latent" part doesn't
+apply downstream]
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ vl.c | 19 ++-----------------
+ 1 file changed, 2 insertions(+), 17 deletions(-)
+
+diff --git a/vl.c b/vl.c
+index 72c489f..d46dff6 100644
+--- a/vl.c
++++ b/vl.c
+@@ -3052,17 +3052,6 @@ static void user_register_global_props(void)
+                       global_init_func, NULL, NULL);
+ }
+ 
+-/*
+- * Note: we should see that these properties are actually having a
+- * priority: accel < machine < user. This means e.g. when user
+- * specifies something in "-global", it'll always be used with highest
+- * priority than either machine/accelerator compat properties.
+- */
+-static void register_global_properties(MachineState *ms)
+-{
+-    user_register_global_props();
+-}
+-
+ int main(int argc, char **argv, char **envp)
+ {
+     int i;
+@@ -4119,6 +4108,8 @@ int main(int argc, char **argv, char **envp)
+      */
+     loc_set_none();
+ 
++    user_register_global_props();
++
+     replay_configure(icount_opts);
+ 
+     /* Maximum number of CPUs limited for Red Hat Enterprise Linux */
+@@ -4438,12 +4429,6 @@ int main(int argc, char **argv, char **envp)
+     configure_accelerator(current_machine);
+ 
+     /*
+-     * Register all the global properties, including accel properties,
+-     * machine properties, and user-specified ones.
+-     */
+-    register_global_properties(current_machine);
+-
+-    /*
+      * Migration object can only be created after global properties
+      * are applied correctly.
+      */
+-- 
+1.8.3.1
+

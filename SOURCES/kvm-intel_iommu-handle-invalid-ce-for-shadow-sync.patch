@@ -1,0 +1,89 @@
+From 80fe503d7c126fa2be6cc424593cae6c522f65e0 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Thu, 8 Nov 2018 05:37:21 +0100
+Subject: [PATCH 14/22] intel_iommu: handle invalid ce for shadow sync
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Peter Xu <peterx@redhat.com>
+Message-id: <20181108053721.13162-8-peterx@redhat.com>
+Patchwork-id: 82958
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 7/7] intel_iommu: handle invalid ce for shadow sync
+Bugzilla: 1627272
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+We should handle VTD_FR_CONTEXT_ENTRY_P properly when synchronizing
+shadow page tables.  Having invalid context entry there is perfectly
+valid when we move a device out of an existing domain.  When that
+happens, instead of posting an error we invalidate the whole region.
+
+Without this patch, QEMU will crash if we do these steps:
+
+(1) start QEMU with VT-d IOMMU and two 10G NICs (ixgbe)
+(2) bind the NICs with vfio-pci in the guest
+(3) start testpmd with the NICs applied
+(4) stop testpmd
+(5) rebind the NIC back to ixgbe kernel driver
+
+The patch should fix it.
+
+Reported-by: Pei Zhang <pezhang@redhat.com>
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1627272
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Maxime Coquelin <maxime.coquelin@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit c28b535d083d0a263d38d9ceeada83cdae8c64f0)
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/i386/intel_iommu.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/hw/i386/intel_iommu.c b/hw/i386/intel_iommu.c
+index c95128d..12af410 100644
+--- a/hw/i386/intel_iommu.c
++++ b/hw/i386/intel_iommu.c
+@@ -38,6 +38,7 @@
+ #include "trace.h"
+ 
+ static void vtd_address_space_refresh_all(IntelIOMMUState *s);
++static void vtd_address_space_unmap(VTDAddressSpace *as, IOMMUNotifier *n);
+ 
+ static void vtd_define_quad(IntelIOMMUState *s, hwaddr addr, uint64_t val,
+                             uint64_t wmask, uint64_t w1cmask)
+@@ -1066,11 +1067,27 @@ static int vtd_sync_shadow_page_table(VTDAddressSpace *vtd_as)
+ {
+     int ret;
+     VTDContextEntry ce;
++    IOMMUNotifier *n;
+ 
+     ret = vtd_dev_to_context_entry(vtd_as->iommu_state,
+                                    pci_bus_num(vtd_as->bus),
+                                    vtd_as->devfn, &ce);
+     if (ret) {
++        if (ret == -VTD_FR_CONTEXT_ENTRY_P) {
++            /*
++             * It's a valid scenario to have a context entry that is
++             * not present.  For example, when a device is removed
++             * from an existing domain then the context entry will be
++             * zeroed by the guest before it was put into another
++             * domain.  When this happens, instead of synchronizing
++             * the shadow pages we should invalidate all existing
++             * mappings and notify the backends.
++             */
++            IOMMU_NOTIFIER_FOREACH(n, &vtd_as->iommu) {
++                vtd_address_space_unmap(vtd_as, n);
++            }
++            ret = 0;
++        }
+         return ret;
+     }
+ 
+-- 
+1.8.3.1
+

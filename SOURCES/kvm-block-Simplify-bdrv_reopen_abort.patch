@@ -1,0 +1,62 @@
+From e790236fc17d7ceb73571bdd5f62c15693e7a071 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:09:59 +0100
+Subject: [PATCH 003/163] block: Simplify bdrv_reopen_abort()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-4-kwolf@redhat.com>
+Patchwork-id: 84880
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 03/14] block: Simplify bdrv_reopen_abort()
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Alberto Garcia <berto@igalia.com>
+
+If a bdrv_reopen_multiple() call fails, then the explicit_options
+QDict has to be deleted for every entry in the reopen queue. This must
+happen regardless of whether that entry's bdrv_reopen_prepare() call
+succeeded or not.
+
+This patch simplifies the cleanup code a bit.
+
+Signed-off-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 1bab38e7bd29347aca642c55a1de91ec6680efce)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/block.c b/block.c
+index ccf9acb..c3148cc 100644
+--- a/block.c
++++ b/block.c
+@@ -3083,9 +3083,10 @@ int bdrv_reopen_multiple(AioContext *ctx, BlockReopenQueue *bs_queue, Error **er
+ 
+ cleanup:
+     QSIMPLEQ_FOREACH_SAFE(bs_entry, bs_queue, entry, next) {
+-        if (ret && bs_entry->prepared) {
+-            bdrv_reopen_abort(&bs_entry->state);
+-        } else if (ret) {
++        if (ret) {
++            if (bs_entry->prepared) {
++                bdrv_reopen_abort(&bs_entry->state);
++            }
+             qobject_unref(bs_entry->state.explicit_options);
+         }
+         qobject_unref(bs_entry->state.options);
+@@ -3374,8 +3375,6 @@ void bdrv_reopen_abort(BDRVReopenState *reopen_state)
+         drv->bdrv_reopen_abort(reopen_state);
+     }
+ 
+-    qobject_unref(reopen_state->explicit_options);
+-
+     bdrv_abort_perm_update(reopen_state->bs);
+ }
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,89 @@
+From 1ff1deba5e09af78b2fe8095fc0472dfd0051f1c Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:22 +0100
+Subject: [PATCH 083/163] nbd/client: More consistent error messages
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-10-jsnow@redhat.com>
+Patchwork-id: 85185
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 09/55] nbd/client: More consistent error messages
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Consolidate on using decimal (not hex), on outputting the
+option reply name (not just value), and a consistent comma between
+clauses, when the client reports protocol discrepancies from the
+server.  While it won't affect normal operation, it makes
+debugging additions easier.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20181215135324.152629-6-eblake@redhat.com>
+(cherry picked from commit 6c5c035138218a384a229e7b6b9cf51451621c6a)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/client.c | 21 ++++++++++++---------
+ 1 file changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/nbd/client.c b/nbd/client.c
+index 0ad7147..e774147 100644
+--- a/nbd/client.c
++++ b/nbd/client.c
+@@ -132,8 +132,9 @@ static int nbd_receive_option_reply(QIOChannel *ioc, uint32_t opt,
+         return -1;
+     }
+     if (reply->option != opt) {
+-        error_setg(errp, "Unexpected option type %x expected %x",
+-                   reply->option, opt);
++        error_setg(errp, "Unexpected option type %u (%s), expected %u (%s)",
++                   reply->option, nbd_opt_lookup(reply->option),
++                   opt, nbd_opt_lookup(opt));
+         nbd_send_opt_abort(ioc);
+         return -1;
+     }
+@@ -267,8 +268,9 @@ static int nbd_receive_list(QIOChannel *ioc, const char *want, bool *match,
+         }
+         return 0;
+     } else if (reply.type != NBD_REP_SERVER) {
+-        error_setg(errp, "Unexpected reply type %" PRIx32 " expected %x",
+-                   reply.type, NBD_REP_SERVER);
++        error_setg(errp, "Unexpected reply type %u (%s), expected %u (%s)",
++                   reply.type, nbd_rep_lookup(reply.type),
++                   NBD_REP_SERVER, nbd_rep_lookup(NBD_REP_SERVER));
+         nbd_send_opt_abort(ioc);
+         return -1;
+     }
+@@ -380,9 +382,9 @@ static int nbd_opt_go(QIOChannel *ioc, const char *wantname,
+             return 1;
+         }
+         if (reply.type != NBD_REP_INFO) {
+-            error_setg(errp, "unexpected reply type %" PRIu32
+-                       " (%s), expected %u",
+-                       reply.type, nbd_rep_lookup(reply.type), NBD_REP_INFO);
++            error_setg(errp, "unexpected reply type %u (%s), expected %u (%s)",
++                       reply.type, nbd_rep_lookup(reply.type),
++                       NBD_REP_INFO, nbd_rep_lookup(NBD_REP_INFO));
+             nbd_send_opt_abort(ioc);
+             return -1;
+         }
+@@ -706,8 +708,9 @@ static int nbd_negotiate_simple_meta_context(QIOChannel *ioc,
+     }
+ 
+     if (reply.type != NBD_REP_ACK) {
+-        error_setg(errp, "Unexpected reply type %" PRIx32 " expected %x",
+-                   reply.type, NBD_REP_ACK);
++        error_setg(errp, "Unexpected reply type %u (%s), expected %u (%s)",
++                   reply.type, nbd_rep_lookup(reply.type),
++                   NBD_REP_ACK, nbd_rep_lookup(NBD_REP_ACK));
+         nbd_send_opt_abort(ioc);
+         return -1;
+     }
+-- 
+1.8.3.1
+

@@ -1,0 +1,115 @@
+From 5914d4c0869766e245b5ed5ea857af72c3b0049e Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 16:43:12 +0200
+Subject: [PATCH 44/54] iotests: Let 216 make use of qemu-io's exit code
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618164312.24423-6-mreitz@redhat.com>
+Patchwork-id: 80776
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 5/5] iotests: Let 216 make use of qemu-io's exit code
+Bugzilla: 1519617
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+As a showcase of how you can use qemu-io's exit code to determine
+success or failure (same for qemu-img), this test is changed to use
+qemu_io_silent() instead of qemu_io(), and to assert the exit code
+instead of logging the filtered result.
+
+One real advantage of this is that in case of an error, you get a
+backtrace that helps you locate the issue in the test file quickly.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-id: 20180509194302.21585-6-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit e4ca4e981a0a389d6af5dc5d8b5fbdd1a05276a0)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/216     | 23 ++++++++++++-----------
+ tests/qemu-iotests/216.out | 17 ++---------------
+ 2 files changed, 14 insertions(+), 26 deletions(-)
+
+diff --git a/tests/qemu-iotests/216 b/tests/qemu-iotests/216
+index ca9b47a..3c0ae54 100755
+--- a/tests/qemu-iotests/216
++++ b/tests/qemu-iotests/216
+@@ -20,7 +20,7 @@
+ # Creator/Owner: Max Reitz <mreitz@redhat.com>
+ 
+ import iotests
+-from iotests import log, qemu_img_pipe, qemu_io, filter_qemu_io
++from iotests import log, qemu_img, qemu_io_silent
+ 
+ # Need backing file support
+ iotests.verify_image_format(supported_fmts=['qcow2', 'qcow', 'qed', 'vmdk'])
+@@ -50,14 +50,13 @@ with iotests.FilePath('base.img') as base_img_path, \
+     log('--- Setting up images ---')
+     log('')
+ 
+-    qemu_img_pipe('create', '-f', iotests.imgfmt, base_img_path, '64M')
++    assert qemu_img('create', '-f', iotests.imgfmt, base_img_path, '64M') == 0
++    assert qemu_io_silent(base_img_path, '-c', 'write -P 1 0M 1M') == 0
++    assert qemu_img('create', '-f', iotests.imgfmt, '-b', base_img_path,
++                    top_img_path) == 0
++    assert qemu_io_silent(top_img_path,  '-c', 'write -P 2 1M 1M') == 0
+ 
+-    log(filter_qemu_io(qemu_io(base_img_path, '-c', 'write -P 1 0M 1M')))
+-
+-    qemu_img_pipe('create', '-f', iotests.imgfmt, '-b', base_img_path,
+-                  top_img_path)
+-
+-    log(filter_qemu_io(qemu_io(top_img_path,  '-c', 'write -P 2 1M 1M')))
++    log('Done')
+ 
+     log('')
+     log('--- Doing COR ---')
+@@ -110,6 +109,8 @@ with iotests.FilePath('base.img') as base_img_path, \
+     log('--- Checking COR result ---')
+     log('')
+ 
+-    log(filter_qemu_io(qemu_io(base_img_path, '-c', 'discard 0 64M')))
+-    log(filter_qemu_io(qemu_io(top_img_path,  '-c', 'read -P 1 0M 1M')))
+-    log(filter_qemu_io(qemu_io(top_img_path,  '-c', 'read -P 2 1M 1M')))
++    assert qemu_io_silent(base_img_path, '-c', 'discard 0 64M') == 0
++    assert qemu_io_silent(top_img_path,  '-c', 'read -P 1 0M 1M') == 0
++    assert qemu_io_silent(top_img_path,  '-c', 'read -P 2 1M 1M') == 0
++
++    log('Done')
+diff --git a/tests/qemu-iotests/216.out b/tests/qemu-iotests/216.out
+index d3fc590..45ea857 100644
+--- a/tests/qemu-iotests/216.out
++++ b/tests/qemu-iotests/216.out
+@@ -3,12 +3,7 @@
+ 
+ --- Setting up images ---
+ 
+-wrote 1048576/1048576 bytes at offset 0
+-1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+-
+-wrote 1048576/1048576 bytes at offset 1048576
+-1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+-
++Done
+ 
+ --- Doing COR ---
+ 
+@@ -17,12 +12,4 @@ wrote 1048576/1048576 bytes at offset 1048576
+ 
+ --- Checking COR result ---
+ 
+-discard 67108864/67108864 bytes at offset 0
+-64 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+-
+-read 1048576/1048576 bytes at offset 0
+-1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+-
+-read 1048576/1048576 bytes at offset 1048576
+-1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
+-
++Done
+-- 
+1.8.3.1
+

@@ -1,0 +1,159 @@
+From 29117d8ea323429138020a8de63119f15da01d83 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:25 +0200
+Subject: [PATCH 34/49] blockjob: Wake up BDS when job becomes idle
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-28-kwolf@redhat.com>
+Patchwork-id: 82180
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 27/42] blockjob: Wake up BDS when job becomes idle
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+In the context of draining a BDS, the .drained_poll callback of block
+jobs is called. If this returns true (i.e. there is still some activity
+pending), the drain operation may call aio_poll() with blocking=true to
+wait for completion.
+
+As soon as the pending activity is completed and the job finally arrives
+in a quiescent state (i.e. its coroutine either yields with busy=false
+or terminates), the block job must notify the aio_poll() loop to wake
+up, otherwise we get a deadlock if both are running in different
+threads.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c               | 18 ++++++++++++++++++
+ include/block/blockjob.h | 13 +++++++++++++
+ include/qemu/job.h       |  3 +++
+ job.c                    |  7 +++++++
+ 4 files changed, 41 insertions(+)
+
+diff --git a/blockjob.c b/blockjob.c
+index be5903a..8d27e8e 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -221,6 +221,22 @@ int block_job_add_bdrv(BlockJob *job, const char *name, BlockDriverState *bs,
+     return 0;
+ }
+ 
++void block_job_wakeup_all_bdrv(BlockJob *job)
++{
++    GSList *l;
++
++    for (l = job->nodes; l; l = l->next) {
++        BdrvChild *c = l->data;
++        bdrv_wakeup(c->bs);
++    }
++}
++
++static void block_job_on_idle(Notifier *n, void *opaque)
++{
++    BlockJob *job = opaque;
++    block_job_wakeup_all_bdrv(job);
++}
++
+ bool block_job_is_internal(BlockJob *job)
+ {
+     return (job->job.id == NULL);
+@@ -419,6 +435,7 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
+     job->finalize_completed_notifier.notify = block_job_event_completed;
+     job->pending_notifier.notify = block_job_event_pending;
+     job->ready_notifier.notify = block_job_event_ready;
++    job->idle_notifier.notify = block_job_on_idle;
+ 
+     notifier_list_add(&job->job.on_finalize_cancelled,
+                       &job->finalize_cancelled_notifier);
+@@ -426,6 +443,7 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
+                       &job->finalize_completed_notifier);
+     notifier_list_add(&job->job.on_pending, &job->pending_notifier);
+     notifier_list_add(&job->job.on_ready, &job->ready_notifier);
++    notifier_list_add(&job->job.on_idle, &job->idle_notifier);
+ 
+     error_setg(&job->blocker, "block device is in use by block job: %s",
+                job_type_str(&job->job));
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index 32c00b7..2290bbb 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -70,6 +70,9 @@ typedef struct BlockJob {
+     /** Called when the job transitions to READY */
+     Notifier ready_notifier;
+ 
++    /** Called when the job coroutine yields or terminates */
++    Notifier idle_notifier;
++
+     /** BlockDriverStates that are involved in this block job */
+     GSList *nodes;
+ } BlockJob;
+@@ -119,6 +122,16 @@ int block_job_add_bdrv(BlockJob *job, const char *name, BlockDriverState *bs,
+ void block_job_remove_all_bdrv(BlockJob *job);
+ 
+ /**
++ * block_job_wakeup_all_bdrv:
++ * @job: The block job
++ *
++ * Calls bdrv_wakeup() for all BlockDriverStates that have been added to the
++ * job. This function is to be called whenever child_job_drained_poll() would
++ * go from true to false to notify waiting drain requests.
++ */
++void block_job_wakeup_all_bdrv(BlockJob *job);
++
++/**
+  * block_job_set_speed:
+  * @job: The job to set the speed for.
+  * @speed: The new value
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index fdaa06f..407d549 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -156,6 +156,9 @@ typedef struct Job {
+     /** Notifiers called when the job transitions to READY */
+     NotifierList on_ready;
+ 
++    /** Notifiers called when the job coroutine yields or terminates */
++    NotifierList on_idle;
++
+     /** Element of the list of jobs */
+     QLIST_ENTRY(Job) job_list;
+ 
+diff --git a/job.c b/job.c
+index db53163..5a0ccc7 100644
+--- a/job.c
++++ b/job.c
+@@ -397,6 +397,11 @@ static void job_event_ready(Job *job)
+     notifier_list_notify(&job->on_ready, job);
+ }
+ 
++static void job_event_idle(Job *job)
++{
++    notifier_list_notify(&job->on_idle, job);
++}
++
+ void job_enter_cond(Job *job, bool(*fn)(Job *job))
+ {
+     if (!job_started(job)) {
+@@ -442,6 +447,7 @@ static void coroutine_fn job_do_yield(Job *job, uint64_t ns)
+         timer_mod(&job->sleep_timer, ns);
+     }
+     job->busy = false;
++    job_event_idle(job);
+     job_unlock();
+     qemu_coroutine_yield();
+ 
+@@ -860,6 +866,7 @@ static void coroutine_fn job_co_entry(void *opaque)
+     assert(job && job->driver && job->driver->run);
+     job_pause_point(job);
+     job->ret = job->driver->run(job, &job->err);
++    job_event_idle(job);
+     job->deferred_to_main_loop = true;
+     aio_bh_schedule_oneshot(qemu_get_aio_context(), job_exit, job);
+ }
+-- 
+1.8.3.1
+

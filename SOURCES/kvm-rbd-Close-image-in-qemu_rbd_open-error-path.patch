@@ -1,0 +1,46 @@
+From 65f966b512842ad7654eb80a4b98cbfff7437751 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:45 +0100
+Subject: [PATCH 04/34] rbd: Close image in qemu_rbd_open() error path
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-4-kwolf@redhat.com>
+Patchwork-id: 83113
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 03/12] rbd: Close image in qemu_rbd_open() error path
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+Commit e2b8247a322 introduced an error path in qemu_rbd_open() after
+calling rbd_open(), but neglected to close the image again in this error
+path. The error path should contain everything that the regular close
+function qemu_rbd_close() contains.
+
+This adds the missing rbd_close() call.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit a51b9c4862c29f427931f45ee1d39ac1663ba859)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/rbd.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block/rbd.c b/block/rbd.c
+index 8f81fbc..8ce68c8 100644
+--- a/block/rbd.c
++++ b/block/rbd.c
+@@ -779,6 +779,7 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
+                          "automatically marking the image read-only.");
+             r = bdrv_set_read_only(bs, true, &local_err);
+             if (r < 0) {
++                rbd_close(s->image);
+                 error_propagate(errp, local_err);
+                 goto failed_open;
+             }
+-- 
+1.8.3.1
+

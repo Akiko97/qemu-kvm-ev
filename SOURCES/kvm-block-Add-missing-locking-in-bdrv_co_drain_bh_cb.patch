@@ -1,0 +1,94 @@
+From e0603f9fadc9d8cabd0d47c09dc99880aafcc905 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:31 +0200
+Subject: [PATCH 40/49] block: Add missing locking in bdrv_co_drain_bh_cb()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-34-kwolf@redhat.com>
+Patchwork-id: 82185
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 33/42] block: Add missing locking in bdrv_co_drain_bh_cb()
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+bdrv_do_drained_begin/end() assume that they are called with the
+AioContext lock of bs held. If we call drain functions from a coroutine
+with the AioContext lock held, we yield and schedule a BH to move out of
+coroutine context. This means that the lock for the home context of the
+coroutine is released and must be re-acquired in the bottom half.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c               | 15 +++++++++++++++
+ include/qemu/coroutine.h |  5 +++++
+ util/qemu-coroutine.c    |  5 +++++
+ 3 files changed, 25 insertions(+)
+
+diff --git a/block/io.c b/block/io.c
+index d404088..19db35e 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -286,6 +286,18 @@ static void bdrv_co_drain_bh_cb(void *opaque)
+     BlockDriverState *bs = data->bs;
+ 
+     if (bs) {
++        AioContext *ctx = bdrv_get_aio_context(bs);
++        AioContext *co_ctx = qemu_coroutine_get_aio_context(co);
++
++        /*
++         * When the coroutine yielded, the lock for its home context was
++         * released, so we need to re-acquire it here. If it explicitly
++         * acquired a different context, the lock is still held and we don't
++         * want to lock it a second time (or AIO_WAIT_WHILE() would hang).
++         */
++        if (ctx == co_ctx) {
++            aio_context_acquire(ctx);
++        }
+         bdrv_dec_in_flight(bs);
+         if (data->begin) {
+             bdrv_do_drained_begin(bs, data->recursive, data->parent,
+@@ -294,6 +306,9 @@ static void bdrv_co_drain_bh_cb(void *opaque)
+             bdrv_do_drained_end(bs, data->recursive, data->parent,
+                                 data->ignore_bds_parents);
+         }
++        if (ctx == co_ctx) {
++            aio_context_release(ctx);
++        }
+     } else {
+         assert(data->begin);
+         bdrv_drain_all_begin();
+diff --git a/include/qemu/coroutine.h b/include/qemu/coroutine.h
+index 6f8a487..9801e7f 100644
+--- a/include/qemu/coroutine.h
++++ b/include/qemu/coroutine.h
+@@ -90,6 +90,11 @@ void qemu_aio_coroutine_enter(AioContext *ctx, Coroutine *co);
+ void coroutine_fn qemu_coroutine_yield(void);
+ 
+ /**
++ * Get the AioContext of the given coroutine
++ */
++AioContext *coroutine_fn qemu_coroutine_get_aio_context(Coroutine *co);
++
++/**
+  * Get the currently executing coroutine
+  */
+ Coroutine *coroutine_fn qemu_coroutine_self(void);
+diff --git a/util/qemu-coroutine.c b/util/qemu-coroutine.c
+index 1ba4191..2295928 100644
+--- a/util/qemu-coroutine.c
++++ b/util/qemu-coroutine.c
+@@ -198,3 +198,8 @@ bool qemu_coroutine_entered(Coroutine *co)
+ {
+     return co->caller;
+ }
++
++AioContext *coroutine_fn qemu_coroutine_get_aio_context(Coroutine *co)
++{
++    return co->ctx;
++}
+-- 
+1.8.3.1
+

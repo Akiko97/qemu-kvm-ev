@@ -1,0 +1,82 @@
+From 975a41d8556024bed3fafc5118f084adf4cb391e Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:14 +0200
+Subject: [PATCH 07/54] iscsi: Drop deprecated -drive parameter "filename"
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-8-armbru@redhat.com>
+Patchwork-id: 80740
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 07/23] iscsi: Drop deprecated -drive parameter "filename"
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Parameter "filename" is deprecated since commit 5c3ad1a6a8f, v2.10.0.
+Time to get rid of it.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit deadbb8ebb5c253da9b8ed02ab51a0fadf60edc7)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/iscsi.c | 23 ++---------------------
+ 1 file changed, 2 insertions(+), 21 deletions(-)
+
+diff --git a/block/iscsi.c b/block/iscsi.c
+index d19ae0e..658462b 100644
+--- a/block/iscsi.c
++++ b/block/iscsi.c
+@@ -1732,10 +1732,6 @@ static QemuOptsList runtime_opts = {
+             .name = "timeout",
+             .type = QEMU_OPT_NUMBER,
+         },
+-        {
+-            .name = "filename",
+-            .type = QEMU_OPT_STRING,
+-        },
+         { /* end of list */ }
+     },
+ };
+@@ -1751,27 +1747,12 @@ static int iscsi_open(BlockDriverState *bs, QDict *options, int flags,
+     char *initiator_name = NULL;
+     QemuOpts *opts;
+     Error *local_err = NULL;
+-    const char *transport_name, *portal, *target, *filename;
++    const char *transport_name, *portal, *target;
+ #if LIBISCSI_API_VERSION >= (20160603)
+     enum iscsi_transport_type transport;
+ #endif
+     int i, ret = 0, timeout = 0, lun;
+ 
+-    /* If we are given a filename, parse the filename, with precedence given to
+-     * filename encoded options */
+-    filename = qdict_get_try_str(options, "filename");
+-    if (filename) {
+-        warn_report("'filename' option specified. "
+-                    "This is an unsupported option, and may be deprecated "
+-                    "in the future");
+-        iscsi_parse_filename(filename, options, &local_err);
+-        if (local_err) {
+-            ret = -EINVAL;
+-            error_propagate(errp, local_err);
+-            goto exit;
+-        }
+-    }
+-
+     opts = qemu_opts_create(&runtime_opts, NULL, 0, &error_abort);
+     qemu_opts_absorb_qdict(opts, options, &local_err);
+     if (local_err) {
+@@ -1989,7 +1970,7 @@ out:
+         }
+         memset(iscsilun, 0, sizeof(IscsiLun));
+     }
+-exit:
++
+     return ret;
+ }
+ 
+-- 
+1.8.3.1
+

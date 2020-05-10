@@ -1,0 +1,71 @@
+From 66d5fd223afbf662589611f3d6a22ff7bcc38bb0 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Wed, 6 Feb 2019 15:58:28 +0100
+Subject: [PATCH 08/33] scsi-disk: Don't use empty string as device id
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190206155829.14641-2-kwolf@redhat.com>
+Patchwork-id: 84253
+O-Subject: [RHEL-7.7/8.0-AV qemu-kvm-rhev PATCH 1/2] scsi-disk: Don't use empty string as device id
+Bugzilla: 1673080
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+
+scsi-disk includes in the Device Identification VPD page, depending on
+configuration amongst others, a vendor specific designator that consists
+either of the serial number if given or the BlockBackend name (which is
+a host detail that better shouldn't have been leaked to the guest, but
+now we have to maintain it for compatibility).
+
+With anonymous BlockBackends, i.e. scsi-disk devices constructed with
+drive=<node-name>, and no serial number explicitly specified, this ends
+up as an empty string. If this happens to more than one disk, we have
+accidentally signalled to the OS that this is a multipath setup, which
+is obviously not what was intended.
+
+Instead of using an empty string for the vendor specific designator,
+simply leave out that designator, which makes Linux detect such setups
+as separate disks again.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+(cherry picked from commit a8f58afcdb86e266e06c9dc41a71605e570244c3)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/scsi-disk.c | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/hw/scsi/scsi-disk.c b/hw/scsi/scsi-disk.c
+index a20ef91..de6c7bc 100644
+--- a/hw/scsi/scsi-disk.c
++++ b/hw/scsi/scsi-disk.c
+@@ -648,12 +648,14 @@ static int scsi_disk_emulate_vpd_page(SCSIRequest *req, uint8_t *outbuf)
+         DPRINTF("Inquiry EVPD[Device identification] "
+                 "buffer size %zd\n", req->cmd.xfer);
+ 
+-        outbuf[buflen++] = 0x2; /* ASCII */
+-        outbuf[buflen++] = 0;   /* not officially assigned */
+-        outbuf[buflen++] = 0;   /* reserved */
+-        outbuf[buflen++] = id_len; /* length of data following */
+-        memcpy(outbuf + buflen, str, id_len);
+-        buflen += id_len;
++        if (id_len) {
++            outbuf[buflen++] = 0x2; /* ASCII */
++            outbuf[buflen++] = 0;   /* not officially assigned */
++            outbuf[buflen++] = 0;   /* reserved */
++            outbuf[buflen++] = id_len; /* length of data following */
++            memcpy(outbuf + buflen, str, id_len);
++            buflen += id_len;
++        }
+ 
+         if (s->qdev.wwn) {
+             outbuf[buflen++] = 0x1; /* Binary */
+-- 
+1.8.3.1
+

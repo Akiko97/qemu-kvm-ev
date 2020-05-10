@@ -1,0 +1,163 @@
+From 06d93467b8c40769e7b6c39a41594894fe440a9f Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:55:02 +0200
+Subject: [PATCH 77/89] nbd/server: add nbd_meta_empty_or_pattern helper
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-27-jsnow@redhat.com>
+Patchwork-id: 81398
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 26/35] nbd/server: add nbd_meta_empty_or_pattern helper
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Add nbd_meta_pattern() and nbd_meta_empty_or_pattern() helpers for
+metadata query parsing. nbd_meta_pattern() will be reused for the
+"qemu" namespace in following patches.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20180609151758.17343-4-vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+[eblake: comment tweaks]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit b0769d8f8df0b51881f1f15c9e29722cf6191a43)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 89 ++++++++++++++++++++++++++++++++++++++++++------------------
+ 1 file changed, 62 insertions(+), 27 deletions(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 26cc41a..9171cd4 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -733,53 +733,87 @@ static int nbd_negotiate_send_meta_context(NBDClient *client,
+     return qio_channel_writev_all(client->ioc, iov, 2, errp) < 0 ? -EIO : 0;
+ }
+ 
+-/* nbd_meta_base_query
+- *
+- * Handle queries to 'base' namespace. For now, only the base:allocation
+- * context is available.  'len' is the amount of text remaining to be read from
+- * the current name, after the 'base:' portion has been stripped.
++/* Read strlen(@pattern) bytes, and set @match to true if they match @pattern.
++ * @match is never set to false.
+  *
+  * Return -errno on I/O error, 0 if option was completely handled by
+  * sending a reply about inconsistent lengths, or 1 on success.
+  *
+- * Note: return code = 1 doesn't mean that we've parsed the "base:allocation"
+- * namespace. It only means that there are no errors.
++ * Note: return code = 1 doesn't mean that we've read exactly @pattern.
++ * It only means that there are no errors.
+  */
+-static int nbd_meta_base_query(NBDClient *client, NBDExportMetaContexts *meta,
+-                               uint32_t len, Error **errp)
++static int nbd_meta_pattern(NBDClient *client, const char *pattern, bool *match,
++                            Error **errp)
+ {
+     int ret;
+-    char query[sizeof("allocation") - 1];
+-    size_t alen = strlen("allocation");
+-
+-    if (len == 0) {
+-        if (client->opt == NBD_OPT_LIST_META_CONTEXT) {
+-            meta->base_allocation = true;
+-        }
+-        trace_nbd_negotiate_meta_query_parse("base:");
+-        return 1;
+-    }
++    char *query;
++    size_t len = strlen(pattern);
+ 
+-    if (len != alen) {
+-        trace_nbd_negotiate_meta_query_skip("not base:allocation");
+-        return nbd_opt_skip(client, len, errp);
+-    }
++    assert(len);
+ 
++    query = g_malloc(len);
+     ret = nbd_opt_read(client, query, len, errp);
+     if (ret <= 0) {
++        g_free(query);
+         return ret;
+     }
+ 
+-    if (strncmp(query, "allocation", alen) == 0) {
+-        trace_nbd_negotiate_meta_query_parse("base:allocation");
+-        meta->base_allocation = true;
++    if (strncmp(query, pattern, len) == 0) {
++        trace_nbd_negotiate_meta_query_parse(pattern);
++        *match = true;
+     } else {
+-        trace_nbd_negotiate_meta_query_skip("not base:allocation");
++        trace_nbd_negotiate_meta_query_skip("pattern not matched");
+     }
++    g_free(query);
+ 
+     return 1;
+ }
+ 
++/*
++ * Read @len bytes, and set @match to true if they match @pattern, or if @len
++ * is 0 and the client is performing _LIST_. @match is never set to false.
++ *
++ * Return -errno on I/O error, 0 if option was completely handled by
++ * sending a reply about inconsistent lengths, or 1 on success.
++ *
++ * Note: return code = 1 doesn't mean that we've read exactly @pattern.
++ * It only means that there are no errors.
++ */
++static int nbd_meta_empty_or_pattern(NBDClient *client, const char *pattern,
++                                     uint32_t len, bool *match, Error **errp)
++{
++    if (len == 0) {
++        if (client->opt == NBD_OPT_LIST_META_CONTEXT) {
++            *match = true;
++        }
++        trace_nbd_negotiate_meta_query_parse("empty");
++        return 1;
++    }
++
++    if (len != strlen(pattern)) {
++        trace_nbd_negotiate_meta_query_skip("different lengths");
++        return nbd_opt_skip(client, len, errp);
++    }
++
++    return nbd_meta_pattern(client, pattern, match, errp);
++}
++
++/* nbd_meta_base_query
++ *
++ * Handle queries to 'base' namespace. For now, only the base:allocation
++ * context is available.  'len' is the amount of text remaining to be read from
++ * the current name, after the 'base:' portion has been stripped.
++ *
++ * Return -errno on I/O error, 0 if option was completely handled by
++ * sending a reply about inconsistent lengths, or 1 on success.
++ */
++static int nbd_meta_base_query(NBDClient *client, NBDExportMetaContexts *meta,
++                               uint32_t len, Error **errp)
++{
++    return nbd_meta_empty_or_pattern(client, "allocation", len,
++                                     &meta->base_allocation, errp);
++}
++
+ /* nbd_negotiate_meta_query
+  *
+  * Parse namespace name and call corresponding function to parse body of the
+@@ -823,6 +857,7 @@ static int nbd_negotiate_meta_query(NBDClient *client,
+         return nbd_opt_skip(client, len, errp);
+     }
+ 
++    trace_nbd_negotiate_meta_query_parse("base:");
+     return nbd_meta_base_query(client, meta, len, errp);
+ }
+ 
+-- 
+1.8.3.1
+

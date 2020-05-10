@@ -1,0 +1,141 @@
+From 4667112e87999632688621951ce8c2ec8a0ebb8d Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 14:53:35 +0200
+Subject: [PATCH 06/57] block/file-posix: Pass FD to locking helpers
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618145337.633-2-mreitz@redhat.com>
+Patchwork-id: 80751
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/3] block/file-posix: Pass FD to locking helpers
+Bugzilla: 1519144
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+raw_apply_lock_bytes() and raw_check_lock_bytes() currently take a
+BDRVRawState *, but they only use the lock_fd field.  During image
+creation, we do not have a BDRVRawState, but we do have an FD; so if we
+want to reuse the functions there, we should modify them to receive only
+the FD.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Message-id: 20180509215336.31304-2-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit d0a96155de099d388f5e1f46277a54bdcfbb0bb2)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 27 ++++++++++++++-------------
+ 1 file changed, 14 insertions(+), 13 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 3794c00..c98a4a1 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -630,7 +630,7 @@ typedef enum {
+  * file; if @unlock == true, also unlock the unneeded bytes.
+  * @shared_perm_lock_bits is the mask of all permissions that are NOT shared.
+  */
+-static int raw_apply_lock_bytes(BDRVRawState *s,
++static int raw_apply_lock_bytes(int fd,
+                                 uint64_t perm_lock_bits,
+                                 uint64_t shared_perm_lock_bits,
+                                 bool unlock, Error **errp)
+@@ -641,13 +641,13 @@ static int raw_apply_lock_bytes(BDRVRawState *s,
+     PERM_FOREACH(i) {
+         int off = RAW_LOCK_PERM_BASE + i;
+         if (perm_lock_bits & (1ULL << i)) {
+-            ret = qemu_lock_fd(s->lock_fd, off, 1, false);
++            ret = qemu_lock_fd(fd, off, 1, false);
+             if (ret) {
+                 error_setg(errp, "Failed to lock byte %d", off);
+                 return ret;
+             }
+         } else if (unlock) {
+-            ret = qemu_unlock_fd(s->lock_fd, off, 1);
++            ret = qemu_unlock_fd(fd, off, 1);
+             if (ret) {
+                 error_setg(errp, "Failed to unlock byte %d", off);
+                 return ret;
+@@ -657,13 +657,13 @@ static int raw_apply_lock_bytes(BDRVRawState *s,
+     PERM_FOREACH(i) {
+         int off = RAW_LOCK_SHARED_BASE + i;
+         if (shared_perm_lock_bits & (1ULL << i)) {
+-            ret = qemu_lock_fd(s->lock_fd, off, 1, false);
++            ret = qemu_lock_fd(fd, off, 1, false);
+             if (ret) {
+                 error_setg(errp, "Failed to lock byte %d", off);
+                 return ret;
+             }
+         } else if (unlock) {
+-            ret = qemu_unlock_fd(s->lock_fd, off, 1);
++            ret = qemu_unlock_fd(fd, off, 1);
+             if (ret) {
+                 error_setg(errp, "Failed to unlock byte %d", off);
+                 return ret;
+@@ -674,8 +674,7 @@ static int raw_apply_lock_bytes(BDRVRawState *s,
+ }
+ 
+ /* Check "unshared" bytes implied by @perm and ~@shared_perm in the file. */
+-static int raw_check_lock_bytes(BDRVRawState *s,
+-                                uint64_t perm, uint64_t shared_perm,
++static int raw_check_lock_bytes(int fd, uint64_t perm, uint64_t shared_perm,
+                                 Error **errp)
+ {
+     int ret;
+@@ -685,7 +684,7 @@ static int raw_check_lock_bytes(BDRVRawState *s,
+         int off = RAW_LOCK_SHARED_BASE + i;
+         uint64_t p = 1ULL << i;
+         if (perm & p) {
+-            ret = qemu_lock_fd_test(s->lock_fd, off, 1, true);
++            ret = qemu_lock_fd_test(fd, off, 1, true);
+             if (ret) {
+                 char *perm_name = bdrv_perm_names(p);
+                 error_setg(errp,
+@@ -702,7 +701,7 @@ static int raw_check_lock_bytes(BDRVRawState *s,
+         int off = RAW_LOCK_PERM_BASE + i;
+         uint64_t p = 1ULL << i;
+         if (!(shared_perm & p)) {
+-            ret = qemu_lock_fd_test(s->lock_fd, off, 1, true);
++            ret = qemu_lock_fd_test(fd, off, 1, true);
+             if (ret) {
+                 char *perm_name = bdrv_perm_names(p);
+                 error_setg(errp,
+@@ -739,11 +738,11 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+ 
+     switch (op) {
+     case RAW_PL_PREPARE:
+-        ret = raw_apply_lock_bytes(s, s->perm | new_perm,
++        ret = raw_apply_lock_bytes(s->lock_fd, s->perm | new_perm,
+                                    ~s->shared_perm | ~new_shared,
+                                    false, errp);
+         if (!ret) {
+-            ret = raw_check_lock_bytes(s, new_perm, new_shared, errp);
++            ret = raw_check_lock_bytes(s->lock_fd, new_perm, new_shared, errp);
+             if (!ret) {
+                 return 0;
+             }
+@@ -751,7 +750,8 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+         op = RAW_PL_ABORT;
+         /* fall through to unlock bytes. */
+     case RAW_PL_ABORT:
+-        raw_apply_lock_bytes(s, s->perm, ~s->shared_perm, true, &local_err);
++        raw_apply_lock_bytes(s->lock_fd, s->perm, ~s->shared_perm,
++                             true, &local_err);
+         if (local_err) {
+             /* Theoretically the above call only unlocks bytes and it cannot
+              * fail. Something weird happened, report it.
+@@ -760,7 +760,8 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
+         }
+         break;
+     case RAW_PL_COMMIT:
+-        raw_apply_lock_bytes(s, new_perm, ~new_shared, true, &local_err);
++        raw_apply_lock_bytes(s->lock_fd, new_perm, ~new_shared,
++                             true, &local_err);
+         if (local_err) {
+             /* Theoretically the above call only unlocks bytes and it cannot
+              * fail. Something weird happened, report it.
+-- 
+1.8.3.1
+

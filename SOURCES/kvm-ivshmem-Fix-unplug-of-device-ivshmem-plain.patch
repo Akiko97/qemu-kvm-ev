@@ -1,0 +1,94 @@
+From 1342ea3b7a14657c3e9f6e38ea3dcc0c2f42939e Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 29 Oct 2018 07:01:37 +0100
+Subject: [PATCH 07/22] ivshmem: Fix unplug of device "ivshmem-plain"
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20181029070137.21196-4-armbru@redhat.com>
+Patchwork-id: 82900
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 3/3] ivshmem: Fix unplug of device "ivshmem-plain"
+Bugzilla: 1620373
+RH-Acked-by: David Hildenbrand <david@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+Commit 2aece63c8a "hostmem: detect host backend memory is being used
+properly" fixed "ivshmem-plain" to reject memory backends that are
+already in use, and to block their deletion while in use.  Two bugs
+escaped review:
+
+* New ivshmem_plain_exit() fails to call ivshmem_exit().  This breaks
+  unplug.  Reproducer: migration after unplug still fails with
+  "Migration is disabled when using feature 'peer mode' in device
+  'ivshmem'".
+
+* It failed to update legacy "ivshmem".  Harmless, because it creates
+  the memory backend itself, and nothing else should use it.
+
+Fix by moving the two host_memory_backend_set_mapped() calls into
+ivshmem_common_realize() and ivshmem_exit(), guarded by s->hostmem.
+
+Fixes: 2aece63c8a9d2c3a8ff41d2febc4cdeff2633331
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20180926163709.22876-1-armbru@redhat.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit b266f1d1123396f9f5df865508f7555ab0c9582a)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/misc/ivshmem.c | 14 +++++---------
+ 1 file changed, 5 insertions(+), 9 deletions(-)
+
+diff --git a/hw/misc/ivshmem.c b/hw/misc/ivshmem.c
+index 47456b8..28e55d4 100644
+--- a/hw/misc/ivshmem.c
++++ b/hw/misc/ivshmem.c
+@@ -917,6 +917,7 @@ static void ivshmem_common_realize(PCIDevice *dev, Error **errp)
+         IVSHMEM_DPRINTF("using hostmem\n");
+ 
+         s->ivshmem_bar2 = host_memory_backend_get_memory(s->hostmem);
++        host_memory_backend_set_mapped(s->hostmem, true);
+     } else {
+         Chardev *chr = qemu_chr_fe_get_driver(&s->server_chr);
+         assert(chr);
+@@ -999,6 +1000,10 @@ static void ivshmem_exit(PCIDevice *dev)
+         vmstate_unregister_ram(s->ivshmem_bar2, DEVICE(dev));
+     }
+ 
++    if (s->hostmem) {
++        host_memory_backend_set_mapped(s->hostmem, false);
++    }
++
+     if (s->peers) {
+         for (i = 0; i < s->nb_peers; i++) {
+             close_peer_eventfds(s, i);
+@@ -1107,14 +1112,6 @@ static void ivshmem_plain_realize(PCIDevice *dev, Error **errp)
+     }
+ 
+     ivshmem_common_realize(dev, errp);
+-    host_memory_backend_set_mapped(s->hostmem, true);
+-}
+-
+-static void ivshmem_plain_exit(PCIDevice *pci_dev)
+-{
+-    IVShmemState *s = IVSHMEM_COMMON(pci_dev);
+-
+-    host_memory_backend_set_mapped(s->hostmem, false);
+ }
+ 
+ static void ivshmem_plain_class_init(ObjectClass *klass, void *data)
+@@ -1123,7 +1120,6 @@ static void ivshmem_plain_class_init(ObjectClass *klass, void *data)
+     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+ 
+     k->realize = ivshmem_plain_realize;
+-    k->exit = ivshmem_plain_exit;
+     dc->props = ivshmem_plain_properties;
+     dc->vmsd = &ivshmem_plain_vmsd;
+ }
+-- 
+1.8.3.1
+

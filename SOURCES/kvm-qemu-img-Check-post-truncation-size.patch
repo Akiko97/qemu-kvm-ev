@@ -1,0 +1,100 @@
+From 28b3e17abefac49221fe9b8826ed10f4e0f3f585 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Wed, 16 May 2018 12:00:18 +0200
+Subject: [PATCH 1/8] qemu-img: Check post-truncation size
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180516120018.27565-2-mreitz@redhat.com>
+Patchwork-id: 80281
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/1] qemu-img: Check post-truncation size
+Bugzilla: 1523065
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Some block drivers (iscsi and file-posix when dealing with device files)
+do not actually support truncation, even though they provide a
+.bdrv_truncate() method and will happily return success when providing a
+new size that does not exceed the current size.  This is because these
+drivers expect the user to resize the image outside of qemu and then
+provide qemu with that information through the block_resize command
+(compare cb1b83e740384b4e0d950f3d7c81c02b8ce86c2e).
+
+Of course, anyone using qemu-img resize will find that behavior useless.
+So we should check the actual size of the image after the supposedly
+successful truncation took place, emit an error if nothing changed and
+emit a warning if the target size was not met.
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180421163957.29872-1-mreitz@redhat.com
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 5279b30392da7a3248b320c75f20c61e3a95863c)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 39 +++++++++++++++++++++++++++++++++++----
+ 1 file changed, 35 insertions(+), 4 deletions(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index 855fa52..8320887 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -3381,7 +3381,7 @@ static int img_resize(int argc, char **argv)
+     Error *err = NULL;
+     int c, ret, relative;
+     const char *filename, *fmt, *size;
+-    int64_t n, total_size, current_size;
++    int64_t n, total_size, current_size, new_size;
+     bool quiet = false;
+     BlockBackend *blk = NULL;
+     PreallocMode prealloc = PREALLOC_MODE_OFF;
+@@ -3557,11 +3557,42 @@ static int img_resize(int argc, char **argv)
+     }
+ 
+     ret = blk_truncate(blk, total_size, prealloc, &err);
+-    if (!ret) {
+-        qprintf(quiet, "Image resized.\n");
+-    } else {
++    if (ret < 0) {
+         error_report_err(err);
++        goto out;
++    }
++
++    new_size = blk_getlength(blk);
++    if (new_size < 0) {
++        error_report("Failed to verify truncated image length: %s",
++                     strerror(-new_size));
++        ret = -1;
++        goto out;
+     }
++
++    /* Some block drivers implement a truncation method, but only so
++     * the user can cause qemu to refresh the image's size from disk.
++     * The idea is that the user resizes the image outside of qemu and
++     * then invokes block_resize to inform qemu about it.
++     * (This includes iscsi and file-posix for device files.)
++     * Of course, that is not the behavior someone invoking
++     * qemu-img resize would find useful, so we catch that behavior
++     * here and tell the user. */
++    if (new_size != total_size && new_size == current_size) {
++        error_report("Image was not resized; resizing may not be supported "
++                     "for this image");
++        ret = -1;
++        goto out;
++    }
++
++    if (new_size != total_size) {
++        warn_report("Image should have been resized to %" PRIi64
++                    " bytes, but was resized to %" PRIi64 " bytes",
++                    total_size, new_size);
++    }
++
++    qprintf(quiet, "Image resized.\n");
++
+ out:
+     blk_unref(blk);
+     if (ret) {
+-- 
+1.8.3.1
+

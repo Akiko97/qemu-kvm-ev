@@ -1,0 +1,65 @@
+From f2d1e27cdec37a9658bcb0262fb266ab3df4b695 Mon Sep 17 00:00:00 2001
+From: Jeffrey Cody <jcody@redhat.com>
+Date: Mon, 11 Dec 2017 22:38:12 +0100
+Subject: block/vxhs: improve error message for missing / bad vxhs module
+
+RH-Author: Jeffrey Cody <jcody@redhat.com>
+Message-id: <59af10d83125fff42beacd30dbca83d50409bbed.1513031708.git.jcody@redhat.com>
+Patchwork-id: 78305
+O-Subject: [RHV7.5 qemu-kvm-rhev PATCH 1/1] block/vxhs: improve error message for missing / bad vxhs module
+Bugzilla: 1505654
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+
+[Downstream only, as the module load of libvxhs is downstream only]
+
+In the case of missing libvxhs libraries, the original error message,
+while technically accurate, may lead a user to think there is a QEMU bug
+if trying to using the VXHS protocol.  Update the message so that it is
+clear that the likely issue is that the Veritas QEMU libvxhs RPM is not
+installed (or not installed correctly, if there are permission or file
+corruption issues, etc.).
+
+An example error message before this change:
+
+> qemu-img info vxhs://localhost/test
+qemu-img: Could not open 'vxhs://localhost/test': \
+        error loading libvxhs: /usr/lib64/qemu/libvxhs.so.1: \
+        cannot open shared object file: No such file or directory
+
+An example error message after this change:
+
+> qemu-img info vxhs://localhost/test
+qemu-img: Could not open 'vxhs://localhost/test': \
+        The VXHS library from Veritas might not be installed correctly \
+        (/usr/lib64/qemu/libvxhs.so.1: \
+         cannot open shared object file: No such file or directory)
+
+Signed-off-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+(cherry picked from commit 363bf9a1aea6d4af394df27fa4fcaba95b00af98)
+(cherry picked from commit c7d20788c4b8a3b285a1cb7ddcee790b74c1621f)
+(cherry picked from commit dc13bdde418c8447859f4630f01af680119c14bb)
+---
+ block/vxhs.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/block/vxhs.c b/block/vxhs.c
+index a18154c..68edb51 100644
+--- a/block/vxhs.c
++++ b/block/vxhs.c
+@@ -115,7 +115,8 @@ static void bdrv_vxhs_load_libs(Error **errp)
+     libvxhs_handle = g_module_open(LIBVXHS_FULL_PATHNAME,
+                                    G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
+     if (!libvxhs_handle) {
+-        error_setg(errp, "error loading libvxhs: %s", g_module_error());
++        error_setg(errp, "The VXHS library from Veritas might not be installed "
++                   "correctly (%s)", g_module_error());
+         return;
+     }
+ 
+-- 
+1.8.3.1
+

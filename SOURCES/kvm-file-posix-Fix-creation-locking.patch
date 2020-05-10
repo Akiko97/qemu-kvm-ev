@@ -1,0 +1,56 @@
+From 19452491c1ec03ce4eef24388ec24076eb306377 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 9 Jul 2018 15:11:21 +0200
+Subject: [PATCH 29/89] file-posix: Fix creation locking
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180709151122.27541-2-mreitz@redhat.com>
+Patchwork-id: 81271
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/2] file-posix: Fix creation locking
+Bugzilla: 1599335
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+raw_apply_lock_bytes() takes a bit mask of "permissions that are NOT
+shared".
+
+Also, make the "perm" and "shared" variables uint64_t, because I do not
+particularly like using ~ on signed integers (and other permission masks
+are usually uint64_t, too).
+
+Reported-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit d815efcaf01b1698e2fdf0f3e125201025c53191)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 0a9df5b..e876770 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -2052,7 +2052,7 @@ static int raw_co_create(BlockdevCreateOptions *options, Error **errp)
+ {
+     BlockdevCreateOptionsFile *file_opts;
+     int fd;
+-    int perm, shared;
++    uint64_t perm, shared;
+     int result = 0;
+ 
+     /* Validate options and set default values */
+@@ -2088,7 +2088,7 @@ static int raw_co_create(BlockdevCreateOptions *options, Error **errp)
+     shared = BLK_PERM_ALL & ~BLK_PERM_RESIZE;
+ 
+     /* Step one: Take locks */
+-    result = raw_apply_lock_bytes(fd, perm, shared, false, errp);
++    result = raw_apply_lock_bytes(fd, perm, ~shared, false, errp);
+     if (result < 0) {
+         goto out_close;
+     }
+-- 
+1.8.3.1
+

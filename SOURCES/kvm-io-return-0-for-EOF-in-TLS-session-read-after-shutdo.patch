@@ -1,0 +1,127 @@
+From d3244c405b0968db4629855567c3a2c7729bea36 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:31 +0100
+Subject: [PATCH 064/163] io: return 0 for EOF in TLS session read after
+ shutdown
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-19-jsnow@redhat.com>
+Patchwork-id: 85099
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 18/28] io: return 0 for EOF in TLS session read after shutdown
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Daniel P. Berrangé <berrange@redhat.com>
+
+GNUTLS takes a paranoid approach when seeing 0 bytes returned by the
+underlying OS read() function. It will consider this an error and
+return GNUTLS_E_PREMATURE_TERMINATION instead of propagating the 0
+return value. It expects apps to arrange for clean termination at
+the protocol level and not rely on seeing EOF from a read call to
+detect shutdown. This is to harden apps against a malicious 3rd party
+causing termination of the sockets layer.
+
+This is unhelpful for the QEMU NBD code which does have a clean
+protocol level shutdown, but still relies on seeing 0 from the I/O
+channel read in the coroutine handling incoming replies.
+
+The upshot is that when using a plain NBD connection shutdown is
+silent, but when using TLS, the client spams the console with
+
+  Cannot read from TLS channel: Broken pipe
+
+The NBD connection has, however, called qio_channel_shutdown()
+at this point to indicate that it is done with I/O. This gives
+the opportunity to optimize the code such that when the channel
+has been shutdown in the read direction, the error code
+GNUTLS_E_PREMATURE_TERMINATION gets turned into a '0' return
+instead of an error.
+
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <20181119134228.11031-1-berrange@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit a2458b6f6998c9a079f710ed7495d5c6f037e942)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ crypto/tlssession.c      | 3 +++
+ include/io/channel-tls.h | 1 +
+ include/io/channel.h     | 6 +++---
+ io/channel-tls.c         | 5 +++++
+ 4 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/crypto/tlssession.c b/crypto/tlssession.c
+index 96a02de..68e0114 100644
+--- a/crypto/tlssession.c
++++ b/crypto/tlssession.c
+@@ -427,6 +427,9 @@ qcrypto_tls_session_read(QCryptoTLSSession *session,
+         case GNUTLS_E_INTERRUPTED:
+             errno = EINTR;
+             break;
++        case GNUTLS_E_PREMATURE_TERMINATION:
++            errno = ECONNABORTED;
++            break;
+         default:
+             errno = EIO;
+             break;
+diff --git a/include/io/channel-tls.h b/include/io/channel-tls.h
+index 87fcaf9..fdbdf12 100644
+--- a/include/io/channel-tls.h
++++ b/include/io/channel-tls.h
+@@ -48,6 +48,7 @@ struct QIOChannelTLS {
+     QIOChannel parent;
+     QIOChannel *master;
+     QCryptoTLSSession *session;
++    QIOChannelShutdown shutdown;
+ };
+ 
+ /**
+diff --git a/include/io/channel.h b/include/io/channel.h
+index e8cdadb..da2f138 100644
+--- a/include/io/channel.h
++++ b/include/io/channel.h
+@@ -51,9 +51,9 @@ enum QIOChannelFeature {
+ typedef enum QIOChannelShutdown QIOChannelShutdown;
+ 
+ enum QIOChannelShutdown {
+-    QIO_CHANNEL_SHUTDOWN_BOTH,
+-    QIO_CHANNEL_SHUTDOWN_READ,
+-    QIO_CHANNEL_SHUTDOWN_WRITE,
++    QIO_CHANNEL_SHUTDOWN_READ = 1,
++    QIO_CHANNEL_SHUTDOWN_WRITE = 2,
++    QIO_CHANNEL_SHUTDOWN_BOTH = 3,
+ };
+ 
+ typedef gboolean (*QIOChannelFunc)(QIOChannel *ioc,
+diff --git a/io/channel-tls.c b/io/channel-tls.c
+index 9628e6f..c98ead2 100644
+--- a/io/channel-tls.c
++++ b/io/channel-tls.c
+@@ -275,6 +275,9 @@ static ssize_t qio_channel_tls_readv(QIOChannel *ioc,
+                 } else {
+                     return QIO_CHANNEL_ERR_BLOCK;
+                 }
++            } else if (errno == ECONNABORTED &&
++                       (tioc->shutdown & QIO_CHANNEL_SHUTDOWN_READ)) {
++                return 0;
+             }
+ 
+             error_setg_errno(errp, errno,
+@@ -357,6 +360,8 @@ static int qio_channel_tls_shutdown(QIOChannel *ioc,
+ {
+     QIOChannelTLS *tioc = QIO_CHANNEL_TLS(ioc);
+ 
++    tioc->shutdown |= how;
++
+     return qio_channel_shutdown(tioc->master, how, errp);
+ }
+ 
+-- 
+1.8.3.1
+

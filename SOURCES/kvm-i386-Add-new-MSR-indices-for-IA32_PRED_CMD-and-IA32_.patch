@@ -1,0 +1,50 @@
+From 1261bc0eac292f500640c7ca96e381a044650717 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Tue, 4 Jun 2019 21:47:20 +0200
+Subject: [PATCH 01/23] i386: Add new MSR indices for IA32_PRED_CMD and
+ IA32_ARCH_CAPABILITIES
+
+RH-Author: plai@redhat.com
+Message-id: <1559684847-10889-2-git-send-email-plai@redhat.com>
+Patchwork-id: 88528
+O-Subject: [RHEL7.7 qemu-kvm-rhev PATCH v4 1/8] i386: Add new MSR indices for IA32_PRED_CMD and IA32_ARCH_CAPABILITIES
+Bugzilla: 1709972
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Robert Hoo <robert.hu@linux.intel.com>
+
+IA32_PRED_CMD MSR gives software a way to issue commands that affect the state
+of indirect branch predictors. Enumerated by CPUID.(EAX=7H,ECX=0):EDX[26].
+IA32_ARCH_CAPABILITIES MSR enumerates architectural features of RDCL_NO and
+IBRS_ALL. Enumerated by CPUID.(EAX=07H, ECX=0):EDX[29].
+
+https://software.intel.com/sites/default/files/managed/c5/63/336996-Speculative-Execution-Side-Channel-Mitigations.pdf
+
+Signed-off-by: Robert Hoo <robert.hu@linux.intel.com>
+Message-Id: <1530781798-183214-2-git-send-email-robert.hu@linux.intel.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 8c80c99fcceabd0708a5a83f08577e778c9419f5)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index ea8c355..aabb6c8 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -352,6 +352,8 @@ typedef enum X86Seg {
+ #define MSR_TSC_ADJUST                  0x0000003b
+ #define MSR_IA32_SPEC_CTRL              0x48
+ #define MSR_VIRT_SSBD                   0xc001011f
++#define MSR_IA32_PRED_CMD               0x49
++#define MSR_IA32_ARCH_CAPABILITIES      0x10a
+ #define MSR_IA32_TSCDEADLINE            0x6e0
+ 
+ #define FEATURE_CONTROL_LOCKED                    (1<<0)
+-- 
+1.8.3.1
+

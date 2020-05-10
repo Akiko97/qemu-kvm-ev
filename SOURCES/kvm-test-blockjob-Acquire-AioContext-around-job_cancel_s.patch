@@ -1,0 +1,85 @@
+From db5e1dfac375e869234340036cd232313c6d4d7b Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:28 +0200
+Subject: [PATCH 37/49] test-blockjob: Acquire AioContext around
+ job_cancel_sync()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-31-kwolf@redhat.com>
+Patchwork-id: 82183
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 30/42] test-blockjob: Acquire AioContext around job_cancel_sync()
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+All callers in QEMU proper hold the AioContext lock when calling
+job_finish_sync(). test-blockjob should do the same when it calls the
+function indirectly through job_cancel_sync().
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/job.h    | 6 ++++++
+ tests/test-blockjob.c | 6 ++++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 407d549..35ac7a9 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -509,6 +509,8 @@ void job_user_cancel(Job *job, bool force, Error **errp);
+  *
+  * Returns the return value from the job if the job actually completed
+  * during the call, or -ECANCELED if it was canceled.
++ *
++ * Callers must hold the AioContext lock of job->aio_context.
+  */
+ int job_cancel_sync(Job *job);
+ 
+@@ -526,6 +528,8 @@ void job_cancel_sync_all(void);
+  * function).
+  *
+  * Returns the return value from the job.
++ *
++ * Callers must hold the AioContext lock of job->aio_context.
+  */
+ int job_complete_sync(Job *job, Error **errp);
+ 
+@@ -551,6 +555,8 @@ void job_dismiss(Job **job, Error **errp);
+  *
+  * Returns 0 if the job is successfully completed, -ECANCELED if the job was
+  * cancelled before completing, and -errno in other error cases.
++ *
++ * Callers must hold the AioContext lock of job->aio_context.
+  */
+ int job_finish_sync(Job *job, void (*finish)(Job *, Error **errp), Error **errp);
+ 
+diff --git a/tests/test-blockjob.c b/tests/test-blockjob.c
+index de4c1c2..652d1e8 100644
+--- a/tests/test-blockjob.c
++++ b/tests/test-blockjob.c
+@@ -223,6 +223,10 @@ static void cancel_common(CancelJob *s)
+     BlockJob *job = &s->common;
+     BlockBackend *blk = s->blk;
+     JobStatus sts = job->job.status;
++    AioContext *ctx;
++
++    ctx = job->job.aio_context;
++    aio_context_acquire(ctx);
+ 
+     job_cancel_sync(&job->job);
+     if (sts != JOB_STATUS_CREATED && sts != JOB_STATUS_CONCLUDED) {
+@@ -232,6 +236,8 @@ static void cancel_common(CancelJob *s)
+     assert(job->job.status == JOB_STATUS_NULL);
+     job_unref(&job->job);
+     destroy_blk(blk);
++
++    aio_context_release(ctx);
+ }
+ 
+ static void test_cancel_created(void)
+-- 
+1.8.3.1
+

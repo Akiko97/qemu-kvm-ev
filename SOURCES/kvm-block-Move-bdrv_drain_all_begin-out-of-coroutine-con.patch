@@ -1,0 +1,78 @@
+From 13f0c32e5c77278207f63ade463035d8aaa4898d Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:15 +0200
+Subject: [PATCH 24/49] block: Move bdrv_drain_all_begin() out of coroutine
+ context
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-18-kwolf@redhat.com>
+Patchwork-id: 82169
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 17/42] block: Move bdrv_drain_all_begin() out of coroutine context
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Before we can introduce a single polling loop for all nodes in
+bdrv_drain_all_begin(), we must make sure to run it outside of coroutine
+context like we already do for bdrv_do_drained_begin().
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit c8ca33d06def97d909a8511377b82994ae4e5981)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c | 22 +++++++++++++++++-----
+ 1 file changed, 17 insertions(+), 5 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 23fe069..b58c91b 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -263,11 +263,16 @@ static void bdrv_co_drain_bh_cb(void *opaque)
+     Coroutine *co = data->co;
+     BlockDriverState *bs = data->bs;
+ 
+-    bdrv_dec_in_flight(bs);
+-    if (data->begin) {
+-        bdrv_do_drained_begin(bs, data->recursive, data->parent, data->poll);
++    if (bs) {
++        bdrv_dec_in_flight(bs);
++        if (data->begin) {
++            bdrv_do_drained_begin(bs, data->recursive, data->parent, data->poll);
++        } else {
++            bdrv_do_drained_end(bs, data->recursive, data->parent);
++        }
+     } else {
+-        bdrv_do_drained_end(bs, data->recursive, data->parent);
++        assert(data->begin);
++        bdrv_drain_all_begin();
+     }
+ 
+     data->done = true;
+@@ -293,7 +298,9 @@ static void coroutine_fn bdrv_co_yield_to_drain(BlockDriverState *bs,
+         .parent = parent,
+         .poll = poll,
+     };
+-    bdrv_inc_in_flight(bs);
++    if (bs) {
++        bdrv_inc_in_flight(bs);
++    }
+     aio_bh_schedule_oneshot(bdrv_get_aio_context(bs),
+                             bdrv_co_drain_bh_cb, &data);
+ 
+@@ -463,6 +470,11 @@ void bdrv_drain_all_begin(void)
+     BlockDriverState *bs;
+     BdrvNextIterator it;
+ 
++    if (qemu_in_coroutine()) {
++        bdrv_co_yield_to_drain(NULL, true, false, NULL, true);
++        return;
++    }
++
+     /* BDRV_POLL_WHILE() for a node can only be called from its own I/O thread
+      * or the main loop AioContext. We potentially use BDRV_POLL_WHILE() on
+      * nodes in several different AioContexts, so make sure we're in the main
+-- 
+1.8.3.1
+

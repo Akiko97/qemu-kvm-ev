@@ -1,0 +1,107 @@
+From debd78a4fda361c6a78bfc3f0e3577909bad3555 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:24 +0200
+Subject: [PATCH 14/53] nbd/client: Trace server noncompliance on structured
+ reads
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-15-jsnow@redhat.com>
+Patchwork-id: 87192
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 14/19] nbd/client: Trace server noncompliance on structured reads
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Just as we recently added a trace for a server sending block status
+that doesn't match the server's advertised minimum block alignment,
+let's do the same for read chunks.  But since qemu 3.1 is such a
+server (because it advertised 512-byte alignment, but when serving a
+file that ends in data but is not sector-aligned, NBD_CMD_READ would
+detect a mid-sector change between data and hole at EOF and the
+resulting read chunks are unaligned), we don't want to change our
+behavior of otherwise tolerating unaligned reads.
+
+Note that even though we fixed the server for 4.0 to advertise an
+actual block alignment (which gets rid of the unaligned reads at EOF
+for posix files), we can still trigger it via other means:
+
+$ qemu-nbd --image-opts driver=blkdebug,align=512,image.driver=file,image.filename=/path/to/non-aligned-file
+
+Arguably, that is a bug in the blkdebug block status function, for
+leaking a block status that is not aligned. It may also be possible to
+observe issues with a backing layer with smaller alignment than the
+active layer, although so far I have been unable to write a reliable
+iotest for that scenario.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190330165349.32256-1-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit 75d34eb98ca0bb2f49d607fcaefd9c482e56b15d)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c | 12 ++++++++++--
+ block/trace-events |  1 +
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index a1a84a8..69e3708 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -198,7 +198,8 @@ static inline uint64_t payload_advance64(uint8_t **payload)
+     return ldq_be_p(*payload - 8);
+ }
+ 
+-static int nbd_parse_offset_hole_payload(NBDStructuredReplyChunk *chunk,
++static int nbd_parse_offset_hole_payload(NBDClientSession *client,
++                                         NBDStructuredReplyChunk *chunk,
+                                          uint8_t *payload, uint64_t orig_offset,
+                                          QEMUIOVector *qiov, Error **errp)
+ {
+@@ -220,6 +221,10 @@ static int nbd_parse_offset_hole_payload(NBDStructuredReplyChunk *chunk,
+                          " region");
+         return -EINVAL;
+     }
++    if (client->info.min_block &&
++        !QEMU_IS_ALIGNED(hole_size, client->info.min_block)) {
++        trace_nbd_structured_read_compliance("hole");
++    }
+ 
+     qemu_iovec_memset(qiov, offset - orig_offset, 0, hole_size);
+ 
+@@ -377,6 +382,9 @@ static int nbd_co_receive_offset_data_payload(NBDClientSession *s,
+                          " region");
+         return -EINVAL;
+     }
++    if (s->info.min_block && !QEMU_IS_ALIGNED(data_size, s->info.min_block)) {
++        trace_nbd_structured_read_compliance("data");
++    }
+ 
+     qemu_iovec_init(&sub_qiov, qiov->niov);
+     qemu_iovec_concat(&sub_qiov, qiov, offset - orig_offset, data_size);
+@@ -699,7 +707,7 @@ static int nbd_co_receive_cmdread_reply(NBDClientSession *s, uint64_t handle,
+              * in qiov */
+             break;
+         case NBD_REPLY_TYPE_OFFSET_HOLE:
+-            ret = nbd_parse_offset_hole_payload(&reply.structured, payload,
++            ret = nbd_parse_offset_hole_payload(s, &reply.structured, payload,
+                                                 offset, qiov, &local_err);
+             if (ret < 0) {
+                 s->quit = true;
+diff --git a/block/trace-events b/block/trace-events
+index 59c6f54..19abca2 100644
+--- a/block/trace-events
++++ b/block/trace-events
+@@ -153,5 +153,6 @@ nvme_cmd_map_qiov_iov(void *s, int i, void *page, int pages) "s %p iov[%d] %p pa
+ 
+ # block/nbd-client.c
+ nbd_parse_blockstatus_compliance(const char *err) "ignoring extra data from non-compliant server: %s"
++nbd_structured_read_compliance(const char *type) "server sent non-compliant unaligned read %s chunk"
+ nbd_read_reply_entry_fail(int ret, const char *err) "ret = %d, err: %s"
+ nbd_co_request_fail(uint64_t from, uint32_t len, uint64_t handle, uint16_t flags, uint16_t type, const char *name, int ret, const char *err) "Request failed { .from = %" PRIu64", .len = %" PRIu32 ", .handle = %" PRIu64 ", .flags = 0x%" PRIx16 ", .type = %" PRIu16 " (%s) } ret = %d, err: %s"
+-- 
+1.8.3.1
+

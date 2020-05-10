@@ -1,0 +1,156 @@
+From 583fce2c4839f5b0f3da8794182cc7738311a991 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 10 Sep 2018 18:17:58 +0200
+Subject: [PATCH 20/25] jobs: remove .exit callback
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180910181803.11781-21-jsnow@redhat.com>
+Patchwork-id: 82101
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 20/25] jobs: remove .exit callback
+Bugzilla: 1626061
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Now that all of the jobs use the component finalization callbacks,
+there's no use for the heavy-hammer .exit callback anymore.
+
+job_exit becomes a glorified type shim so that we can call
+job_completed from aio_bh_schedule_oneshot.
+
+Move these three functions down into job.c to eliminate a
+forward reference.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20180906130225.5118-12-jsnow@redhat.com
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 7e9e7780ef18e902a6458dfa6b024d9e2053923c)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/job.h | 11 --------
+ job.c              | 77 ++++++++++++++++++++++++------------------------------
+ 2 files changed, 34 insertions(+), 54 deletions(-)
+
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 04090ba..fdaa06f 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -222,17 +222,6 @@ struct JobDriver {
+     void (*drain)(Job *job);
+ 
+     /**
+-     * If the callback is not NULL, exit will be invoked from the main thread
+-     * when the job's coroutine has finished, but before transactional
+-     * convergence; before @prepare or @abort.
+-     *
+-     * FIXME TODO: This callback is only temporary to transition remaining jobs
+-     * to prepare/commit/abort/clean callbacks and will be removed before 3.1.
+-     * is released.
+-     */
+-    void (*exit)(Job *job);
+-
+-    /**
+      * If the callback is not NULL, prepare will be invoked when all the jobs
+      * belonging to the same transaction complete; or upon this job's completion
+      * if it is not in a transaction.
+diff --git a/job.c b/job.c
+index f56e6a3..dfba4bc 100644
+--- a/job.c
++++ b/job.c
+@@ -530,49 +530,6 @@ void job_drain(Job *job)
+     }
+ }
+ 
+-static void job_completed(Job *job);
+-
+-static void job_exit(void *opaque)
+-{
+-    Job *job = (Job *)opaque;
+-    AioContext *aio_context = job->aio_context;
+-
+-    if (job->driver->exit) {
+-        aio_context_acquire(aio_context);
+-        job->driver->exit(job);
+-        aio_context_release(aio_context);
+-    }
+-    job_completed(job);
+-}
+-
+-/**
+- * All jobs must allow a pause point before entering their job proper. This
+- * ensures that jobs can be paused prior to being started, then resumed later.
+- */
+-static void coroutine_fn job_co_entry(void *opaque)
+-{
+-    Job *job = opaque;
+-
+-    assert(job && job->driver && job->driver->run);
+-    job_pause_point(job);
+-    job->ret = job->driver->run(job, &job->err);
+-    job->deferred_to_main_loop = true;
+-    aio_bh_schedule_oneshot(qemu_get_aio_context(), job_exit, job);
+-}
+-
+-
+-void job_start(Job *job)
+-{
+-    assert(job && !job_started(job) && job->paused &&
+-           job->driver && job->driver->run);
+-    job->co = qemu_coroutine_create(job_co_entry, job);
+-    job->pause_count--;
+-    job->busy = true;
+-    job->paused = false;
+-    job_state_transition(job, JOB_STATUS_RUNNING);
+-    aio_co_enter(job->aio_context, job->co);
+-}
+-
+ /* Assumes the block_job_mutex is held */
+ static bool job_timer_not_pending(Job *job)
+ {
+@@ -889,6 +846,40 @@ static void job_completed(Job *job)
+     }
+ }
+ 
++/** Useful only as a type shim for aio_bh_schedule_oneshot. */
++static void job_exit(void *opaque)
++{
++    Job *job = (Job *)opaque;
++    job_completed(job);
++}
++
++/**
++ * All jobs must allow a pause point before entering their job proper. This
++ * ensures that jobs can be paused prior to being started, then resumed later.
++ */
++static void coroutine_fn job_co_entry(void *opaque)
++{
++    Job *job = opaque;
++
++    assert(job && job->driver && job->driver->run);
++    job_pause_point(job);
++    job->ret = job->driver->run(job, &job->err);
++    job->deferred_to_main_loop = true;
++    aio_bh_schedule_oneshot(qemu_get_aio_context(), job_exit, job);
++}
++
++void job_start(Job *job)
++{
++    assert(job && !job_started(job) && job->paused &&
++           job->driver && job->driver->run);
++    job->co = qemu_coroutine_create(job_co_entry, job);
++    job->pause_count--;
++    job->busy = true;
++    job->paused = false;
++    job_state_transition(job, JOB_STATUS_RUNNING);
++    aio_co_enter(job->aio_context, job->co);
++}
++
+ void job_cancel(Job *job, bool force)
+ {
+     if (job->status == JOB_STATUS_CONCLUDED) {
+-- 
+1.8.3.1
+

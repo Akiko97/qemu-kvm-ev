@@ -1,0 +1,108 @@
+From 22200b24c1f26602467d47738b4bb3e6da6c4f86 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Fri, 31 Aug 2018 16:25:57 +0200
+Subject: [PATCH 15/29] mem/nvdimm: ensure write persistence to PMEM in label
+ emulation
+
+RH-Author: plai@redhat.com
+Message-id: <1535732759-22481-8-git-send-email-plai@redhat.com>
+Patchwork-id: 82013
+O-Subject: [RHEL7.6 PATCH BZ 1539280 7/9] mem/nvdimm: ensure write persistence to PMEM in label emulation
+Bugzilla: 1539280
+RH-Acked-by: Michael S. Tsirkin <mst@redhat.com>
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Junyan He <junyan.he@intel.com>
+
+Guest writes to vNVDIMM labels are intercepted and performed on the
+backend by QEMU. When the backend is a real persistent memort, QEMU
+needs to take proper operations to ensure its write persistence on the
+persistent memory. Otherwise, a host power failure may result in the
+loss of guest label configurations.
+
+Signed-off-by: Haozhong Zhang <haozhong.zhang@intel.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+(cherry picked from commit faf8a13d80de98b43342a7ec9878b4fd76b18327)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/mem/nvdimm.c     |  9 ++++++++-
+ include/qemu/pmem.h | 30 ++++++++++++++++++++++++++++++
+ 2 files changed, 38 insertions(+), 1 deletion(-)
+ create mode 100644 include/qemu/pmem.h
+
+diff --git a/hw/mem/nvdimm.c b/hw/mem/nvdimm.c
+index acb656b..0c962fd 100644
+--- a/hw/mem/nvdimm.c
++++ b/hw/mem/nvdimm.c
+@@ -23,6 +23,7 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/pmem.h"
+ #include "qapi/error.h"
+ #include "qapi/visitor.h"
+ #include "hw/mem/nvdimm.h"
+@@ -155,11 +156,17 @@ static void nvdimm_write_label_data(NVDIMMDevice *nvdimm, const void *buf,
+ {
+     MemoryRegion *mr;
+     PCDIMMDevice *dimm = PC_DIMM(nvdimm);
++    bool is_pmem = object_property_get_bool(OBJECT(dimm->hostmem),
++                                            "pmem", NULL);
+     uint64_t backend_offset;
+ 
+     nvdimm_validate_rw_label_data(nvdimm, size, offset);
+ 
+-    memcpy(nvdimm->label_data + offset, buf, size);
++    if (!is_pmem) {
++        memcpy(nvdimm->label_data + offset, buf, size);
++    } else {
++        pmem_memcpy_persist(nvdimm->label_data + offset, buf, size);
++    }
+ 
+     mr = host_memory_backend_get_memory(dimm->hostmem, &error_abort);
+     backend_offset = memory_region_size(mr) - nvdimm->label_size + offset;
+diff --git a/include/qemu/pmem.h b/include/qemu/pmem.h
+new file mode 100644
+index 0000000..ebdb070
+--- /dev/null
++++ b/include/qemu/pmem.h
+@@ -0,0 +1,30 @@
++/*
++ * QEMU header file for libpmem.
++ *
++ * Copyright (c) 2018 Intel Corporation.
++ *
++ * Author: Haozhong Zhang <address@hidden>
++ *
++ * This work is licensed under the terms of the GNU GPL, version 2 or later.
++ * See the COPYING file in the top-level directory.
++ */
++
++#ifndef QEMU_PMEM_H
++#define QEMU_PMEM_H
++
++#ifdef CONFIG_LIBPMEM
++#include <libpmem.h>
++#else  /* !CONFIG_LIBPMEM */
++
++static inline void *
++pmem_memcpy_persist(void *pmemdest, const void *src, size_t len)
++{
++    /* If 'pmem' option is 'on', we should always have libpmem support,
++       or qemu will report a error and exit, never come here. */
++    g_assert_not_reached();
++    return NULL;
++}
++
++#endif /* CONFIG_LIBPMEM */
++
++#endif /* !QEMU_PMEM_H */
+-- 
+1.8.3.1
+

@@ -1,0 +1,76 @@
+From 1d47b2827170416abf387add121a3871194ddc40 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 1 Mar 2019 14:27:47 +0100
+Subject: [PATCH 5/9] block: Use normal drain for bdrv_set_aio_context()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190301142747.12251-6-kwolf@redhat.com>
+Patchwork-id: 84765
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 5/5] block: Use normal drain for bdrv_set_aio_context()
+Bugzilla: 1671173
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+Now that bdrv_set_aio_context() works inside drained sections, it can
+also use the real drain function instead of open coding something
+similar.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit d70d595429ecd9ac4917e53453dd8979db8e5ffd)
+
+RHEL: This conflicts because we didn't backport the removal of the
+polling loop. The conflict is resolved so that the polling loop moves to
+above the drain and any requests a BH would spawn would still be
+correctly drained afterwards. The changed order alone would have
+compensated for the virtio-blk bug and it potentially compensates for
+other bugs, too (we know of bugs in the NBD client at least), so leaving
+the polling loop in, with the new ordering, feels like the safe way for
+a downstream backport.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/block.c b/block.c
+index 7cd3651..c47e5b0 100644
+--- a/block.c
++++ b/block.c
+@@ -4995,18 +4995,18 @@ void bdrv_attach_aio_context(BlockDriverState *bs,
+     bs->walking_aio_notifiers = false;
+ }
+ 
++/* The caller must own the AioContext lock for the old AioContext of bs, but it
++ * must not own the AioContext lock for new_context (unless new_context is
++ * the same as the current context of bs). */
+ void bdrv_set_aio_context(BlockDriverState *bs, AioContext *new_context)
+ {
+     AioContext *ctx = bdrv_get_aio_context(bs);
+ 
+-    aio_disable_external(ctx);
+-    bdrv_parent_drained_begin(bs, NULL, false);
+-    bdrv_drain(bs); /* ensure there are no in-flight requests */
+-
+     while (aio_poll(ctx, false)) {
+         /* wait for all bottom halves to execute */
+     }
+ 
++    bdrv_drained_begin(bs);
+     bdrv_detach_aio_context(bs);
+ 
+     /* This function executes in the old AioContext so acquire the new one in
+@@ -5014,8 +5014,7 @@ void bdrv_set_aio_context(BlockDriverState *bs, AioContext *new_context)
+      */
+     aio_context_acquire(new_context);
+     bdrv_attach_aio_context(bs, new_context);
+-    bdrv_parent_drained_end(bs, NULL, false);
+-    aio_enable_external(ctx);
++    bdrv_drained_end(bs);
+     aio_context_release(new_context);
+ }
+ 
+-- 
+1.8.3.1
+

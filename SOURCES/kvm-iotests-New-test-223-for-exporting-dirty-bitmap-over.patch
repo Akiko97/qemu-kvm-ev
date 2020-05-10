@@ -1,0 +1,259 @@
+From a213535d2d03296c7b2f31845160757dbb959ca6 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 24 Jul 2018 13:06:13 +0200
+Subject: [PATCH 86/89] iotests: New test 223 for exporting dirty bitmap over
+ NBD
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-36-jsnow@redhat.com>
+Patchwork-id: 81424
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 35/35] iotests: New test 223 for exporting dirty bitmap over NBD
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Although this test is NOT a full test of image fleecing (as it
+intentionally uses just a single block device directly exported
+over NBD, rather than trying to set up a blockdev-backup job with
+multiple BDS involved), it DOES prove that qemu as a server is
+able to properly expose a dirty bitmap over NBD.
+
+When coupled with image fleecing, it is then possible for a
+third-party client to do an incremental backup by using
+qemu-img map with the x-dirty-bitmap option to learn which parts
+of the file are dirty (perhaps confusingly, they are the portions
+mapped as "data":false - which is part of the reason this is
+still in the x- experimental namespace), along with another
+normal client (perhaps 'qemu-nbd -c' to expose the server over
+/dev/nbd0 and then just use normal I/O on that block device) to
+read the dirty sections.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180702191458.28741-3-eblake@redhat.com>
+Tested-by: John Snow <jsnow@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit a1532a225a183c9fa60b9c1e8ac8a00c7771f64d)
+Signed-off-by: John Snow <jsnow@redhat.com>
+---
+ tests/qemu-iotests/223     | 138 +++++++++++++++++++++++++++++++++++++++++++++
+ tests/qemu-iotests/223.out |  49 ++++++++++++++++
+ tests/qemu-iotests/group   |   1 +
+ 3 files changed, 188 insertions(+)
+ create mode 100644 tests/qemu-iotests/223
+ create mode 100644 tests/qemu-iotests/223.out
+
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+new file mode 100644
+index 0000000..b63b7a4
+--- /dev/null
++++ b/tests/qemu-iotests/223
+@@ -0,0 +1,138 @@
++#!/bin/bash
++#
++# Test reading dirty bitmap over NBD
++#
++# Copyright (C) 2018 Red Hat, Inc.
++#
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 2 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++#
++
++seq="$(basename $0)"
++echo "QA output created by $seq"
++
++here="$PWD"
++status=1 # failure is the default!
++
++_cleanup()
++{
++    _cleanup_test_img
++    _cleanup_qemu
++    rm -f "$TEST_DIR/nbd"
++}
++trap "_cleanup; exit \$status" 0 1 2 3 15
++
++# get standard environment, filters and checks
++. ./common.rc
++. ./common.filter
++. ./common.qemu
++
++_supported_fmt qcow2
++_supported_proto file # uses NBD as well
++_supported_os Linux
++
++function do_run_qemu()
++{
++    echo Testing: "$@"
++    $QEMU -nographic -qmp stdio -serial none "$@"
++    echo
++}
++
++function run_qemu()
++{
++    do_run_qemu "$@" 2>&1 | _filter_testdir | _filter_qmp \
++                          | _filter_qemu | _filter_imgfmt \
++                          | _filter_actual_image_size
++}
++
++echo
++echo "=== Create partially sparse image, then add dirty bitmap ==="
++echo
++
++_make_test_img 4M
++$QEMU_IO -c 'w -P 0x11 1M 2M' "$TEST_IMG" | _filter_qemu_io
++run_qemu <<EOF
++{ "execute": "qmp_capabilities" }
++{ "execute": "blockdev-add",
++  "arguments": {
++    "driver": "$IMGFMT",
++    "node-name": "n",
++    "file": {
++      "driver": "file",
++      "filename": "$TEST_IMG"
++    }
++  }
++}
++{ "execute": "block-dirty-bitmap-add",
++  "arguments": {
++    "node": "n",
++    "name": "b",
++    "persistent": true
++  }
++}
++{ "execute": "quit" }
++EOF
++
++echo
++echo "=== Write part of the file under active bitmap ==="
++echo
++
++$QEMU_IO -c 'w -P 0x22 2M 2M' "$TEST_IMG" | _filter_qemu_io
++
++echo
++echo "=== End dirty bitmap, and start serving image over NBD ==="
++echo
++
++_launch_qemu 2> >(_filter_nbd)
++
++silent=
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"qmp_capabilities"}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"blockdev-add",
++  "arguments":{"driver":"qcow2", "node-name":"n",
++    "file":{"driver":"file", "filename":"'"$TEST_IMG"'"}}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"x-block-dirty-bitmap-disable",
++  "arguments":{"node":"n", "name":"b"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-start",
++  "arguments":{"addr":{"type":"unix",
++    "data":{"path":"'"$TEST_DIR/nbd"'"}}}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-add",
++  "arguments":{"device":"n"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"x-nbd-server-add-bitmap",
++  "arguments":{"name":"n", "bitmap":"b"}}' "return"
++
++echo
++echo "=== Contrast normal status with dirty-bitmap status ==="
++echo
++
++QEMU_IO_OPTIONS=$QEMU_IO_OPTIONS_NO_FMT
++IMG="driver=nbd,export=n,server.type=unix,server.path=$TEST_DIR/nbd"
++$QEMU_IO -r -c 'r -P 0 0 1m' -c 'r -P 0x11 1m 1m' \
++  -c 'r -P 0x22 2m 2m' --image-opts "$IMG" | _filter_qemu_io
++$QEMU_IMG map --output=json --image-opts \
++  "$IMG" | _filter_qemu_img_map
++$QEMU_IMG map --output=json --image-opts \
++  "$IMG,x-dirty-bitmap=qemu:dirty-bitmap:b" | _filter_qemu_img_map
++
++echo
++echo "=== End NBD server ==="
++echo
++
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-remove",
++  "arguments":{"name":"n"}}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"nbd-server-stop"}' "return"
++_send_qemu_cmd $QEMU_HANDLE '{"execute":"quit"}' "return"
++
++# success, all done
++echo '*** done'
++rm -f $seq.full
++status=0
+diff --git a/tests/qemu-iotests/223.out b/tests/qemu-iotests/223.out
+new file mode 100644
+index 0000000..33021c8
+--- /dev/null
++++ b/tests/qemu-iotests/223.out
+@@ -0,0 +1,49 @@
++QA output created by 223
++
++=== Create partially sparse image, then add dirty bitmap ===
++
++Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=4194304
++wrote 2097152/2097152 bytes at offset 1048576
++2 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++Testing:
++QMP_VERSION
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false}}
++
++
++=== Write part of the file under active bitmap ===
++
++wrote 2097152/2097152 bytes at offset 2097152
++2 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++
++=== End dirty bitmap, and start serving image over NBD ===
++
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++
++=== Contrast normal status with dirty-bitmap status ===
++
++read 1048576/1048576 bytes at offset 0
++1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++read 1048576/1048576 bytes at offset 1048576
++1 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++read 2097152/2097152 bytes at offset 2097152
++2 MiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++[{ "start": 0, "length": 1048576, "depth": 0, "zero": true, "data": false},
++{ "start": 1048576, "length": 3145728, "depth": 0, "zero": false, "data": true}]
++[{ "start": 0, "length": 2097152, "depth": 0, "zero": false, "data": true},
++{ "start": 2097152, "length": 2097152, "depth": 0, "zero": false, "data": false}]
++
++=== End NBD server ===
++
++{"return": {}}
++{"return": {}}
++{"return": {}}
++*** done
+diff --git a/tests/qemu-iotests/group b/tests/qemu-iotests/group
+index be55905..401258f 100644
+--- a/tests/qemu-iotests/group
++++ b/tests/qemu-iotests/group
+@@ -219,4 +219,5 @@
+ 218 rw auto quick
+ 219 rw auto
+ 222 rw auto quick
++223 rw auto quick
+ 226 auto quick
+-- 
+1.8.3.1
+

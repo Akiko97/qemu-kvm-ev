@@ -1,0 +1,86 @@
+From 16baef3f994e29063e8f7c48c9f03a8d07744932 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 6 Jul 2018 17:56:54 +0200
+Subject: [PATCH 20/89] pr-manager: put stubs in .c file
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20180706175659.30615-5-pbonzini@redhat.com>
+Patchwork-id: 81253
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 4/9] pr-manager: put stubs in .c file
+Bugzilla: 1533158
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Michal Privoznik <mprivozn@redhat.com>
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 58b3017f7fba15e8c440115dfd5d380f490d0b61)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/scsi/pr-manager.h |  9 ---------
+ scsi/Makefile.objs        |  1 +
+ scsi/pr-manager-stub.c    | 24 ++++++++++++++++++++++++
+ 3 files changed, 25 insertions(+), 9 deletions(-)
+ create mode 100644 scsi/pr-manager-stub.c
+
+diff --git a/include/scsi/pr-manager.h b/include/scsi/pr-manager.h
+index 5d2f13a..71971ae 100644
+--- a/include/scsi/pr-manager.h
++++ b/include/scsi/pr-manager.h
+@@ -41,15 +41,6 @@ BlockAIOCB *pr_manager_execute(PRManager *pr_mgr,
+                                BlockCompletionFunc *complete,
+                                void *opaque);
+ 
+-#ifdef CONFIG_LINUX
+ PRManager *pr_manager_lookup(const char *id, Error **errp);
+-#else
+-static inline PRManager *pr_manager_lookup(const char *id, Error **errp)
+-{
+-    /* The classes do not exist at all!  */
+-    error_setg(errp, "No persistent reservation manager with id '%s'", id);
+-    return NULL;
+-}
+-#endif
+ 
+ #endif
+diff --git a/scsi/Makefile.objs b/scsi/Makefile.objs
+index 4d25e47..bb8789c 100644
+--- a/scsi/Makefile.objs
++++ b/scsi/Makefile.objs
+@@ -1,3 +1,4 @@
+ block-obj-y += utils.o
+ 
+ block-obj-$(CONFIG_LINUX) += pr-manager.o pr-manager-helper.o
++block-obj-$(call lnot,$(CONFIG_LINUX)) += pr-manager-stub.o
+diff --git a/scsi/pr-manager-stub.c b/scsi/pr-manager-stub.c
+new file mode 100644
+index 0000000..632f17c
+--- /dev/null
++++ b/scsi/pr-manager-stub.c
+@@ -0,0 +1,24 @@
++/*
++ * Persistent reservation manager - stub for non-Linux platforms
++ *
++ * Copyright (c) 2018 Red Hat, Inc.
++ *
++ * Author: Paolo Bonzini <pbonzini@redhat.com>
++ *
++ * This code is licensed under the LGPL.
++ *
++ */
++
++#include "qemu/osdep.h"
++#include "qapi/error.h"
++#include "scsi/pr-manager.h"
++#include "trace.h"
++#include "qapi/qapi-types-block.h"
++#include "qapi/qapi-commands-block.h"
++
++PRManager *pr_manager_lookup(const char *id, Error **errp)
++{
++    /* The classes do not exist at all!  */
++    error_setg(errp, "No persistent reservation manager with id '%s'", id);
++        return NULL;
++}
+-- 
+1.8.3.1
+

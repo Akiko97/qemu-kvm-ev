@@ -1,0 +1,131 @@
+From de38b4dad0dfce73080295923dd3e2d863f6f855 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:38 +0200
+Subject: [PATCH 133/163] block/dirty-bitmap: Documentation and Comment fixups
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-3-jsnow@redhat.com>
+Patchwork-id: 85416
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 02/21] block/dirty-bitmap: Documentation and Comment fixups
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+The meaning of the states has changed subtly over time,
+this should bring the understanding more in-line with the
+current, actual usages.
+
+Reported-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190202011048.12343-1-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 73ab5d601c8b4311090a70e525f5970f70b8b2a0)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c | 20 ++++++++++++++------
+ qapi/block-core.json | 34 +++++++++++++++++++++++++---------
+ 2 files changed, 39 insertions(+), 15 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index e46f72b..c6d4ace 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -29,12 +29,20 @@
+ #include "block/blockjob.h"
+ 
+ /**
+- * A BdrvDirtyBitmap can be in three possible states:
+- * (1) successor is NULL and disabled is false: full r/w mode
+- * (2) successor is NULL and disabled is true: read only mode ("disabled")
+- * (3) successor is set: frozen mode.
+- *     A frozen bitmap cannot be renamed, deleted, anonymized, cleared, set,
+- *     or enabled. A frozen bitmap can only abdicate() or reclaim().
++ * A BdrvDirtyBitmap can be in four possible user-visible states:
++ * (1) Active:   successor is NULL, and disabled is false: full r/w mode
++ * (2) Disabled: successor is NULL, and disabled is true: qualified r/w mode,
++ *               guest writes are dropped, but monitor writes are possible,
++ *               through commands like merge and clear.
++ * (3) Frozen:   successor is not NULL.
++ *               A frozen bitmap cannot be renamed, deleted, cleared, set,
++ *               enabled, merged to, etc. A frozen bitmap can only abdicate()
++ *               or reclaim().
++ *               In this state, the anonymous successor bitmap may be either
++ *               Active and recording writes from the guest (e.g. backup jobs),
++ *               but it can be Disabled and not recording writes.
++ * (4) Locked:   Whether Active or Disabled, the user cannot modify this bitmap
++ *               in any way from the monitor.
+  */
+ struct BdrvDirtyBitmap {
+     QemuMutex *mutex;
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 23c9462..5fe7897 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -421,17 +421,27 @@
+ #
+ # An enumeration of possible states that a dirty bitmap can report to the user.
+ #
+-# @frozen: The bitmap is currently in-use by a backup operation or block job,
+-#          and is immutable.
+-#
+-# @disabled: The bitmap is currently in-use by an internal operation and is
+-#            read-only. It can still be deleted.
++# @frozen: The bitmap is currently in-use by some operation and is immutable.
++#          If the bitmap was @active prior to the operation, new writes by the
++#          guest are being recorded in a temporary buffer, and will not be lost.
++#          Generally, bitmaps are cleared on successful use in an operation and
++#          the temporary buffer is committed into the bitmap. On failure, the
++#          temporary buffer is merged back into the bitmap without first
++#          clearing it.
++#          Please refer to the documentation for each bitmap-using operation,
++#          See also @blockdev-backup, @drive-backup.
++#
++# @disabled: The bitmap is not currently recording new writes by the guest.
++#            This is requested explicitly via @block-dirty-bitmap-disable.
++#            It can still be cleared, deleted, or used for backup operations.
+ #
+ # @active: The bitmap is actively monitoring for new writes, and can be cleared,
+ #          deleted, or used for backup operations.
+ #
+-# @locked: The bitmap is currently in-use by some operation and can not be
+-#          cleared, deleted, or used for backup operations. (Since 2.12)
++# @locked: The bitmap is currently in-use by some operation and is immutable.
++#          If the bitmap was @active prior to the operation, it is still
++#          recording new writes. If the bitmap was @disabled, it is not
++#          recording new writes. (Since 2.12)
+ #
+ # Since: 2.4
+ ##
+@@ -1966,9 +1976,15 @@
+ # @block-dirty-bitmap-merge:
+ #
+ # Merge dirty bitmaps listed in @bitmaps to the @target dirty bitmap.
+-# The @bitmaps dirty bitmaps are unchanged.
++# Dirty bitmaps in @bitmaps will be unchanged, except if it also appears
++# as the @target bitmap. Any bits already set in @target will still be
++# set after the merge, i.e., this operation does not clear the target.
+ # On error, @target is unchanged.
+ #
++# The resulting bitmap will count as dirty any clusters that were dirty in any
++# of the source bitmaps. This can be used to achieve backup checkpoints, or in
++# simpler usages, to copy bitmaps.
++#
+ # Returns: nothing on success
+ #          If @node is not a valid block device, DeviceNotFound
+ #          If any bitmap in @bitmaps or @target is not found, GenericError
+@@ -2003,7 +2019,7 @@
+ ##
+ # @x-debug-block-dirty-bitmap-sha256:
+ #
+-# Get bitmap SHA256
++# Get bitmap SHA256.
+ #
+ # Returns: BlockDirtyBitmapSha256 on success
+ #          If @node is not a valid block device, DeviceNotFound
+-- 
+1.8.3.1
+

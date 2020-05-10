@@ -1,0 +1,114 @@
+From 043d71d0340799feafee434f8eec0360840ec777 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:10:04 +0100
+Subject: [PATCH 008/163] file-posix: Fix bdrv_open_flags() for snapshot=on
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-9-kwolf@redhat.com>
+Patchwork-id: 84885
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 08/14] file-posix: Fix bdrv_open_flags() for snapshot=on
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Using a different read-only setting for bs->open_flags than for the
+flags to the driver's open function is just inconsistent and a bad idea.
+After this patch, the temporary snapshot keeps being opened read-only if
+read-only=on,snapshot=on is passed.
+
+If we wanted to change this behaviour to make only the orginal image
+file read-only, but the temporary overlay read-write (as the comment in
+the removed code suggests), that change would have to be made in
+bdrv_temp_snapshot_options() (where the comment suggests otherwise).
+
+Addressing this inconsistency before introducing dynamic auto-read-only
+is important because otherwise we would immediately try to reopen the
+temporary overlay even though the file is already unlinked.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 30855137783c0c762007044821a6f11e14e6af33)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c                       | 7 -------
+ tests/qemu-iotests/051        | 7 +++++++
+ tests/qemu-iotests/051.out    | 9 +++++++++
+ tests/qemu-iotests/051.pc.out | 9 +++++++++
+ 4 files changed, 25 insertions(+), 7 deletions(-)
+
+diff --git a/block.c b/block.c
+index 25b3fe5..bcf277d 100644
+--- a/block.c
++++ b/block.c
+@@ -1100,13 +1100,6 @@ static int bdrv_open_flags(BlockDriverState *bs, int flags)
+      */
+     open_flags &= ~(BDRV_O_SNAPSHOT | BDRV_O_NO_BACKING | BDRV_O_PROTOCOL);
+ 
+-    /*
+-     * Snapshots should be writable.
+-     */
+-    if (flags & BDRV_O_TEMPORARY) {
+-        open_flags |= BDRV_O_RDWR;
+-    }
+-
+     return open_flags;
+ }
+ 
+diff --git a/tests/qemu-iotests/051 b/tests/qemu-iotests/051
+index 4899f84..23f9678 100755
+--- a/tests/qemu-iotests/051
++++ b/tests/qemu-iotests/051
+@@ -357,6 +357,13 @@ $QEMU_IO -c "read -P 0x33 0 4k" "$TEST_IMG" | _filter_qemu_io
+ # Using snapshot=on with a non-existent TMPDIR
+ TMPDIR=/nonexistent run_qemu -drive driver=null-co,snapshot=on
+ 
++# Using snapshot=on together with read-only=on
++echo "info block" |
++    run_qemu -drive file="$TEST_IMG",snapshot=on,read-only=on,if=none,id=$device_id |
++    _filter_qemu_io |
++    sed -e 's#/[^"]*/vl\.[A-Za-z0-9]\{6\}#SNAPSHOT_PATH#g'
++
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/051.out b/tests/qemu-iotests/051.out
+index 793af2a..e2f91fc 100644
+--- a/tests/qemu-iotests/051.out
++++ b/tests/qemu-iotests/051.out
+@@ -458,4 +458,13 @@ read 4096/4096 bytes at offset 0
+ Testing: -drive driver=null-co,snapshot=on
+ QEMU_PROG: -drive driver=null-co,snapshot=on: Could not get temporary filename: No such file or directory
+ 
++Testing: -drive file=TEST_DIR/t.qcow2,snapshot=on,read-only=on,if=none,id=drive0
++QEMU X.Y.Z monitor - type 'help' for more information
++(qemu) info block
++drive0 (NODE_NAME): SNAPSHOT_PATH (qcow2, read-only)
++    Removable device: not locked, tray closed
++    Cache mode:       writeback, ignore flushes
++    Backing file:     TEST_DIR/t.qcow2 (chain depth: 1)
++(qemu) quit
++
+ *** done
+diff --git a/tests/qemu-iotests/051.pc.out b/tests/qemu-iotests/051.pc.out
+index ca64eda..3f71f9e 100644
+--- a/tests/qemu-iotests/051.pc.out
++++ b/tests/qemu-iotests/051.pc.out
+@@ -530,4 +530,13 @@ read 4096/4096 bytes at offset 0
+ Testing: -drive driver=null-co,snapshot=on
+ QEMU_PROG: -drive driver=null-co,snapshot=on: Could not get temporary filename: No such file or directory
+ 
++Testing: -drive file=TEST_DIR/t.qcow2,snapshot=on,read-only=on,if=none,id=drive0
++QEMU X.Y.Z monitor - type 'help' for more information
++(qemu) info block
++drive0 (NODE_NAME): SNAPSHOT_PATH (qcow2, read-only)
++    Removable device: not locked, tray closed
++    Cache mode:       writeback, ignore flushes
++    Backing file:     TEST_DIR/t.qcow2 (chain depth: 1)
++(qemu) quit
++
+ *** done
+-- 
+1.8.3.1
+

@@ -1,0 +1,50 @@
+From 6e9de3f3fa020b351960f4f528f175aa802eb536 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Wed, 26 Sep 2018 18:50:59 +0200
+Subject: [PATCH] target-i386: cpu: Add downstream-only STIBP CPUID flag
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180926185059.20691-1-ehabkost@redhat.com>
+Patchwork-id: 82301
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] target-i386: cpu: Add downstream-only STIBP CPUID flag
+Bugzilla: 1638077
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Kashyap Chamarthy <kchamart@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+
+From: Paolo Bonzini <pbonzini@redhat.com>
+
+We accidentally dropped the downstream-only STIBP CPUID flag
+during the 2.12.0 rebase.
+
+STIBP is a CPUID flag that was considered for the Spectre
+(CVE-2017-5715) mitigations, but in the end it was not necessary:
+spec-ctrl/IBRS was deemed enough.  The kernel KVM STIBP CPUID
+code was never merged upstream, but it's present on RHEL-7.
+
+This means we may have existing VMs created on RHEL-7.5 hosts
+with the STIBP flag enabled, and we need to support
+live-migration of those VMs to RHEL-7.6.
+
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 6b5acdf..91f5a97 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1007,7 +1007,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+-            NULL, NULL, "spec-ctrl", NULL,
++            NULL, NULL, "spec-ctrl", "stibp",
+             NULL, NULL, NULL, "ssbd",
+         },
+         .cpuid_eax = 7,
+-- 
+1.8.3.1
+

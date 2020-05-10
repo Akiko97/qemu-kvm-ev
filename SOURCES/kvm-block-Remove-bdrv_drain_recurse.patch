@@ -1,0 +1,91 @@
+From 6d4f47108b6e121924f7bf12c97cbabb674dee1b Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:06 +0200
+Subject: [PATCH 15/49] block: Remove bdrv_drain_recurse()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-9-kwolf@redhat.com>
+Patchwork-id: 82161
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 08/42] block: Remove bdrv_drain_recurse()
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+For bdrv_drain(), recursively waiting for child node requests is
+pointless because we didn't quiesce their parents, so new requests could
+come in anyway. Letting the function work only on a single node makes it
+more consistent.
+
+For subtree drains and drain_all, we already have the recursion in
+bdrv_do_drained_begin(), so the extra recursion doesn't add anything
+either.
+
+Remove the useless code.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit d30b8e64b7b282da785307504ada59efa8096fb1)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/io.c | 36 +++---------------------------------
+ 1 file changed, 3 insertions(+), 33 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index e260394..a0e3461 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -218,38 +218,6 @@ static bool bdrv_drain_poll_top_level(BlockDriverState *bs,
+     return bdrv_drain_poll(bs, ignore_parent);
+ }
+ 
+-static bool bdrv_drain_recurse(BlockDriverState *bs, BdrvChild *parent)
+-{
+-    BdrvChild *child, *tmp;
+-    bool waited;
+-
+-    /* Wait for drained requests to finish */
+-    waited = BDRV_POLL_WHILE(bs, bdrv_drain_poll_top_level(bs, parent));
+-
+-    QLIST_FOREACH_SAFE(child, &bs->children, next, tmp) {
+-        BlockDriverState *bs = child->bs;
+-        bool in_main_loop =
+-            qemu_get_current_aio_context() == qemu_get_aio_context();
+-        assert(bs->refcnt > 0);
+-        if (in_main_loop) {
+-            /* In case the recursive bdrv_drain_recurse processes a
+-             * block_job_defer_to_main_loop BH and modifies the graph,
+-             * let's hold a reference to bs until we are done.
+-             *
+-             * IOThread doesn't have such a BH, and it is not safe to call
+-             * bdrv_unref without BQL, so skip doing it there.
+-             */
+-            bdrv_ref(bs);
+-        }
+-        waited |= bdrv_drain_recurse(bs, child);
+-        if (in_main_loop) {
+-            bdrv_unref(bs);
+-        }
+-    }
+-
+-    return waited;
+-}
+-
+ static void bdrv_do_drained_begin(BlockDriverState *bs, bool recursive,
+                                   BdrvChild *parent);
+ static void bdrv_do_drained_end(BlockDriverState *bs, bool recursive,
+@@ -317,7 +285,9 @@ void bdrv_do_drained_begin(BlockDriverState *bs, bool recursive,
+ 
+     bdrv_parent_drained_begin(bs, parent);
+     bdrv_drain_invoke(bs, true);
+-    bdrv_drain_recurse(bs, parent);
++
++    /* Wait for drained requests to finish */
++    BDRV_POLL_WHILE(bs, bdrv_drain_poll_top_level(bs, parent));
+ 
+     if (recursive) {
+         bs->recursive_quiesce_counter++;
+-- 
+1.8.3.1
+

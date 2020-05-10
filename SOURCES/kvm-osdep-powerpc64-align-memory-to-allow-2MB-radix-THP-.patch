@@ -1,0 +1,48 @@
+From 7ac01358cfb1a7900cfc4b39714f9affb817dda0 Mon Sep 17 00:00:00 2001
+From: David Gibson <dgibson@redhat.com>
+Date: Mon, 16 Jul 2018 05:49:55 +0200
+Subject: [PATCH 45/89] osdep: powerpc64 align memory to allow 2MB radix THP
+ page tables
+
+RH-Author: David Gibson <dgibson@redhat.com>
+Message-id: <20180716054955.12926-1-dgibson@redhat.com>
+Patchwork-id: 81358
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] osdep: powerpc64 align memory to allow 2MB radix THP page tables
+Bugzilla: 1600797
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Serhii Popovych <spopovyc@redhat.com>
+
+From: Nicholas Piggin <npiggin@gmail.com>
+
+This allows KVM with the Book3S radix MMU mode to take advantage of
+THP and install larger pages in the partition scope page tables (the
+host translation).
+
+Signed-off-by: Nicholas Piggin <npiggin@gmail.com>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+(cherry picked from commit 0c1272cc7c72dfe0ef66be8f283cf67c74b58586)
+
+Signed-off-by: David Gibson <dgibson@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/qemu/osdep.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/include/qemu/osdep.h b/include/qemu/osdep.h
+index afc28e5..9ed6242 100644
+--- a/include/qemu/osdep.h
++++ b/include/qemu/osdep.h
+@@ -367,7 +367,8 @@ void qemu_anon_ram_free(void *ptr, size_t size);
+ #endif
+ 
+ #if defined(__linux__) && \
+-    (defined(__x86_64__) || defined(__arm__) || defined(__aarch64__))
++    (defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) \
++     || defined(__powerpc64__))
+    /* Use 2 MiB alignment so transparent hugepages can be used by KVM.
+       Valgrind does not support alignments larger than 1 MiB,
+       therefore we need special code which handles running on Valgrind. */
+-- 
+1.8.3.1
+

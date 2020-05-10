@@ -1,0 +1,125 @@
+From 2adafb92a0fab77bfa39b9ad24f9ebf34db4aaeb Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 11 Sep 2018 13:07:04 +0200
+Subject: [PATCH 02/49] qemu-iotests: Test commit with top-node/base-node
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180911130704.6641-3-kwolf@redhat.com>
+Patchwork-id: 82115
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 2/2] qemu-iotests: Test commit with top-node/base-node
+Bugzilla: 1624012
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+This adds some tests for block-commit with the new options top-node and
+base-node (taking node names) instead of top and base (taking file
+names).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/040     | 52 ++++++++++++++++++++++++++++++++++++++++++++--
+ tests/qemu-iotests/040.out |  4 ++--
+ 2 files changed, 52 insertions(+), 4 deletions(-)
+
+diff --git a/tests/qemu-iotests/040 b/tests/qemu-iotests/040
+index 1beb5e6..1cb1cee 100755
+--- a/tests/qemu-iotests/040
++++ b/tests/qemu-iotests/040
+@@ -57,9 +57,12 @@ class ImageCommitTestCase(iotests.QMPTestCase):
+         self.assert_no_active_block_jobs()
+         self.vm.shutdown()
+ 
+-    def run_commit_test(self, top, base, need_ready=False):
++    def run_commit_test(self, top, base, need_ready=False, node_names=False):
+         self.assert_no_active_block_jobs()
+-        result = self.vm.qmp('block-commit', device='drive0', top=top, base=base)
++        if node_names:
++            result = self.vm.qmp('block-commit', device='drive0', top_node=top, base_node=base)
++        else:
++            result = self.vm.qmp('block-commit', device='drive0', top=top, base=base)
+         self.assert_qmp(result, 'return', {})
+         self.wait_for_complete(need_ready)
+ 
+@@ -101,6 +104,11 @@ class TestSingleDrive(ImageCommitTestCase):
+         self.assertEqual(-1, qemu_io('-f', 'raw', '-c', 'read -P 0xab 0 524288', backing_img).find("verification failed"))
+         self.assertEqual(-1, qemu_io('-f', 'raw', '-c', 'read -P 0xef 524288 524288', backing_img).find("verification failed"))
+ 
++    def test_commit_node(self):
++        self.run_commit_test("mid", "base", node_names=True)
++        self.assertEqual(-1, qemu_io('-f', 'raw', '-c', 'read -P 0xab 0 524288', backing_img).find("verification failed"))
++        self.assertEqual(-1, qemu_io('-f', 'raw', '-c', 'read -P 0xef 524288 524288', backing_img).find("verification failed"))
++
+     def test_device_not_found(self):
+         result = self.vm.qmp('block-commit', device='nonexistent', top='%s' % mid_img)
+         self.assert_qmp(result, 'error/class', 'DeviceNotFound')
+@@ -123,6 +131,30 @@ class TestSingleDrive(ImageCommitTestCase):
+         self.assert_qmp(result, 'error/class', 'GenericError')
+         self.assert_qmp(result, 'error/desc', 'Base \'badfile\' not found')
+ 
++    def test_top_node_invalid(self):
++        self.assert_no_active_block_jobs()
++        result = self.vm.qmp('block-commit', device='drive0', top_node='badfile', base_node='base')
++        self.assert_qmp(result, 'error/class', 'GenericError')
++        self.assert_qmp(result, 'error/desc', "Cannot find device= nor node_name=badfile")
++
++    def test_base_node_invalid(self):
++        self.assert_no_active_block_jobs()
++        result = self.vm.qmp('block-commit', device='drive0', top_node='mid', base_node='badfile')
++        self.assert_qmp(result, 'error/class', 'GenericError')
++        self.assert_qmp(result, 'error/desc', "Cannot find device= nor node_name=badfile")
++
++    def test_top_path_and_node(self):
++        self.assert_no_active_block_jobs()
++        result = self.vm.qmp('block-commit', device='drive0', top_node='mid', base_node='base', top='%s' % mid_img)
++        self.assert_qmp(result, 'error/class', 'GenericError')
++        self.assert_qmp(result, 'error/desc', "'top-node' and 'top' are mutually exclusive")
++
++    def test_base_path_and_node(self):
++        self.assert_no_active_block_jobs()
++        result = self.vm.qmp('block-commit', device='drive0', top_node='mid', base_node='base', base='%s' % backing_img)
++        self.assert_qmp(result, 'error/class', 'GenericError')
++        self.assert_qmp(result, 'error/desc', "'base-node' and 'base' are mutually exclusive")
++
+     def test_top_is_active(self):
+         self.run_commit_test(test_img, backing_img, need_ready=True)
+         self.assertEqual(-1, qemu_io('-f', 'raw', '-c', 'read -P 0xab 0 524288', backing_img).find("verification failed"))
+@@ -139,6 +171,22 @@ class TestSingleDrive(ImageCommitTestCase):
+         self.assert_qmp(result, 'error/class', 'GenericError')
+         self.assert_qmp(result, 'error/desc', 'Base \'%s\' not found' % mid_img)
+ 
++    def test_top_and_base_node_reversed(self):
++        self.assert_no_active_block_jobs()
++        result = self.vm.qmp('block-commit', device='drive0', top_node='base', base_node='top')
++        self.assert_qmp(result, 'error/class', 'GenericError')
++        self.assert_qmp(result, 'error/desc', "'top' is not in this backing file chain")
++
++    def test_top_node_in_wrong_chain(self):
++        self.assert_no_active_block_jobs()
++
++        result = self.vm.qmp('blockdev-add', driver='null-co', node_name='null')
++        self.assert_qmp(result, 'return', {})
++
++        result = self.vm.qmp('block-commit', device='drive0', top_node='null', base_node='base')
++        self.assert_qmp(result, 'error/class', 'GenericError')
++        self.assert_qmp(result, 'error/desc', "'null' is not in this backing file chain")
++
+     # When the job is running on a BB that is automatically deleted on hot
+     # unplug, the job is cancelled when the device disappears
+     def test_hot_unplug(self):
+diff --git a/tests/qemu-iotests/040.out b/tests/qemu-iotests/040.out
+index e20a75c..802ffaa 100644
+--- a/tests/qemu-iotests/040.out
++++ b/tests/qemu-iotests/040.out
+@@ -1,5 +1,5 @@
+-.............................
++...........................................
+ ----------------------------------------------------------------------
+-Ran 29 tests
++Ran 43 tests
+ 
+ OK
+-- 
+1.8.3.1
+

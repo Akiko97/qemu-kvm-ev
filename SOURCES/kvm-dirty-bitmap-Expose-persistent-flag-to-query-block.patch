@@ -1,0 +1,190 @@
+From 7fecc102918b8945abefa36ee01da3b707849b41 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 3 Apr 2019 18:18:37 +0200
+Subject: [PATCH 132/163] dirty-bitmap: Expose persistent flag to 'query-block'
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190403181857.9693-2-jsnow@redhat.com>
+Patchwork-id: 85420
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 01/21] dirty-bitmap: Expose persistent flag to 'query-block'
+Bugzilla: 1677073
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Since qemu currently doesn't flush persistent bitmaps to disk until
+shutdown (which might be MUCH later), it's useful if 'query-block'
+at least shows WHICH bitmaps will (eventually) make it to persistent
+storage.  Update affected iotests.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Message-id: 20190204210512.27458-1-eblake@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit f67cf661f8b88afe8a5ea2f120583924cba9087f)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c       |  1 +
+ qapi/block-core.json       |  5 ++++-
+ tests/qemu-iotests/124     |  1 +
+ tests/qemu-iotests/236.out | 14 ++++++++++++++
+ 4 files changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index 00ea36f..e46f72b 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -440,6 +440,7 @@ BlockDirtyInfoList *bdrv_query_dirty_bitmaps(BlockDriverState *bs)
+         info->has_name = !!bm->name;
+         info->name = g_strdup(bm->name);
+         info->status = bdrv_dirty_bitmap_status(bm);
++        info->persistent = bm->persistent;
+         entry->value = info;
+         *plist = entry;
+         plist = &entry->next;
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 5d6bb14..23c9462 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -451,11 +451,14 @@
+ #
+ # @status: current status of the dirty bitmap (since 2.4)
+ #
++# @persistent: true if the bitmap will eventually be flushed to persistent
++#              storage (since 4.0)
++#
+ # Since: 1.3
+ ##
+ { 'struct': 'BlockDirtyInfo',
+   'data': {'*name': 'str', 'count': 'int', 'granularity': 'uint32',
+-           'status': 'DirtyBitmapStatus'} }
++           'status': 'DirtyBitmapStatus', 'persistent': 'bool' } }
+ 
+ ##
+ # @Qcow2BitmapInfoFlags:
+diff --git a/tests/qemu-iotests/124 b/tests/qemu-iotests/124
+index 3ea4ac5..439a86a 100755
+--- a/tests/qemu-iotests/124
++++ b/tests/qemu-iotests/124
+@@ -350,6 +350,7 @@ class TestIncrementalBackup(TestIncrementalBackupBase):
+         self.assert_qmp(result, 'return[0]/dirty-bitmaps[0]/count', 458752)
+         self.assert_qmp(result, 'return[0]/dirty-bitmaps[0]/granularity', 65536)
+         self.assert_qmp(result, 'return[0]/dirty-bitmaps[0]/status', 'active')
++        self.assert_qmp(result, 'return[0]/dirty-bitmaps[0]/persistent', False)
+ 
+         # Prepare a cluster_size=128k backup target without a backing file.
+         (target, _) = bitmap0.new_target()
+diff --git a/tests/qemu-iotests/236.out b/tests/qemu-iotests/236.out
+index bb2d71e..5006f7b 100644
+--- a/tests/qemu-iotests/236.out
++++ b/tests/qemu-iotests/236.out
+@@ -25,12 +25,14 @@ write -P0xcd 0x3ff0000 64k
+         "count": 262144,
+         "granularity": 65536,
+         "name": "bitmapB",
++        "persistent": false,
+         "status": "active"
+       },
+       {
+         "count": 262144,
+         "granularity": 65536,
+         "name": "bitmapA",
++        "persistent": false,
+         "status": "active"
+       }
+     ]
+@@ -85,12 +87,14 @@ write -P0xcd 0x3ff0000 64k
+         "count": 262144,
+         "granularity": 65536,
+         "name": "bitmapB",
++        "persistent": false,
+         "status": "active"
+       },
+       {
+         "count": 262144,
+         "granularity": 65536,
+         "name": "bitmapA",
++        "persistent": false,
+         "status": "active"
+       }
+     ]
+@@ -183,18 +187,21 @@ write -P0xea 0x3fe0000 64k
+         "count": 393216,
+         "granularity": 65536,
+         "name": "bitmapC",
++        "persistent": false,
+         "status": "disabled"
+       },
+       {
+         "count": 262144,
+         "granularity": 65536,
+         "name": "bitmapB",
++        "persistent": false,
+         "status": "disabled"
+       },
+       {
+         "count": 458752,
+         "granularity": 65536,
+         "name": "bitmapA",
++        "persistent": false,
+         "status": "disabled"
+       }
+     ]
+@@ -247,18 +254,21 @@ write -P0xea 0x3fe0000 64k
+         "count": 393216,
+         "granularity": 65536,
+         "name": "bitmapC",
++        "persistent": false,
+         "status": "disabled"
+       },
+       {
+         "count": 262144,
+         "granularity": 65536,
+         "name": "bitmapB",
++        "persistent": false,
+         "status": "disabled"
+       },
+       {
+         "count": 458752,
+         "granularity": 65536,
+         "name": "bitmapA",
++        "persistent": false,
+         "status": "disabled"
+       }
+     ]
+@@ -304,24 +314,28 @@ write -P0xea 0x3fe0000 64k
+         "count": 458752,
+         "granularity": 65536,
+         "name": "bitmapD",
++        "persistent": false,
+         "status": "disabled"
+       },
+       {
+         "count": 393216,
+         "granularity": 65536,
+         "name": "bitmapC",
++        "persistent": false,
+         "status": "disabled"
+       },
+       {
+         "count": 262144,
+         "granularity": 65536,
+         "name": "bitmapB",
++        "persistent": false,
+         "status": "disabled"
+       },
+       {
+         "count": 458752,
+         "granularity": 65536,
+         "name": "bitmapA",
++        "persistent": false,
+         "status": "disabled"
+       }
+     ]
+-- 
+1.8.3.1
+

@@ -1,0 +1,82 @@
+From 9cc4ecc4169dc8a8636a1ddc8dbe454a274e1432 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famz@redhat.com>
+Date: Fri, 29 Jun 2018 06:11:51 +0200
+Subject: [PATCH 47/57] qcow2: Fix src_offset in copy offloading
+
+RH-Author: Fam Zheng <famz@redhat.com>
+Message-id: <20180629061153.12687-12-famz@redhat.com>
+Patchwork-id: 81163
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 11/13] qcow2: Fix src_offset in copy offloading
+Bugzilla: 1482537
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Not updating src_offset will result in wrong data being written to dst
+image.
+
+Reported-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Fam Zheng <famz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c              |  1 +
+ tests/qemu-iotests/063     |  9 +++++++++
+ tests/qemu-iotests/063.out | 12 ++++++++++++
+ 3 files changed, 22 insertions(+)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index c85ebcb..4404dc7 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -3416,6 +3416,7 @@ qcow2_co_copy_range_to(BlockDriverState *bs,
+         }
+ 
+         bytes -= cur_bytes;
++        src_offset += cur_bytes;
+         dst_offset += cur_bytes;
+     }
+     ret = 0;
+diff --git a/tests/qemu-iotests/063 b/tests/qemu-iotests/063
+index e4f6ea9..adc037c 100755
+--- a/tests/qemu-iotests/063
++++ b/tests/qemu-iotests/063
+@@ -91,6 +91,15 @@ if $QEMU_IMG convert -f $IMGFMT -O $IMGFMT -n "$TEST_IMG.orig" "$TEST_IMG" >/dev
+     exit 1
+ fi
+ 
++echo "== Regression testing for copy offloading bug =="
++
++_make_test_img 1M
++TEST_IMG="$TEST_IMG.target" _make_test_img 1M
++$QEMU_IO -c 'write -P 1 0 512k' -c 'write -P 2 512k 512k' "$TEST_IMG" | _filter_qemu_io
++$QEMU_IO -c 'write -P 4 512k 512k' -c 'write -P 3 0 512k' "$TEST_IMG.target" | _filter_qemu_io
++$QEMU_IMG convert -n -O $IMGFMT "$TEST_IMG" "$TEST_IMG.target"
++$QEMU_IMG compare "$TEST_IMG" "$TEST_IMG.target"
++
+ echo "*** done"
+ rm -f $seq.full
+ status=0
+diff --git a/tests/qemu-iotests/063.out b/tests/qemu-iotests/063.out
+index de1c99a..7b691b2 100644
+--- a/tests/qemu-iotests/063.out
++++ b/tests/qemu-iotests/063.out
+@@ -7,4 +7,16 @@ Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=4194304
+ No errors were found on the image.
+ == Testing conversion to a smaller file fails ==
+ Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=2097152
++== Regression testing for copy offloading bug ==
++Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=1048576
++Formatting 'TEST_DIR/t.IMGFMT.target', fmt=IMGFMT size=1048576
++wrote 524288/524288 bytes at offset 0
++512 KiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++wrote 524288/524288 bytes at offset 524288
++512 KiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++wrote 524288/524288 bytes at offset 524288
++512 KiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++wrote 524288/524288 bytes at offset 0
++512 KiB, X ops; XX:XX:XX.X (XXX YYY/sec and XXX ops/sec)
++Images are identical.
+ *** done
+-- 
+1.8.3.1
+

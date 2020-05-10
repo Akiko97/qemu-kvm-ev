@@ -1,0 +1,68 @@
+From 4d7902d7277992139d575552f09c2ff6827e9794 Mon Sep 17 00:00:00 2001
+From: Laurent Vivier <lvivier@redhat.com>
+Date: Thu, 21 Jun 2018 09:45:26 +0200
+Subject: [PATCH 14/89] migration: calculate expected_downtime with
+ ram_bytes_remaining()
+
+RH-Author: Laurent Vivier <lvivier@redhat.com>
+Message-id: <20180621094526.5714-1-lvivier@redhat.com>
+Patchwork-id: 80931
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] migration: calculate expected_downtime with ram_bytes_remaining()
+Bugzilla: 1564576
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+
+From: Balamuruhan S <bala24@linux.vnet.ibm.com>
+
+expected_downtime value is not accurate with dirty_pages_rate * page_size,
+using ram_bytes_remaining() would yeild it resonable.
+
+consider to read the remaining ram just after having updated the dirty
+pages count later migration_bitmap_sync_range() in migration_bitmap_sync()
+and reuse the `remaining` field in ram_counters to hold ram_bytes_remaining()
+for calculating expected_downtime.
+
+Reported-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+Signed-off-by: Balamuruhan S <bala24@linux.vnet.ibm.com>
+Signed-off-by: Laurent Vivier <lvivier@redhat.com>
+Message-Id: <20180612085009.17594-2-bala24@linux.vnet.ibm.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit 650af8907bd567db914b7ce3a7e9df4c323f4619)
+Signed-off-by: Laurent Vivier <lvivier@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/migration.c | 3 +--
+ migration/ram.c       | 1 +
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index ef4bb42..43d8a64 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -2239,8 +2239,7 @@ static void migration_update_counters(MigrationState *s,
+      * recalculate. 10000 is a small enough number for our purposes
+      */
+     if (ram_counters.dirty_pages_rate && transferred > 10000) {
+-        s->expected_downtime = ram_counters.dirty_pages_rate *
+-            qemu_target_page_size() / bandwidth;
++        s->expected_downtime = ram_counters.remaining / bandwidth;
+     }
+ 
+     qemu_file_reset_rate_limit(s->to_dst_file);
+diff --git a/migration/ram.c b/migration/ram.c
+index 0e90efa..00c06b5 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -852,6 +852,7 @@ static void migration_bitmap_sync(RAMState *rs)
+     RAMBLOCK_FOREACH(block) {
+         migration_bitmap_sync_range(rs, block, 0, block->used_length);
+     }
++    ram_counters.remaining = ram_bytes_remaining();
+     rcu_read_unlock();
+     qemu_mutex_unlock(&rs->bitmap_mutex);
+ 
+-- 
+1.8.3.1
+

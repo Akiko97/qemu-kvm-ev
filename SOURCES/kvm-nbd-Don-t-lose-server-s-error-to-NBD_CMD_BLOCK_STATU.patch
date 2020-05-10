@@ -1,0 +1,83 @@
+From 436070bc736adc93d90292f5b5a3a2b75c36017d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 6 May 2019 17:56:13 +0200
+Subject: [PATCH 03/53] nbd: Don't lose server's error to NBD_CMD_BLOCK_STATUS
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190506175629.11079-4-jsnow@redhat.com>
+Patchwork-id: 87189
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 03/19] nbd: Don't lose server's error to NBD_CMD_BLOCK_STATUS
+Bugzilla: 1692018
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+When the server replies with a (structured [*]) error to
+NBD_CMD_BLOCK_STATUS, without any extent information sent first, the
+client code was blindly throwing away the server's error code and
+instead telling the caller that EIO occurred.  This has been broken
+since its introduction in 78a33ab5 (v2.12, where we should have called:
+   error_setg(&local_err, "Server did not reply with any status extents");
+   nbd_iter_error(&iter, false, -EIO, &local_err);
+to declare the situation as a non-fatal error if no earlier error had
+already been flagged, rather than just blindly slamming iter.err and
+iter.ret), although it is more noticeable since commit 7f86068d, which
+actually tries hard to preserve the server's code thanks to a separate
+iter.request_ret.
+
+[*] The spec is clear that the server is also permitted to reply with
+a simple error, but that's a separate fix.
+
+I was able to provoke this scenario with a hack to the server, then
+seeing whether ENOMEM makes it back to the caller:
+
+| diff --git a/nbd/server.c b/nbd/server.c
+| index fd013a2817a..29c7995de02 100644
+| --- a/nbd/server.c
+| +++ b/nbd/server.c
+| @@ -2269,6 +2269,8 @@ static coroutine_fn int nbd_handle_request(NBDClient *client,
+|                                        "discard failed", errp);
+|
+|      case NBD_CMD_BLOCK_STATUS:
+| +        return nbd_send_generic_reply(client, request->handle, -ENOMEM,
+| +                                      "no status for you today", errp);
+|          if (!request->len) {
+|              return nbd_send_generic_reply(client, request->handle, -EINVAL,
+|                                            "need non-zero length", errp);
+| --
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190325190104.30213-2-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+(cherry picked from commit b29f3a3d2a5fab40dbb4a65fa2f91821ebffae51)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/nbd-client.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/block/nbd-client.c b/block/nbd-client.c
+index f3c31d1..532f90c 100644
+--- a/block/nbd-client.c
++++ b/block/nbd-client.c
+@@ -756,12 +756,9 @@ static int nbd_co_receive_blockstatus_reply(NBDClientSession *s,
+         payload = NULL;
+     }
+ 
+-    if (!extent->length && !iter.err) {
+-        error_setg(&iter.err,
+-                   "Server did not reply with any status extents");
+-        if (!iter.ret) {
+-            iter.ret = -EIO;
+-        }
++    if (!extent->length && !iter.request_ret) {
++        error_setg(&local_err, "Server did not reply with any status extents");
++        nbd_iter_channel_error(&iter, -EIO, &local_err);
+     }
+ 
+     error_propagate(errp, iter.err);
+-- 
+1.8.3.1
+

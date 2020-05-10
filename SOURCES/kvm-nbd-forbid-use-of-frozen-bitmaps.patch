@@ -1,0 +1,46 @@
+From 7017ebd29ae40208efdf2bad4846c220a6952b60 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 6 Feb 2019 22:12:36 +0100
+Subject: [PATCH 26/33] nbd: forbid use of frozen bitmaps
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190206221243.7407-17-jsnow@redhat.com>
+Patchwork-id: 84273
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v2 16/23] nbd: forbid use of frozen bitmaps
+Bugzilla: 1658343
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+Whether it's "locked" or "frozen", it's in use and should
+not be allowed for the purposes of this operation.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20181002230218.13949-7-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit d9782022bda7f8eccaf961044e9efe980dc90c04)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 1ce3f44..e094300 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -2435,8 +2435,8 @@ void nbd_export_bitmap(NBDExport *exp, const char *bitmap,
+         return;
+     }
+ 
+-    if (bdrv_dirty_bitmap_qmp_locked(bm)) {
+-        error_setg(errp, "Bitmap '%s' is locked", bitmap);
++    if (bdrv_dirty_bitmap_user_locked(bm)) {
++        error_setg(errp, "Bitmap '%s' is in use", bitmap);
+         return;
+     }
+ 
+-- 
+1.8.3.1
+

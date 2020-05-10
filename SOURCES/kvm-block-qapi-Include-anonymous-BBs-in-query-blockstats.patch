@@ -1,0 +1,52 @@
+From 50a74a6f33a66effb2c4f28e2c6ca8ca3041d312 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 7 Aug 2018 14:04:00 +0200
+Subject: [PATCH 07/13] block/qapi: Include anonymous BBs in query-blockstats
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180807140401.23995-3-kwolf@redhat.com>
+Patchwork-id: 81664
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 2/3] block/qapi: Include anonymous BBs in query-blockstats
+Bugzilla: 1612114
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+Consistent with query-block, query-blockstats should not only include
+named BlockBackends, but also those that are anonymous, but belong to a
+device model.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 567dcb31f23657fb71060067b0b1c9ac29110d16)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qapi.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/block/qapi.c b/block/qapi.c
+index 50f867d..339727f 100644
+--- a/block/qapi.c
++++ b/block/qapi.c
+@@ -593,12 +593,16 @@ BlockStatsList *qmp_query_blockstats(bool has_query_nodes,
+             p_next = &info->next;
+         }
+     } else {
+-        for (blk = blk_next(NULL); blk; blk = blk_next(blk)) {
++        for (blk = blk_all_next(NULL); blk; blk = blk_all_next(blk)) {
+             BlockStatsList *info = g_malloc0(sizeof(*info));
+             AioContext *ctx = blk_get_aio_context(blk);
+             BlockStats *s;
+             char *qdev;
+ 
++            if (!*blk_name(blk) && !blk_get_attached_dev(blk)) {
++                continue;
++            }
++
+             aio_context_acquire(ctx);
+             s = bdrv_query_bds_stats(blk_bs(blk), true);
+             s->has_device = true;
+-- 
+1.8.3.1
+

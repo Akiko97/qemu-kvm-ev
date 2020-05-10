@@ -1,0 +1,76 @@
+From 84d49bc7469905877fc22f6faea1e53c8c0cbe1c Mon Sep 17 00:00:00 2001
+From: David Hildenbrand <david@redhat.com>
+Date: Fri, 21 Sep 2018 09:19:39 +0200
+Subject: [PATCH 03/22] pc-dimm: turn alignment assert into check
+
+RH-Author: David Hildenbrand <david@redhat.com>
+Message-id: <20180921091939.4107-1-david@redhat.com>
+Patchwork-id: 82227
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] pc-dimm: turn alignment assert into check
+Bugzilla: 1629720
+RH-Acked-by: Pankaj Gupta <pagupta@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+
+BZ: https://bugzilla.redhat.com/show_bug.cgi?id=1629720
+Brew: https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=18439425
+Upstream: 4d8938a05db15dea2c86c4ab9c5f872f160d2188
+
+The start of the address space indicates which maximum alignment is
+supported by our machine (e.g. ppc, x86 1GB). This is helpful to
+catch fragmenting guest physical memory in strange fashions.
+
+Right now we can crash QEMU by e.g. (there might be easier examples)
+
+qemu-system-x86_64 -m 256M,maxmem=20G,slots=2 \
+ -object memory-backend-file,id=mem0,size=8192M,mem-path=/dev/zero,align=8192M \
+ -device pc-dimm,id=dimm1,memdev=mem0
+
+Backport conflicts:
+    hw/mem/memory-device.c: The memory device refactoring is part of 3.0
+                            and probably not worth backporting to 7.X.
+                            So fix it in previous pc-dimm code.
+Note: The upstream patch missed a "x" (0% .. vs. 0x% ..), will fix that
+      upstream, too.
+
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Message-Id: <20180607154705.6316-2-david@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit 4d8938a05db15dea2c86c4ab9c5f872f160d2188)
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/mem/pc-dimm.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/hw/mem/pc-dimm.c b/hw/mem/pc-dimm.c
+index 51350d9..a9d7c51 100644
+--- a/hw/mem/pc-dimm.c
++++ b/hw/mem/pc-dimm.c
+@@ -298,14 +298,19 @@ uint64_t pc_dimm_get_free_addr(uint64_t address_space_start,
+     uint64_t new_addr, ret = 0;
+     uint64_t address_space_end = address_space_start + address_space_size;
+ 
+-    g_assert(QEMU_ALIGN_UP(address_space_start, align) == address_space_start);
+-
+     if (!address_space_size) {
+         error_setg(errp, "memory hotplug is not enabled, "
+                          "please add maxmem option");
+         goto out;
+     }
+ 
++    /* address_space_start indicates the maximum alignment we expect */
++    if (QEMU_ALIGN_UP(address_space_start, align) != address_space_start) {
++        error_setg(errp, "the alignment (0x%" PRIx64 ") is not supported",
++                   align);
++        goto out;
++    }
++
+     if (hint && QEMU_ALIGN_UP(*hint, align) != *hint) {
+         error_setg(errp, "address must be aligned to 0x%" PRIx64 " bytes",
+                    align);
+-- 
+1.8.3.1
+

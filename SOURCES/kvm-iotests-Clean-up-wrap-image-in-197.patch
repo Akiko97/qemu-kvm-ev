@@ -1,0 +1,42 @@
+From 4a2de12de1790d63467be43c1af8da4800b15c2c Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 18 Jun 2018 16:12:10 +0200
+Subject: [PATCH 34/54] iotests: Clean up wrap image in 197
+
+RH-Author: Max Reitz <mreitz@redhat.com>
+Message-id: <20180618161212.14444-9-mreitz@redhat.com>
+Patchwork-id: 80768
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 08/10] iotests: Clean up wrap image in 197
+Bugzilla: 1518738
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Message-id: 20180421132929.21610-8-mreitz@redhat.com
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 5fdc0b73eb68d107944cfa65185fb155b511e496)
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/197 | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tests/qemu-iotests/197 b/tests/qemu-iotests/197
+index 5e869fe..3ae4975 100755
+--- a/tests/qemu-iotests/197
++++ b/tests/qemu-iotests/197
+@@ -44,6 +44,7 @@ esac
+ _cleanup()
+ {
+     _cleanup_test_img
++    rm -f "$TEST_WRAP"
+     rm -f "$BLKDBG_CONF"
+ }
+ trap "_cleanup; exit \$status" 0 1 2 3 15
+-- 
+1.8.3.1
+

@@ -1,0 +1,155 @@
+From bba237b4cbbd22a61ef4cc961a1b0937b806480b Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:27 +0200
+Subject: [PATCH 58/89] job: Add job_is_ready()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-45-kwolf@redhat.com>
+Patchwork-id: 81128
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 44/73] job: Add job_is_ready()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+Instead of having a 'bool ready' in BlockJob, add a function that
+derives its value from the job status.
+
+At the same time, this fixes the behaviour to match what the QAPI
+documentation promises for query-block-job: 'true if the job may be
+completed'. When the ready flag was introduced in commit ef6dbf1e46e,
+the flag never had to be reset to match the description because after
+being ready, the jobs would immediately complete and disappear.
+
+Job transactions and manual job finalisation were introduced only later.
+With these changes, jobs may stay around even after having completed
+(and they are not ready to be completed a second time), however their
+patches forgot to reset the ready flag.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit df956ae2014340bf7de0190edb1d09be55d9eadf)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c               |  3 +--
+ include/block/blockjob.h |  5 -----
+ include/qemu/job.h       |  3 +++
+ job.c                    | 22 ++++++++++++++++++++++
+ qemu-img.c               |  2 +-
+ tests/test-blockjob.c    |  2 +-
+ 6 files changed, 28 insertions(+), 9 deletions(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index 3ca009b..38f18e9 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -269,7 +269,7 @@ BlockJobInfo *block_job_query(BlockJob *job, Error **errp)
+     info->offset    = job->offset;
+     info->speed     = job->speed;
+     info->io_status = job->iostatus;
+-    info->ready     = job->ready;
++    info->ready     = job_is_ready(&job->job),
+     info->status    = job->job.status;
+     info->auto_finalize = job->job.auto_finalize;
+     info->auto_dismiss  = job->job.auto_dismiss;
+@@ -436,7 +436,6 @@ void block_job_user_resume(Job *job)
+ void block_job_event_ready(BlockJob *job)
+ {
+     job_state_transition(&job->job, JOB_STATUS_READY);
+-    job->ready = true;
+ 
+     if (block_job_is_internal(job)) {
+         return;
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index 5a81afc..8e1e1ee 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -49,11 +49,6 @@ typedef struct BlockJob {
+     /** The block device on which the job is operating.  */
+     BlockBackend *blk;
+ 
+-    /**
+-     * Set to true when the job is ready to be completed.
+-     */
+-    bool ready;
+-
+     /** Status that is published by the query-block-jobs QMP API */
+     BlockDeviceIoStatus iostatus;
+ 
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 1e8050c..487f9d9 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -367,6 +367,9 @@ bool job_is_cancelled(Job *job);
+ /** Returns whether the job is in a completed state. */
+ bool job_is_completed(Job *job);
+ 
++/** Returns whether the job is ready to be completed. */
++bool job_is_ready(Job *job);
++
+ /**
+  * Request @job to pause at the next pause point. Must be paired with
+  * job_resume(). If the job is supposed to be resumed by user action, call
+diff --git a/job.c b/job.c
+index 7cd3602..aa4c746 100644
+--- a/job.c
++++ b/job.c
+@@ -199,6 +199,28 @@ bool job_is_cancelled(Job *job)
+     return job->cancelled;
+ }
+ 
++bool job_is_ready(Job *job)
++{
++    switch (job->status) {
++    case JOB_STATUS_UNDEFINED:
++    case JOB_STATUS_CREATED:
++    case JOB_STATUS_RUNNING:
++    case JOB_STATUS_PAUSED:
++    case JOB_STATUS_WAITING:
++    case JOB_STATUS_PENDING:
++    case JOB_STATUS_ABORTING:
++    case JOB_STATUS_CONCLUDED:
++    case JOB_STATUS_NULL:
++        return false;
++    case JOB_STATUS_READY:
++    case JOB_STATUS_STANDBY:
++        return true;
++    default:
++        g_assert_not_reached();
++    }
++    return false;
++}
++
+ bool job_is_completed(Job *job)
+ {
+     switch (job->status) {
+diff --git a/qemu-img.c b/qemu-img.c
+index 734ea94..3c449a2 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -878,7 +878,7 @@ static void run_block_job(BlockJob *job, Error **errp)
+         aio_poll(aio_context, true);
+         qemu_progress_print(job->len ?
+                             ((float)job->offset / job->len * 100.f) : 0.0f, 0);
+-    } while (!job->ready && !job_is_completed(&job->job));
++    } while (!job_is_ready(&job->job) && !job_is_completed(&job->job));
+ 
+     if (!job_is_completed(&job->job)) {
+         ret = job_complete_sync(&job->job, errp);
+diff --git a/tests/test-blockjob.c b/tests/test-blockjob.c
+index 7131cab..8180d03 100644
+--- a/tests/test-blockjob.c
++++ b/tests/test-blockjob.c
+@@ -185,7 +185,7 @@ static void coroutine_fn cancel_job_start(void *opaque)
+             goto defer;
+         }
+ 
+-        if (!s->common.ready && s->should_converge) {
++        if (!job_is_ready(&s->common.job) && s->should_converge) {
+             block_job_event_ready(&s->common);
+         }
+ 
+-- 
+1.8.3.1
+

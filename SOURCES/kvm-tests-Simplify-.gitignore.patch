@@ -1,0 +1,153 @@
+From 9cc9f8d61a69620645360e2ff399042ea992067b Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:17 +0100
+Subject: [PATCH 050/163] tests: Simplify .gitignore
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-5-jsnow@redhat.com>
+Patchwork-id: 85088
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 04/28] tests: Simplify .gitignore
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+Commit 0bcc8e5b was yet another instance of 'git status' reporting
+dirty files after an in-tree build, thanks to the new binary
+tests/check-block-qdict.
+
+Instead of piecemeal exemptions of each new binary as they are
+added, let's use git's negative globbing feature to exempt ALL
+files that have a 'test-' or 'check-' prefix, except for the ones
+ending in '.c' or '.sh'.  We still have a couple of generated
+files that then need (re-)exclusion, but the overall list is a
+LOT shorter, and less prone to needing future edits.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20180619203918.65450-1-eblake@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+(cherry picked from commit ac5de4984df282d64feb4af33b92e0a75652e2b6)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/.gitignore | 92 +++-----------------------------------------------------
+ 1 file changed, 5 insertions(+), 87 deletions(-)
+
+diff --git a/tests/.gitignore b/tests/.gitignore
+index fb62d22..08e2df1 100644
+--- a/tests/.gitignore
++++ b/tests/.gitignore
+@@ -2,100 +2,18 @@ atomic_add-bench
+ benchmark-crypto-cipher
+ benchmark-crypto-hash
+ benchmark-crypto-hmac
+-check-qdict
+-check-qnum
+-check-qjson
+-check-qlist
+-check-qlit
+-check-qnull
+-check-qobject
+-check-qstring
+-check-qom-interface
+-check-qom-proplist
++check-*
++!check-*.c
++!check-*.sh
+ qht-bench
+ rcutorture
+-test-aio
+-test-aio-multithread
+-test-arm-mptimer
+-test-base64
+-test-bdrv-drain
+-test-bitops
+-test-bitcnt
+-test-blockjob
+-test-blockjob-txn
+-test-bufferiszero
+-test-char
+-test-clone-visitor
+-test-coroutine
+-test-crypto-afsplit
+-test-crypto-block
+-test-crypto-cipher
+-test-crypto-hash
+-test-crypto-hmac
+-test-crypto-ivgen
+-test-crypto-pbkdf
+-test-crypto-secret
+-test-crypto-tlscredsx509
+-test-crypto-tlscredsx509-work/
+-test-crypto-tlscredsx509-certs/
+-test-crypto-tlssession
+-test-crypto-tlssession-work/
+-test-crypto-tlssession-client/
+-test-crypto-tlssession-server/
+-test-crypto-xts
+-test-cutils
+-test-hbitmap
+-test-hmp
+-test-int128
+-test-iov
+-test-io-channel-buffer
+-test-io-channel-command
+-test-io-channel-command.fifo
+-test-io-channel-file
+-test-io-channel-file.txt
+-test-io-channel-socket
+-test-io-channel-tls
+-test-io-task
+-test-keyval
+-test-logging
+-test-mul64
+-test-opts-visitor
++test-*
++!test-*.c
+ test-qapi-commands.[ch]
+ test-qapi-events.[ch]
+ test-qapi-types.[ch]
+-test-qapi-util
+ test-qapi-visit.[ch]
+-test-qdev-global-props
+-test-qemu-opts
+-test-qdist
+-test-qga
+-test-qht
+-test-qht-par
+-test-qmp-cmds
+-test-qmp-event
+-test-qobject-input-strict
+-test-qobject-input-visitor
+ test-qapi-introspect.[ch]
+-test-qobject-output-visitor
+-test-rcu-list
+-test-replication
+-test-shift128
+-test-string-input-visitor
+-test-string-output-visitor
+-test-thread-pool
+-test-throttle
+-test-timed-average
+-test-uuid
+-test-util-sockets
+-test-visitor-serialization
+-test-vmstate
+-test-write-threshold
+-test-x86-cpuid
+-test-x86-cpuid-compat
+-test-xbzrle
+-test-netfilter
+-test-filter-mirror
+-test-filter-redirector
+ *-test
+ qapi-schema/*.test.*
+ vm/*.img
+-- 
+1.8.3.1
+

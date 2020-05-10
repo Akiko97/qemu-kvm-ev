@@ -1,0 +1,92 @@
+From 192def6a1acb30c3ff81e130fa73849e19a9ee87 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:14 +0200
+Subject: [PATCH 45/89] blockjob: Split block_job_event_pending()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-32-kwolf@redhat.com>
+Patchwork-id: 81071
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 31/73] blockjob: Split block_job_event_pending()
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+block_job_event_pending() doesn't only send a QMP event, but it also
+transitions to the PENDING state. Split the function so that we get one
+part only sending the event (like other block_job_event_* functions) and
+another part that does the state transition.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 5d4f376998bc6b01402b90634385b082b2eb5c5b)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ blockjob.c | 27 ++++++++++++++++++---------
+ 1 file changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/blockjob.c b/blockjob.c
+index d9d8ff7..b4334fb 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -38,7 +38,7 @@
+ 
+ static void block_job_event_cancelled(BlockJob *job);
+ static void block_job_event_completed(BlockJob *job, const char *msg);
+-static int block_job_event_pending(BlockJob *job);
++static void block_job_event_pending(BlockJob *job);
+ 
+ /* Transactional group of block jobs */
+ struct BlockJobTxn {
+@@ -500,6 +500,15 @@ static void block_job_do_finalize(BlockJob *job)
+     }
+ }
+ 
++static int block_job_transition_to_pending(BlockJob *job)
++{
++    job_state_transition(&job->job, JOB_STATUS_PENDING);
++    if (!job->job.auto_finalize) {
++        block_job_event_pending(job);
++    }
++    return 0;
++}
++
+ static void block_job_completed_txn_success(BlockJob *job)
+ {
+     BlockJobTxn *txn = job->txn;
+@@ -518,7 +527,7 @@ static void block_job_completed_txn_success(BlockJob *job)
+         assert(other_job->ret == 0);
+     }
+ 
+-    block_job_txn_apply(txn, block_job_event_pending, false);
++    block_job_txn_apply(txn, block_job_transition_to_pending, false);
+ 
+     /* If no jobs need manual finalization, automatically do so */
+     if (block_job_txn_apply(txn, block_job_needs_finalize, false) == 0) {
+@@ -733,15 +742,15 @@ static void block_job_event_completed(BlockJob *job, const char *msg)
+                                         &error_abort);
+ }
+ 
+-static int block_job_event_pending(BlockJob *job)
++static void block_job_event_pending(BlockJob *job)
+ {
+-    job_state_transition(&job->job, JOB_STATUS_PENDING);
+-    if (!job->job.auto_finalize && !block_job_is_internal(job)) {
+-        qapi_event_send_block_job_pending(job_type(&job->job),
+-                                          job->job.id,
+-                                          &error_abort);
++    if (block_job_is_internal(job)) {
++        return;
+     }
+-    return 0;
++
++    qapi_event_send_block_job_pending(job_type(&job->job),
++                                      job->job.id,
++                                      &error_abort);
+ }
+ 
+ /*
+-- 
+1.8.3.1
+

@@ -1,0 +1,108 @@
+From 45b68ea328fbac00681b1c2eec1eb1499005020a Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Fri, 22 Jun 2018 18:59:56 +0200
+Subject: [PATCH 17/57] migration: introduce save_normal_page()
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20180622190005.21297-10-dgilbert@redhat.com>
+Patchwork-id: 81003
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH 09/18] migration: introduce save_normal_page()
+Bugzilla: 1584139
+RH-Acked-by: Peter Xu <peterx@redhat.com>
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+From: Xiao Guangrong <xiaoguangrong@tencent.com>
+
+It directly sends the page to the stream neither checking zero nor
+using xbzrle or compression
+
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Xiao Guangrong <xiaoguangrong@tencent.com>
+Message-Id: <20180330075128.26919-10-xiaoguangrong@tencent.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+(cherry picked from commit 65dacaa04fa7e6104cbcee9251c7845355769a10)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ migration/ram.c | 50 ++++++++++++++++++++++++++++++--------------------
+ 1 file changed, 30 insertions(+), 20 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 6e8a7e2..908879f 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1013,6 +1013,34 @@ static bool control_save_page(RAMState *rs, RAMBlock *block, ram_addr_t offset,
+     return true;
+ }
+ 
++/*
++ * directly send the page to the stream
++ *
++ * Returns the number of pages written.
++ *
++ * @rs: current RAM state
++ * @block: block that contains the page we want to send
++ * @offset: offset inside the block for the page
++ * @buf: the page to be sent
++ * @async: send to page asyncly
++ */
++static int save_normal_page(RAMState *rs, RAMBlock *block, ram_addr_t offset,
++                            uint8_t *buf, bool async)
++{
++    ram_counters.transferred += save_page_header(rs, rs->f, block,
++                                                 offset | RAM_SAVE_FLAG_PAGE);
++    if (async) {
++        qemu_put_buffer_async(rs->f, buf, TARGET_PAGE_SIZE,
++                              migrate_release_ram() &
++                              migration_in_postcopy());
++    } else {
++        qemu_put_buffer(rs->f, buf, TARGET_PAGE_SIZE);
++    }
++    ram_counters.transferred += TARGET_PAGE_SIZE;
++    ram_counters.normal++;
++    return 1;
++}
++
+ /**
+  * ram_save_page: send the given page to the stream
+  *
+@@ -1053,18 +1081,7 @@ static int ram_save_page(RAMState *rs, PageSearchStatus *pss, bool last_stage)
+ 
+     /* XBZRLE overflow or normal page */
+     if (pages == -1) {
+-        ram_counters.transferred +=
+-            save_page_header(rs, rs->f, block, offset | RAM_SAVE_FLAG_PAGE);
+-        if (send_async) {
+-            qemu_put_buffer_async(rs->f, p, TARGET_PAGE_SIZE,
+-                                  migrate_release_ram() &
+-                                  migration_in_postcopy());
+-        } else {
+-            qemu_put_buffer(rs->f, p, TARGET_PAGE_SIZE);
+-        }
+-        ram_counters.transferred += TARGET_PAGE_SIZE;
+-        pages = 1;
+-        ram_counters.normal++;
++        pages = save_normal_page(rs, block, offset, p, send_async);
+     }
+ 
+     XBZRLE_cache_unlock();
+@@ -1195,14 +1212,7 @@ static int ram_save_compressed_page(RAMState *rs, PageSearchStatus *pss,
+          * we post it as normal page as compression will take much
+          * CPU resource.
+          */
+-        ram_counters.transferred += save_page_header(rs, rs->f, block,
+-                                        offset | RAM_SAVE_FLAG_PAGE);
+-        qemu_put_buffer_async(rs->f, p, TARGET_PAGE_SIZE,
+-                              migrate_release_ram() &
+-                              migration_in_postcopy());
+-        ram_counters.transferred += TARGET_PAGE_SIZE;
+-        ram_counters.normal++;
+-        pages = 1;
++        pages = save_normal_page(rs, block, offset, p, true);
+     } else {
+         pages = compress_page_with_multi_thread(rs, block, offset);
+     }
+-- 
+1.8.3.1
+

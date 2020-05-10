@@ -1,0 +1,121 @@
+From 882e1e9983aee5f98b3ad7c65ced43d7cacfd000 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 20 Mar 2019 21:48:34 +0100
+Subject: [PATCH 041/163] Revert "test-hbitmap: Add non-advancing iter_next
+ tests"
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190320214838.22027-7-jsnow@redhat.com>
+Patchwork-id: 84999
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 06/10] Revert "test-hbitmap: Add non-advancing iter_next tests"
+Bugzilla: 1691048
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+This reverts commit 269576848ec3d57d2d958cf5ac69b08c44adf816.
+
+The functionality is unused. Drop tests.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 4294c4ab4825a2ce4d816e52f95a6f08b56aa69c)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/test-hbitmap.c | 36 ++++++++++++------------------------
+ 1 file changed, 12 insertions(+), 24 deletions(-)
+
+diff --git a/tests/test-hbitmap.c b/tests/test-hbitmap.c
+index 4f312e9..6358f35 100644
+--- a/tests/test-hbitmap.c
++++ b/tests/test-hbitmap.c
+@@ -30,18 +30,6 @@ typedef struct TestHBitmapData {
+ } TestHBitmapData;
+ 
+ 
+-static int64_t check_hbitmap_iter_next(HBitmapIter *hbi)
+-{
+-    int next0, next1;
+-
+-    next0 = hbitmap_iter_next(hbi, false);
+-    next1 = hbitmap_iter_next(hbi, true);
+-
+-    g_assert_cmpint(next0, ==, next1);
+-
+-    return next0;
+-}
+-
+ /* Check that the HBitmap and the shadow bitmap contain the same data,
+  * ignoring the same "first" bits.
+  */
+@@ -58,7 +46,7 @@ static void hbitmap_test_check(TestHBitmapData *data,
+ 
+     i = first;
+     for (;;) {
+-        next = check_hbitmap_iter_next(&hbi);
++        next = hbitmap_iter_next(&hbi, true);
+         if (next < 0) {
+             next = data->size;
+         }
+@@ -447,25 +435,25 @@ static void test_hbitmap_iter_granularity(TestHBitmapData *data,
+     /* Note that hbitmap_test_check has to be invoked manually in this test.  */
+     hbitmap_test_init(data, 131072 << 7, 7);
+     hbitmap_iter_init(&hbi, data->hb, 0);
+-    g_assert_cmpint(check_hbitmap_iter_next(&hbi), <, 0);
++    g_assert_cmpint(hbitmap_iter_next(&hbi, true), <, 0);
+ 
+     hbitmap_test_set(data, ((L2 + L1 + 1) << 7) + 8, 8);
+     hbitmap_iter_init(&hbi, data->hb, 0);
+-    g_assert_cmpint(check_hbitmap_iter_next(&hbi), ==, (L2 + L1 + 1) << 7);
+-    g_assert_cmpint(check_hbitmap_iter_next(&hbi), <, 0);
++    g_assert_cmpint(hbitmap_iter_next(&hbi, true), ==, (L2 + L1 + 1) << 7);
++    g_assert_cmpint(hbitmap_iter_next(&hbi, true), <, 0);
+ 
+     hbitmap_iter_init(&hbi, data->hb, (L2 + L1 + 2) << 7);
+     g_assert_cmpint(hbitmap_iter_next(&hbi, true), <, 0);
+ 
+     hbitmap_test_set(data, (131072 << 7) - 8, 8);
+     hbitmap_iter_init(&hbi, data->hb, 0);
+-    g_assert_cmpint(check_hbitmap_iter_next(&hbi), ==, (L2 + L1 + 1) << 7);
+-    g_assert_cmpint(check_hbitmap_iter_next(&hbi), ==, 131071 << 7);
+-    g_assert_cmpint(check_hbitmap_iter_next(&hbi), <, 0);
++    g_assert_cmpint(hbitmap_iter_next(&hbi, true), ==, (L2 + L1 + 1) << 7);
++    g_assert_cmpint(hbitmap_iter_next(&hbi, true), ==, 131071 << 7);
++    g_assert_cmpint(hbitmap_iter_next(&hbi, true), <, 0);
+ 
+     hbitmap_iter_init(&hbi, data->hb, (L2 + L1 + 2) << 7);
+-    g_assert_cmpint(check_hbitmap_iter_next(&hbi), ==, 131071 << 7);
+-    g_assert_cmpint(check_hbitmap_iter_next(&hbi), <, 0);
++    g_assert_cmpint(hbitmap_iter_next(&hbi, true), ==, 131071 << 7);
++    g_assert_cmpint(hbitmap_iter_next(&hbi, true), <, 0);
+ }
+ 
+ static void hbitmap_test_set_boundary_bits(TestHBitmapData *data, ssize_t diff)
+@@ -905,7 +893,7 @@ static void test_hbitmap_serialize_zeroes(TestHBitmapData *data,
+     for (i = 0; i < num_positions; i++) {
+         hbitmap_deserialize_zeroes(data->hb, positions[i], min_l1, true);
+         hbitmap_iter_init(&iter, data->hb, 0);
+-        next = check_hbitmap_iter_next(&iter);
++        next = hbitmap_iter_next(&iter, true);
+         if (i == num_positions - 1) {
+             g_assert_cmpint(next, ==, -1);
+         } else {
+@@ -931,10 +919,10 @@ static void test_hbitmap_iter_and_reset(TestHBitmapData *data,
+ 
+     hbitmap_iter_init(&hbi, data->hb, BITS_PER_LONG - 1);
+ 
+-    check_hbitmap_iter_next(&hbi);
++    hbitmap_iter_next(&hbi, true);
+ 
+     hbitmap_reset_all(data->hb);
+-    check_hbitmap_iter_next(&hbi);
++    hbitmap_iter_next(&hbi, true);
+ }
+ 
+ static void test_hbitmap_next_zero_check_range(TestHBitmapData *data,
+-- 
+1.8.3.1
+

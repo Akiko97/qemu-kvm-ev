@@ -1,0 +1,209 @@
+From 15ebf0b3bcbca92d0d63a67be3deee35572f1f00 Mon Sep 17 00:00:00 2001
+From: Miroslav Rezanina <mrezanin@redhat.com>
+Date: Thu, 6 Dec 2018 10:03:56 +0100
+Subject: [PATCH 16/34] iotests: Test migration with -blockdev
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181128092947.24543-3-kwolf@redhat.com>
+Patchwork-id: 83181
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH 2/2] iotests: Test migration with -blockdev
+Bugzilla:  1633536
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+Check that block node activation and inactivation works with a block
+graph that is built with individually created nodes.
+
+RHEL: Disabled query-migrate call on the destination; this returns only
+an empty object in 2.12. Changed reference output for Python 2 (we lack
+the compatibility patches from upstream that make the output independent
+from the Python version).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 330ca111ea0979d8c6fc9b3958f72d6dce164d5a)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+---
+ tests/qemu-iotests/234     | 123 +++++++++++++++++++++++++++++++++++++++++++++
+ tests/qemu-iotests/234.out |  28 +++++++++++
+ tests/qemu-iotests/group   |   1 +
+ 3 files changed, 152 insertions(+)
+ create mode 100755 tests/qemu-iotests/234
+ create mode 100644 tests/qemu-iotests/234.out
+
+diff --git a/tests/qemu-iotests/234 b/tests/qemu-iotests/234
+new file mode 100755
+index 0000000..2b0f869
+--- /dev/null
++++ b/tests/qemu-iotests/234
+@@ -0,0 +1,123 @@
++#!/usr/bin/env python
++#
++# Copyright (C) 2018 Red Hat, Inc.
++#
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 2 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++#
++# Creator/Owner: Kevin Wolf <kwolf@redhat.com>
++#
++# Check that block node activation and inactivation works with a block graph
++# that is built with individually created nodes
++
++import iotests
++import os
++
++iotests.verify_image_format(supported_fmts=['qcow2'])
++iotests.verify_platform(['linux'])
++
++with iotests.FilePath('img') as img_path, \
++     iotests.FilePath('backing') as backing_path, \
++     iotests.FilePath('mig_fifo_a') as fifo_a, \
++     iotests.FilePath('mig_fifo_b') as fifo_b, \
++     iotests.VM(path_suffix='a') as vm_a, \
++     iotests.VM(path_suffix='b') as vm_b:
++
++    iotests.qemu_img_pipe('create', '-f', iotests.imgfmt, backing_path, '64M')
++    iotests.qemu_img_pipe('create', '-f', iotests.imgfmt, img_path, '64M')
++
++    os.mkfifo(fifo_a)
++    os.mkfifo(fifo_b)
++
++    iotests.log('Launching source VM...')
++    (vm_a.add_blockdev('file,filename=%s,node-name=drive0-file' % (img_path))
++         .add_blockdev('%s,file=drive0-file,node-name=drive0' % (iotests.imgfmt))
++         .add_blockdev('file,filename=%s,node-name=drive0-backing-file' % (backing_path))
++         .add_blockdev('%s,file=drive0-backing-file,node-name=drive0-backing' % (iotests.imgfmt))
++         .launch())
++
++    iotests.log('Launching destination VM...')
++    (vm_b.add_blockdev('file,filename=%s,node-name=drive0-file' % (img_path))
++         .add_blockdev('%s,file=drive0-file,node-name=drive0' % (iotests.imgfmt))
++         .add_blockdev('file,filename=%s,node-name=drive0-backing-file' % (backing_path))
++         .add_blockdev('%s,file=drive0-backing-file,node-name=drive0-backing' % (iotests.imgfmt))
++         .add_incoming("exec: cat '%s'" % (fifo_a))
++         .launch())
++
++    # Add a child node that was created after the parent node. The reverse case
++    # is covered by the -blockdev options above.
++    iotests.log(vm_a.qmp('blockdev-snapshot', node='drive0-backing',
++                         overlay='drive0'))
++    iotests.log(vm_b.qmp('blockdev-snapshot', node='drive0-backing',
++                         overlay='drive0'))
++
++    iotests.log('Enabling migration QMP events on A...')
++    iotests.log(vm_a.qmp('migrate-set-capabilities', capabilities=[
++        {
++            'capability': 'events',
++            'state': True
++        }
++    ]))
++
++    iotests.log('Starting migration to B...')
++    iotests.log(vm_a.qmp('migrate', uri='exec:cat >%s' % (fifo_a)))
++    with iotests.Timeout(3, 'Migration does not complete'):
++        while True:
++            event = vm_a.event_wait('MIGRATION')
++            iotests.log(event, filters=[iotests.filter_qmp_event])
++            if event['data']['status'] == 'completed':
++                break
++
++    iotests.log(vm_a.qmp('query-migrate')['return']['status'])
++    # Returns only {} on this QEMU version (no status)
++    # iotests.log(vm_b.qmp('query-migrate')['return']['status'])
++
++    iotests.log(vm_a.qmp('query-status'))
++    iotests.log(vm_b.qmp('query-status'))
++
++    iotests.log('Add a second parent to drive0-file...')
++    iotests.log(vm_b.qmp('blockdev-add', driver='raw', file='drive0-file',
++                         node_name='drive0-raw'))
++
++    iotests.log('Restart A with -incoming and second parent...')
++    vm_a.shutdown()
++    (vm_a.add_blockdev('raw,file=drive0-file,node-name=drive0-raw')
++         .add_incoming("exec: cat '%s'" % (fifo_b))
++         .launch())
++
++    iotests.log(vm_a.qmp('blockdev-snapshot', node='drive0-backing',
++                         overlay='drive0'))
++
++    iotests.log('Enabling migration QMP events on B...')
++    iotests.log(vm_b.qmp('migrate-set-capabilities', capabilities=[
++        {
++            'capability': 'events',
++            'state': True
++        }
++    ]))
++
++    iotests.log('Starting migration back to A...')
++    iotests.log(vm_b.qmp('migrate', uri='exec:cat >%s' % (fifo_b)))
++    with iotests.Timeout(3, 'Migration does not complete'):
++        while True:
++            event = vm_b.event_wait('MIGRATION')
++            iotests.log(event, filters=[iotests.filter_qmp_event])
++            if event['data']['status'] == 'completed':
++                break
++
++    # Returns only {} on this QEMU version (no status)
++    # iotests.log(vm_a.qmp('query-migrate')['return']['status'])
++    iotests.log(vm_b.qmp('query-migrate')['return']['status'])
++
++    iotests.log(vm_a.qmp('query-status'))
++    iotests.log(vm_b.qmp('query-status'))
+diff --git a/tests/qemu-iotests/234.out b/tests/qemu-iotests/234.out
+new file mode 100644
+index 0000000..c7cd95f
+--- /dev/null
++++ b/tests/qemu-iotests/234.out
+@@ -0,0 +1,28 @@
++Launching source VM...
++Launching destination VM...
++{u'return': {}}
++{u'return': {}}
++Enabling migration QMP events on A...
++{u'return': {}}
++Starting migration to B...
++{u'return': {}}
++{u'timestamp': {u'seconds': 'SECS', u'microseconds': 'USECS'}, u'data': {u'status': u'setup'}, u'event': u'MIGRATION'}
++{u'timestamp': {u'seconds': 'SECS', u'microseconds': 'USECS'}, u'data': {u'status': u'active'}, u'event': u'MIGRATION'}
++{u'timestamp': {u'seconds': 'SECS', u'microseconds': 'USECS'}, u'data': {u'status': u'completed'}, u'event': u'MIGRATION'}
++completed
++{u'return': {u'status': u'postmigrate', u'singlestep': False, u'running': False}}
++{u'return': {u'status': u'running', u'singlestep': False, u'running': True}}
++Add a second parent to drive0-file...
++{u'return': {}}
++Restart A with -incoming and second parent...
++{u'return': {}}
++Enabling migration QMP events on B...
++{u'return': {}}
++Starting migration back to A...
++{u'return': {}}
++{u'timestamp': {u'seconds': 'SECS', u'microseconds': 'USECS'}, u'data': {u'status': u'setup'}, u'event': u'MIGRATION'}
++{u'timestamp': {u'seconds': 'SECS', u'microseconds': 'USECS'}, u'data': {u'status': u'active'}, u'event': u'MIGRATION'}
++{u'timestamp': {u'seconds': 'SECS', u'microseconds': 'USECS'}, u'data': {u'status': u'completed'}, u'event': u'MIGRATION'}
++completed
++{u'return': {u'status': u'running', u'singlestep': False, u'running': True}}
++{u'return': {u'status': u'postmigrate', u'singlestep': False, u'running': False}}
+diff --git a/tests/qemu-iotests/group b/tests/qemu-iotests/group
+index fcbf3f3..0998dcd 100644
+--- a/tests/qemu-iotests/group
++++ b/tests/qemu-iotests/group
+@@ -226,3 +226,4 @@
+ 229 auto quick
+ 231 auto quick
+ 232 auto quick
++234 auto quick migration
+-- 
+1.8.3.1
+

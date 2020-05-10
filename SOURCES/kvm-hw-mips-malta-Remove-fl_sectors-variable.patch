@@ -1,0 +1,57 @@
+From 1170f872af13f294082e33e172e3c6e3a8995895 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:02 +0200
+Subject: [PATCH 35/53] hw/mips/malta: Remove fl_sectors variable
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-14-armbru@redhat.com>
+Patchwork-id: 87996
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 13/31] hw/mips/malta: Remove fl_sectors variable
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+Variable fl_sectors is used just once.  Since
+fl_sectors = bios_size >> 16 and bios_size = FLASH_SIZE there,
+we can simply use FLASH_SIZE >> 16, and eliminate variable.
+
+Signed-off-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20190308094610.21210-12-armbru@redhat.com>
+(cherry picked from commit 5207c595eb8910eee3d329214e65d64e348985d1)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/mips/mips_malta.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/hw/mips/mips_malta.c b/hw/mips/mips_malta.c
+index 7f19bdc..0566d18 100644
+--- a/hw/mips/mips_malta.c
++++ b/hw/mips/mips_malta.c
+@@ -1003,7 +1003,6 @@ void mips_malta_init(MachineState *machine)
+     DriveInfo *dinfo;
+     DriveInfo *hd[MAX_IDE_BUS * MAX_IDE_DEVS];
+     int fl_idx = 0;
+-    int fl_sectors = bios_size >> 16;
+     int be;
+ 
+     DeviceState *dev = qdev_create(NULL, TYPE_MIPS_MALTA);
+@@ -1067,7 +1066,7 @@ void mips_malta_init(MachineState *machine)
+     fl = pflash_cfi01_register(FLASH_ADDRESS, NULL, "mips_malta.bios",
+                                BIOS_SIZE,
+                                dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
+-                               65536, fl_sectors,
++                               65536, FLASH_SIZE >> 16,
+                                4, 0x0000, 0x0000, 0x0000, 0x0000, be);
+     bios = pflash_cfi01_get_memory(fl);
+     fl_idx++;
+-- 
+1.8.3.1
+

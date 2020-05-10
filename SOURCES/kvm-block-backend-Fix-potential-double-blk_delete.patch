@@ -1,0 +1,65 @@
+From f006159bba058c873bf8c1a3684ec72f338f2a2c Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:33 +0200
+Subject: [PATCH 42/49] block-backend: Fix potential double blk_delete()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-36-kwolf@redhat.com>
+Patchwork-id: 82186
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 35/42] block-backend: Fix potential double blk_delete()
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+blk_unref() first decreases the refcount of the BlockBackend and calls
+blk_delete() if the refcount reaches zero. Requests can still be in
+flight at this point, they are only drained during blk_delete():
+
+At this point, arbitrary callbacks can run. If any callback takes a
+temporary BlockBackend reference, it will first increase the refcount to
+1 and then decrease it to 0 again, triggering another blk_delete(). This
+will cause a use-after-free crash in the outer blk_delete().
+
+Fix it by draining the BlockBackend before decreasing to refcount to 0.
+Assert in blk_ref() that it never takes the first refcount (which would
+mean that the BlockBackend is already being deleted).
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/block-backend.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index ea85770..1adf76b 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -436,6 +436,7 @@ int blk_get_refcnt(BlockBackend *blk)
+  */
+ void blk_ref(BlockBackend *blk)
+ {
++    assert(blk->refcnt > 0);
+     blk->refcnt++;
+ }
+ 
+@@ -448,7 +449,13 @@ void blk_unref(BlockBackend *blk)
+ {
+     if (blk) {
+         assert(blk->refcnt > 0);
+-        if (!--blk->refcnt) {
++        if (blk->refcnt > 1) {
++            blk->refcnt--;
++        } else {
++            blk_drain(blk);
++            /* blk_drain() cannot resurrect blk, nobody held a reference */
++            assert(blk->refcnt == 1);
++            blk->refcnt = 0;
+             blk_delete(blk);
+         }
+     }
+-- 
+1.8.3.1
+

@@ -1,0 +1,71 @@
+From 0636bd2be78ee1df4a6a661e568ef02175f23127 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 3 Jul 2018 17:23:48 +0200
+Subject: [PATCH 03/89] i386: Add cache information in X86CPUDefinition
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180703172356.21038-3-ehabkost@redhat.com>
+Patchwork-id: 81211
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v3 02/10] i386: Add cache information in X86CPUDefinition
+Bugzilla: 1481253
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Babu Moger <babu.moger@amd.com>
+
+Add cache information in X86CPUDefinition and CPUX86State.
+
+Signed-off-by: Babu Moger <babu.moger@amd.com>
+Tested-by: Geoffrey McRae <geoff@hostfission.com>
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <20180510204148.11687-3-babu.moger@amd.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit 6aaeb05492ef668f415324f43e7d875c0f1e90b3)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 1 +
+ target/i386/cpu.h | 7 +++++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 9a5a164..7e81e08 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1105,6 +1105,7 @@ struct X86CPUDefinition {
+     int stepping;
+     FeatureWordArray features;
+     const char *model_id;
++    CPUCaches *cache_info;
+ };
+ 
+ static X86CPUDefinition builtin_x86_defs[] = {
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index a0e4eeb..912aa34 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -1098,6 +1098,12 @@ typedef struct CPUCacheInfo {
+ } CPUCacheInfo;
+ 
+ 
++typedef struct CPUCaches {
++        CPUCacheInfo l1d_cache;
++        CPUCacheInfo l1i_cache;
++        CPUCacheInfo l2_cache;
++        CPUCacheInfo l3_cache;
++} CPUCaches;
+ 
+ typedef struct CPUX86State {
+     /* standard registers */
+@@ -1285,6 +1291,7 @@ typedef struct CPUX86State {
+     /* Features that were explicitly enabled/disabled */
+     FeatureWordArray user_features;
+     uint32_t cpuid_model[12];
++    CPUCaches *cache_info;
+ 
+     /* MTRRs */
+     uint64_t mtrr_fixed[11];
+-- 
+1.8.3.1
+

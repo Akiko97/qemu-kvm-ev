@@ -1,0 +1,51 @@
+From 19dc347405263456be2c13750a97ee4567665c58 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:23:04 +0100
+Subject: [PATCH 126/163] nbd/server: Kill pointless shadowed variable
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-52-jsnow@redhat.com>
+Patchwork-id: 85217
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 51/55] nbd/server: Kill pointless shadowed variable
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+lgtm.com pointed out that commit 678ba275 introduced a shadowed
+declaration of local variable 'bs'; thankfully, the inner 'bs'
+obtained by 'blk_bs(blk)' matches the outer one given that we had
+'blk_insert_bs(blk, bs, errp)' a few lines earlier, and there are
+no later uses of 'bs' beyond the scope of the 'if (bitmap)' to
+care if we change the value stored in 'bs' while traveling the
+backing chain to find a bitmap.  So simply get rid of the extra
+declaration.
+
+Reported-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190207191357.6665-1-eblake@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit 269ee27e99cfbff983a9ab067ae22f6182f11fe2)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ nbd/server.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index 838c150..0910d09 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -1495,7 +1495,6 @@ NBDExport *nbd_export_new(BlockDriverState *bs, uint64_t dev_offset,
+ 
+     if (bitmap) {
+         BdrvDirtyBitmap *bm = NULL;
+-        BlockDriverState *bs = blk_bs(blk);
+ 
+         while (true) {
+             bm = bdrv_find_dirty_bitmap(bs, bitmap);
+-- 
+1.8.3.1
+

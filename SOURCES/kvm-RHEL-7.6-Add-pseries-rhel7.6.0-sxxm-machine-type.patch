@@ -1,0 +1,70 @@
+From 5aec9f19936a96f0140e8ede00fb1a5753477dc7 Mon Sep 17 00:00:00 2001
+From: David Gibson <dgibson@redhat.com>
+Date: Mon, 25 Jun 2018 05:11:41 +0200
+Subject: [PATCH 01/89] RHEL-7.6: Add pseries-rhel7.6.0-sxxm machine type
+
+RH-Author: David Gibson <dgibson@redhat.com>
+Message-id: <20180625051141.8203-1-dgibson@redhat.com>
+Patchwork-id: 81034
+O-Subject: [RHEL-7.6 qemu-kvm-rhv PATCH] RHEL-7.6: Add pseries-rhel7.6.0-sxxm machine type
+Bugzilla: 1592648
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Serhii Popovych <spopovyc@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+
+For the pseries-rhel7.3.0 .. pseries-rhel7.5.0 machine types we have -sxxm
+variants, the only difference being that the -sxxm variants have the
+Spectre and Meltdown mitigations available to guests by default.
+
+We'd delayed on adding a similar variant for RHEL 7.6, in the hope that we
+might be able to enable the mitigations by default for the ordinary 7.6
+machine type.  This requires that updated POWER8 firmware (FW860.51 or
+newer) be installed on the host.
+
+The updated firmware was only released late May, and it's not clear how
+quickly and widely it will be deployed.  For that reason, plus for
+consistency in how things need to be configured across rhel-7.y, we're now
+adding a pseries-rhel7.6.0-sxxm machine type.
+
+Signed-off-by: David Gibson <dgibson@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/spapr.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index e2df370..a580334 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -4369,6 +4369,28 @@ static void spapr_machine_rhel760_class_options(MachineClass *mc)
+ DEFINE_SPAPR_MACHINE(rhel760, "rhel7.6.0", true);
+ 
+ /*
++ * pseries-rhel7.6.0-sxxm
++ *
++ * pseries-rhel7.6.0 with speculative execution exploit mitigations enabled by default
++ */
++static void spapr_machine_rhel760sxxm_instance_options(MachineState *machine)
++{
++    spapr_machine_rhel760_instance_options(machine);
++}
++
++static void spapr_machine_rhel760sxxm_class_options(MachineClass *mc)
++{
++    sPAPRMachineClass *smc = SPAPR_MACHINE_CLASS(mc);
++
++    spapr_machine_rhel760_class_options(mc);
++    smc->default_caps.caps[SPAPR_CAP_CFPC] = SPAPR_CAP_WORKAROUND;
++    smc->default_caps.caps[SPAPR_CAP_SBBC] = SPAPR_CAP_WORKAROUND;
++    smc->default_caps.caps[SPAPR_CAP_IBS] = SPAPR_CAP_FIXED_CCD;
++}
++
++DEFINE_SPAPR_MACHINE(rhel760sxxm, "rhel7.6.0-sxxm", false);
++
++/*
+  * pseries-rhel7.5.0
+  * like SPAPR_COMPAT_2_11 and SPAPR_COMPAT_2_10
+  * SPAPR_CAP_HTM already enabled in 7.4
+-- 
+1.8.3.1
+

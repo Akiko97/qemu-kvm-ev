@@ -1,0 +1,118 @@
+From 862385809b305a6b02bc9cf39c8fb055bf764838 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:50:57 +0200
+Subject: [PATCH 30/53] sam460ex: Don't size flash memory to match backing
+ image
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-9-armbru@redhat.com>
+Patchwork-id: 87998
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 08/31] sam460ex: Don't size flash memory to match backing image
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+Machine "sam460ex" maps its flash memory at address 0xFFF00000.  When
+no image is supplied, its size is 1MiB (0x100000), and 512KiB of ROM
+get mapped on top of its second half.  Else, it's the size of the
+image rounded up to the next multiple of 64KiB.
+
+The rounding is actually useless: pflash_cfi01_realize() fails with
+"failed to read the initial flash content" unless it's a no-op.
+
+I have no idea what happens when the pflash's size exceeds 1MiB.
+Useful outcomes seem unlikely.
+
+I guess memory at the end of the address space remains unmapped when
+it's smaller than 1MiB.  Again, useful outcomes seem unlikely.
+
+The physical hardware appears to have 512KiB of flash memory:
+https://eu.mouser.com/datasheet/2/268/atmel_AT49BV040B-1180330.pdf
+
+For now, just set the flash memory size to 1MiB regardless of image
+size, and document the mess.
+
+Cc: BALATON Zoltan <balaton@eik.bme.hu>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: BALATON Zoltan <balaton@eik.bme.hu>
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Message-Id: <20190308094610.21210-7-armbru@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+(cherry picked from commit f30bc99559306eee9ef363bc11bf63a021aee707)
+[Trivial conflict in hw/ppc/sam460ex.c due to lack of commit ab3dd749241]
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/sam460ex.c | 41 ++++++++++++++++++++++++++---------------
+ 1 file changed, 26 insertions(+), 15 deletions(-)
+
+diff --git a/hw/ppc/sam460ex.c b/hw/ppc/sam460ex.c
+index dfff262..83c6e90 100644
+--- a/hw/ppc/sam460ex.c
++++ b/hw/ppc/sam460ex.c
+@@ -212,32 +212,43 @@ static void generate_eeprom_serial(uint8_t *eeprom)
+ 
+ static int sam460ex_load_uboot(void)
+ {
++    /*
++     * This first creates 1MiB of flash memory mapped at the end of
++     * the 32-bit address space (0xFFF00000..0xFFFFFFFF).
++     *
++     * If_PFLASH unit 0 is defined, the flash memory is initialized
++     * from that block backend.
++     *
++     * Else, it's initialized to zero.  And then 512KiB of ROM get
++     * mapped on top of its second half (0xFFF80000..0xFFFFFFFF),
++     * initialized from u-boot-sam460-20100605.bin.
++     *
++     * This doesn't smell right.
++     *
++     * The physical hardware appears to have 512KiB flash memory.
++     *
++     * TODO Figure out what we really need here, and clean this up.
++     */
++
+     DriveInfo *dinfo;
+-    BlockBackend *blk = NULL;
+-    hwaddr base = FLASH_BASE | ((hwaddr)FLASH_BASE_H << 32);
+-    long bios_size = FLASH_SIZE;
+-    int fl_sectors;
+ 
+     dinfo = drive_get(IF_PFLASH, 0, 0);
+-    if (dinfo) {
+-        blk = blk_by_legacy_dinfo(dinfo);
+-        bios_size = blk_getlength(blk);
+-    }
+-    fl_sectors = (bios_size + 65535) >> 16;
+-
+-    if (!pflash_cfi01_register(base, NULL, "sam460ex.flash", bios_size,
+-                               blk, (64 * 1024), fl_sectors,
++    if (!pflash_cfi01_register(FLASH_BASE | ((hwaddr)FLASH_BASE_H << 32),
++                               NULL, "sam460ex.flash", FLASH_SIZE,
++                               dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
++                               64 * KiB, FLASH_SIZE / (64 * KiB),
+                                1, 0x89, 0x18, 0x0000, 0x0, 1)) {
+         error_report("qemu: Error registering flash memory.");
+         /* XXX: return an error instead? */
+         exit(1);
+     }
+ 
+-    if (!blk) {
++    if (!dinfo) {
+         /*error_report("No flash image given with the 'pflash' parameter,"
+                 " using default u-boot image");*/
+-        base = UBOOT_LOAD_BASE | ((hwaddr)FLASH_BASE_H << 32);
+-        rom_add_file_fixed(UBOOT_FILENAME, base, -1);
++        rom_add_file_fixed(UBOOT_FILENAME,
++                           UBOOT_LOAD_BASE | ((hwaddr)FLASH_BASE_H << 32),
++                           -1);
+     }
+ 
+     return 0;
+-- 
+1.8.3.1
+

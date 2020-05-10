@@ -1,0 +1,103 @@
+From c018040299805135af45098641391a2818ddac8a Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Mon, 26 Aug 2019 09:19:44 +0200
+Subject: [PATCH 4/4] qemu-img: Enable BDRV_REQ_MAY_UNMAP in convert
+
+RH-Author: Maxim Levitsky <mlevitsk@redhat.com>
+Message-id: <20190826091944.16113-2-mlevitsk@redhat.com>
+Patchwork-id: 90164
+O-Subject: [RHEL-7.7.z qemu-kvm-rhev PATCH v3 1/1] qemu-img: Enable BDRV_REQ_MAY_UNMAP in convert
+Bugzilla: 1648622
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+From: Nir Soffer <nirsof@gmail.com>
+
+With Kevin's "block: Fix slow pre-zeroing in qemu-img convert"[1]
+(commit c9fdcf202f, 'qemu-img: Use BDRV_REQ_NO_FALLBACK for
+pre-zeroing') we skip the pre zero step called like this:
+
+    blk_make_zero(s->target, BDRV_REQ_MAY_UNMAP | BDRV_REQ_NO_FALLBACK)
+
+And we write zeroes later using:
+
+    blk_co_pwrite_zeroes(s->target,
+                         sector_num << BDRV_SECTOR_BITS,
+                         n << BDRV_SECTOR_BITS, 0);
+
+Since we use flags=0, this is translated to NBD_CMD_WRITE_ZEROES with
+NBD_CMD_FLAG_NO_HOLE flag, which cause the NBD server to allocated space
+instead of punching a hole.
+
+Here is an example failure:
+
+$ dd if=/dev/urandom of=src.img bs=1M count=5
+$ truncate -s 50m src.img
+$ truncate -s 50m dst.img
+$ nbdkit -f -v -e '' -U nbd.sock file file=dst.img
+
+$ ./qemu-img convert -n src.img nbd:unix:nbd.sock
+
+We can see in nbdkit log that it received the NBD_CMD_FLAG_NO_HOLE
+(may_trim=0):
+
+nbdkit: file[1]: debug: newstyle negotiation: flags: export 0x4d
+nbdkit: file[1]: debug: pwrite count=2097152 offset=0
+nbdkit: file[1]: debug: pwrite count=2097152 offset=2097152
+nbdkit: file[1]: debug: pwrite count=1048576 offset=4194304
+nbdkit: file[1]: debug: zero count=33554432 offset=5242880 may_trim=0
+nbdkit: file[1]: debug: zero count=13631488 offset=38797312 may_trim=0
+nbdkit: file[1]: debug: flush
+
+And the image became fully allocated:
+
+$ qemu-img info dst.img
+virtual size: 50M (52428800 bytes)
+disk size: 50M
+
+With this change we see that nbdkit did not receive the
+NBD_CMD_FLAG_NO_HOLE (may_trim=1):
+
+nbdkit: file[1]: debug: newstyle negotiation: flags: export 0x4d
+nbdkit: file[1]: debug: pwrite count=2097152 offset=0
+nbdkit: file[1]: debug: pwrite count=2097152 offset=2097152
+nbdkit: file[1]: debug: pwrite count=1048576 offset=4194304
+nbdkit: file[1]: debug: zero count=33554432 offset=5242880 may_trim=1
+nbdkit: file[1]: debug: zero count=13631488 offset=38797312 may_trim=1
+nbdkit: file[1]: debug: flush
+
+And the file is sparse as expected:
+
+$ qemu-img info dst.img
+virtual size: 50M (52428800 bytes)
+disk size: 5.0M
+
+[1] http://lists.nongnu.org/archive/html/qemu-block/2019-03/msg00761.html
+
+Signed-off-by: Nir Soffer <nsoffer@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit a3d6ae2299eaab1bced05551d0a0abfbcd9d08d0)
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-img.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index d588183..f7c1483 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -1738,7 +1738,8 @@ static int coroutine_fn convert_co_write(ImgConvertState *s, int64_t sector_num,
+             }
+             ret = blk_co_pwrite_zeroes(s->target,
+                                        sector_num << BDRV_SECTOR_BITS,
+-                                       n << BDRV_SECTOR_BITS, 0);
++                                       n << BDRV_SECTOR_BITS,
++                                       BDRV_REQ_MAY_UNMAP);
+             if (ret < 0) {
+                 return ret;
+             }
+-- 
+1.8.3.1
+

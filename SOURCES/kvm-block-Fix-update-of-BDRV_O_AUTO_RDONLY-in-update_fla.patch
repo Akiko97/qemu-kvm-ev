@@ -1,0 +1,57 @@
+From e5cb59a02593db3efcb88f1dd0cc592cf5bb34b7 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 23 Nov 2018 10:41:54 +0100
+Subject: [PATCH 13/34] block: Fix update of BDRV_O_AUTO_RDONLY in
+ update_flags_from_options()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20181123104154.13541-13-kwolf@redhat.com>
+Patchwork-id: 83122
+O-Subject: [RHEL-7.7/7.6.z qemu-kvm-rhev PATCH v2 12/12] block: Fix update of BDRV_O_AUTO_RDONLY in update_flags_from_options()
+Bugzilla: 1623986
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+RH-Acked-by: John Snow <jsnow@redhat.com>
+
+From: Alberto Garcia <berto@igalia.com>
+
+Commit e35bdc123a4ace9f4d3fcca added the auto-read-only option and the
+code to update its corresponding flag in update_flags_from_options(),
+but forgot to clear the flag if auto-read-only is false.
+
+Signed-off-by: Alberto Garcia <berto@igalia.com>
+Reported-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 2a3d4331fa2d40708188b8000f98ff1f7dcd33bc)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/block.c b/block.c
+index 6e3b574..037d2b0 100644
+--- a/block.c
++++ b/block.c
+@@ -1112,7 +1112,7 @@ static int bdrv_open_flags(BlockDriverState *bs, int flags)
+ 
+ static void update_flags_from_options(int *flags, QemuOpts *opts)
+ {
+-    *flags &= ~BDRV_O_CACHE_MASK;
++    *flags &= ~(BDRV_O_CACHE_MASK | BDRV_O_RDWR | BDRV_O_AUTO_RDONLY);
+ 
+     assert(qemu_opt_find(opts, BDRV_OPT_CACHE_NO_FLUSH));
+     if (qemu_opt_get_bool(opts, BDRV_OPT_CACHE_NO_FLUSH, false)) {
+@@ -1124,8 +1124,6 @@ static void update_flags_from_options(int *flags, QemuOpts *opts)
+         *flags |= BDRV_O_NOCACHE;
+     }
+ 
+-    *flags &= ~BDRV_O_RDWR;
+-
+     assert(qemu_opt_find(opts, BDRV_OPT_READ_ONLY));
+     if (!qemu_opt_get_bool(opts, BDRV_OPT_READ_ONLY, false)) {
+         *flags |= BDRV_O_RDWR;
+-- 
+1.8.3.1
+

@@ -1,0 +1,90 @@
+From ffe4f32d741439547577bc87e1f08df8f6f2a151 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 15 Mar 2019 18:10:08 +0100
+Subject: [PATCH 012/163] file-posix: Lock new fd in raw_reopen_prepare()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190315181010.14964-13-kwolf@redhat.com>
+Patchwork-id: 84889
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 12/14] file-posix: Lock new fd in raw_reopen_prepare()
+Bugzilla: 1685989
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+There is no reason why we can take locks on the new file descriptor only
+in raw_reopen_commit() where error handling isn't possible any more.
+Instead, we can already do this in raw_reopen_prepare().
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit a6aeca0ca530f104b5a5dd6704fca22b2c5edefa)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/file-posix.c | 27 ++++++++++++++++-----------
+ 1 file changed, 16 insertions(+), 11 deletions(-)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index b577d88..ae16f2f 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -897,7 +897,7 @@ static int raw_reopen_prepare(BDRVReopenState *state,
+ {
+     BDRVRawState *s;
+     BDRVRawReopenState *rs;
+-    int ret = 0;
++    int ret;
+     Error *local_err = NULL;
+ 
+     assert(state != NULL);
+@@ -921,14 +921,27 @@ static int raw_reopen_prepare(BDRVReopenState *state,
+     if (rs->fd != -1) {
+         raw_probe_alignment(state->bs, rs->fd, &local_err);
+         if (local_err) {
+-            qemu_close(rs->fd);
+-            rs->fd = -1;
+             error_propagate(errp, local_err);
+             ret = -EINVAL;
++            goto out_fd;
++        }
++
++        /* Copy locks to the new fd */
++        ret = raw_apply_lock_bytes(NULL, rs->fd, s->locked_perm,
++                                   s->locked_shared_perm, false, errp);
++        if (ret < 0) {
++            ret = -EINVAL;
++            goto out_fd;
+         }
+     }
+ 
+     s->reopen_state = state;
++    ret = 0;
++out_fd:
++    if (ret < 0) {
++        qemu_close(rs->fd);
++        rs->fd = -1;
++    }
+ out:
+     return ret;
+ }
+@@ -937,17 +950,9 @@ static void raw_reopen_commit(BDRVReopenState *state)
+ {
+     BDRVRawReopenState *rs = state->opaque;
+     BDRVRawState *s = state->bs->opaque;
+-    Error *local_err = NULL;
+ 
+     s->open_flags = rs->open_flags;
+ 
+-    /* Copy locks to the new fd before closing the old one. */
+-    raw_apply_lock_bytes(NULL, rs->fd, s->locked_perm,
+-                         s->locked_shared_perm, false, &local_err);
+-    if (local_err) {
+-        /* shouldn't fail in a sane host, but report it just in case. */
+-        error_report_err(local_err);
+-    }
+     qemu_close(s->fd);
+     s->fd = rs->fd;
+ 
+-- 
+1.8.3.1
+

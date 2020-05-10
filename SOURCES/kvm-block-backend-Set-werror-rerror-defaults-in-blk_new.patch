@@ -1,0 +1,69 @@
+From db87a7100f44bbaeef9860cf3c313642586bf030 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 14:35:27 +0100
+Subject: [PATCH 08/23] block-backend: Set werror/rerror defaults in blk_new()
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219143527.26763-2-kwolf@redhat.com>
+Patchwork-id: 84537
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/1] block-backend: Set werror/rerror defaults in blk_new()
+Bugzilla: 1631615
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+
+Currently, the default values for werror and rerror have to be set
+explicitly with blk_set_on_error() by the callers of blk_new(). The only
+caller actually doing this is blockdev_init(), which is called for
+BlockBackends created using -drive.
+
+In particular, anonymous BlockBackends created with
+-device ...,drive=<node-name> didn't get the correct default set and
+instead defaulted to the integer value 0 (= BLOCKDEV_ON_ERROR_REPORT).
+This is the intended default for rerror anyway, but the default for
+werror should be BLOCKDEV_ON_ERROR_ENOSPC.
+
+Set the defaults in blk_new() instead so that they apply no matter what
+way the BlockBackend was created.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Fam Zheng <famz@redhat.com>
+(cherry picked from commit cb53460b708db3617ab73248374d071d5552c263)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/block-backend.c      | 3 +++
+ tests/qemu-iotests/067.out | 1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 36922d1..ddec869 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -325,6 +325,9 @@ BlockBackend *blk_new(uint64_t perm, uint64_t shared_perm)
+     blk->shared_perm = shared_perm;
+     blk_set_enable_write_cache(blk, true);
+ 
++    blk->on_read_error = BLOCKDEV_ON_ERROR_REPORT;
++    blk->on_write_error = BLOCKDEV_ON_ERROR_ENOSPC;
++
+     block_acct_init(&blk->stats);
+ 
+     notifier_list_init(&blk->remove_bs_notifiers);
+diff --git a/tests/qemu-iotests/067.out b/tests/qemu-iotests/067.out
+index 2e71cff..b10c71d 100644
+--- a/tests/qemu-iotests/067.out
++++ b/tests/qemu-iotests/067.out
+@@ -385,6 +385,7 @@ Testing: -device virtio-scsi -device scsi-cd,id=cd0
+ {
+     "return": [
+         {
++            "io-status": "ok",
+             "device": "",
+             "locked": false,
+             "removable": true,
+-- 
+1.8.3.1
+

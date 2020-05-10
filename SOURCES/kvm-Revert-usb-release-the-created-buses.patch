@@ -1,0 +1,99 @@
+From 5969300e27c6a28f1bc345b84cd9e690780e29f8 Mon Sep 17 00:00:00 2001
+From: Serhii Popovych <spopovyc@redhat.com>
+Date: Mon, 9 Jul 2018 11:31:18 +0200
+Subject: [PATCH 28/89] Revert "usb: release the created buses"
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Serhii Popovych <spopovyc@redhat.com>
+Message-id: <1531135878-18813-4-git-send-email-spopovyc@redhat.com>
+Patchwork-id: 81266
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v2 3/3] Revert "usb: release the created buses"
+Bugzilla: 1556678
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+
+From: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+The USB device don't hold the bus. There is no ASAN related reports
+anymore.
+
+This reverts commit cd7bc87868d534f95e928cad98e2a52df7695771.
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: 20180613172815.32738-3-marcandre.lureau@redhat.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+(cherry picked from commit 9b5c2fd53feb574036747d0284fd7f73dfedc89c)
+Signed-off-by: Serhii Popovych <spopovyc@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/usb/dev-storage.c | 16 ----------------
+ hw/usb/dev-uas.c     |  2 --
+ 2 files changed, 18 deletions(-)
+
+diff --git a/hw/usb/dev-storage.c b/hw/usb/dev-storage.c
+index 68e2062..9fb00a9 100644
+--- a/hw/usb/dev-storage.c
++++ b/hw/usb/dev-storage.c
+@@ -589,13 +589,6 @@ static const struct SCSIBusInfo usb_msd_scsi_info_bot = {
+     .load_request = usb_msd_load_request,
+ };
+ 
+-static void usb_msd_unrealize_storage(USBDevice *dev, Error **errp)
+-{
+-    MSDState *s = USB_STORAGE_DEV(dev);
+-
+-    object_unref(OBJECT(&s->bus));
+-}
+-
+ static void usb_msd_storage_realize(USBDevice *dev, Error **errp)
+ {
+     MSDState *s = USB_STORAGE_DEV(dev);
+@@ -645,13 +638,6 @@ static void usb_msd_storage_realize(USBDevice *dev, Error **errp)
+     s->scsi_dev = scsi_dev;
+ }
+ 
+-static void usb_msd_bot_unrealize(USBDevice *dev, Error **errp)
+-{
+-    MSDState *s = USB_STORAGE_DEV(dev);
+-
+-    object_unref(OBJECT(&s->bus));
+-}
+-
+ static void usb_msd_bot_realize(USBDevice *dev, Error **errp)
+ {
+     MSDState *s = USB_STORAGE_DEV(dev);
+@@ -716,7 +702,6 @@ static void usb_msd_class_storage_initfn(ObjectClass *klass, void *data)
+     USBDeviceClass *uc = USB_DEVICE_CLASS(klass);
+ 
+     uc->realize = usb_msd_storage_realize;
+-    uc->unrealize = usb_msd_unrealize_storage;
+     dc->props = msd_properties;
+ }
+ 
+@@ -779,7 +764,6 @@ static void usb_msd_class_bot_initfn(ObjectClass *klass, void *data)
+     USBDeviceClass *uc = USB_DEVICE_CLASS(klass);
+ 
+     uc->realize = usb_msd_bot_realize;
+-    uc->unrealize = usb_msd_bot_unrealize;
+     uc->attached_settable = true;
+ }
+ 
+diff --git a/hw/usb/dev-uas.c b/hw/usb/dev-uas.c
+index c218b53..eaf515d 100644
+--- a/hw/usb/dev-uas.c
++++ b/hw/usb/dev-uas.c
+@@ -896,8 +896,6 @@ static void usb_uas_unrealize(USBDevice *dev, Error **errp)
+     UASDevice *uas = USB_UAS(dev);
+ 
+     qemu_bh_delete(uas->status_bh);
+-
+-    object_unref(OBJECT(&uas->bus));
+ }
+ 
+ static void usb_uas_realize(USBDevice *dev, Error **errp)
+-- 
+1.8.3.1
+

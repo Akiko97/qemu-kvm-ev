@@ -1,0 +1,72 @@
+From b5c5693d22cda0db33d01c6350d790b59a98c92c Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:42 +0200
+Subject: [PATCH 57/89] block/dirty-bitmap: add bdrv_enable_dirty_bitmap_locked
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-7-jsnow@redhat.com>
+Patchwork-id: 81405
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 06/35] block/dirty-bitmap: add bdrv_enable_dirty_bitmap_locked
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Add _locked version of bdrv_enable_dirty_bitmap, to fix dirty bitmap
+migration in the following patch.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20180625165745.25259-2-vsementsov@virtuozzo.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 92bcea40d3aac62853e60426bd109b748d4d1cd2)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c         | 9 +++++++--
+ include/block/dirty-bitmap.h | 1 +
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index 4159d39..4d6ae8b 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -250,6 +250,12 @@ int bdrv_dirty_bitmap_create_successor(BlockDriverState *bs,
+     return 0;
+ }
+ 
++void bdrv_enable_dirty_bitmap_locked(BdrvDirtyBitmap *bitmap)
++{
++    assert(!bdrv_dirty_bitmap_frozen(bitmap));
++    bitmap->disabled = false;
++}
++
+ /* Called with BQL taken. */
+ void bdrv_dirty_bitmap_enable_successor(BdrvDirtyBitmap *bitmap)
+ {
+@@ -453,8 +459,7 @@ void bdrv_disable_dirty_bitmap(BdrvDirtyBitmap *bitmap)
+ void bdrv_enable_dirty_bitmap(BdrvDirtyBitmap *bitmap)
+ {
+     bdrv_dirty_bitmap_lock(bitmap);
+-    assert(!bdrv_dirty_bitmap_frozen(bitmap));
+-    bitmap->disabled = false;
++    bdrv_enable_dirty_bitmap_locked(bitmap);
+     bdrv_dirty_bitmap_unlock(bitmap);
+ }
+ 
+diff --git a/include/block/dirty-bitmap.h b/include/block/dirty-bitmap.h
+index 1e14743..af9ba3c 100644
+--- a/include/block/dirty-bitmap.h
++++ b/include/block/dirty-bitmap.h
+@@ -33,6 +33,7 @@ void bdrv_remove_persistent_dirty_bitmap(BlockDriverState *bs,
+                                          Error **errp);
+ void bdrv_disable_dirty_bitmap(BdrvDirtyBitmap *bitmap);
+ void bdrv_enable_dirty_bitmap(BdrvDirtyBitmap *bitmap);
++void bdrv_enable_dirty_bitmap_locked(BdrvDirtyBitmap *bitmap);
+ BlockDirtyInfoList *bdrv_query_dirty_bitmaps(BlockDriverState *bs);
+ uint32_t bdrv_get_default_bitmap_granularity(BlockDriverState *bs);
+ uint32_t bdrv_dirty_bitmap_granularity(const BdrvDirtyBitmap *bitmap);
+-- 
+1.8.3.1
+

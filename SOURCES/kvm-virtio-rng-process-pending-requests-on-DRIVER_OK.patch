@@ -1,0 +1,70 @@
+From 01ad4c3dbed4a506e4c7988026336181aa5fd991 Mon Sep 17 00:00:00 2001
+From: Pankaj Gupta <pagupta@redhat.com>
+Date: Fri, 13 Jul 2018 12:52:28 +0200
+Subject: [PATCH 42/89] virtio-rng: process pending requests on DRIVER_OK
+
+RH-Author: Pankaj Gupta <pagupta@redhat.com>
+Message-id: <20180713125228.14458-1-pagupta@redhat.com>
+Patchwork-id: 81347
+O-Subject: [RHEL7.6 qemu-kvm-rhev PATCH] virtio-rng: process pending requests on DRIVER_OK
+Bugzilla: 1576743
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Cornelia Huck <cohuck@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+virtio-rng device causes old guest kernels(2.6.32) to hang on latest qemu.
+The driver attempts to read from the virtio-rng device too early in it's
+initialization. Qemu detects guest is not ready and returns, resulting in
+hang.
+
+To fix handle pending requests when guest is running and driver status is
+set to 'VIRTIO_CONFIG_S_DRIVER_OK'.
+
+CC: qemu-stable@nongnu.org
+Reported-by: Sergio lopez <slopezpa@redhat.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: Pankaj Gupta <pagupta@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 5d9c9ea22ab4f3b3ee497523e34b6f4d3281f62d)
+Signed-off-by: Pankaj Gupta <pagupta@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/virtio/virtio-rng.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/hw/virtio/virtio-rng.c b/hw/virtio/virtio-rng.c
+index 289bbca..855f1b4 100644
+--- a/hw/virtio/virtio-rng.c
++++ b/hw/virtio/virtio-rng.c
+@@ -156,6 +156,19 @@ static void check_rate_limit(void *opaque)
+     vrng->activate_timer = true;
+ }
+ 
++static void virtio_rng_set_status(VirtIODevice *vdev, uint8_t status)
++{
++    VirtIORNG *vrng = VIRTIO_RNG(vdev);
++
++    if (!vdev->vm_running) {
++        return;
++    }
++    vdev->status = status;
++
++    /* Something changed, try to process buffers */
++    virtio_rng_process(vrng);
++}
++
+ static void virtio_rng_device_realize(DeviceState *dev, Error **errp)
+ {
+     VirtIODevice *vdev = VIRTIO_DEVICE(dev);
+@@ -261,6 +274,7 @@ static void virtio_rng_class_init(ObjectClass *klass, void *data)
+     vdc->realize = virtio_rng_device_realize;
+     vdc->unrealize = virtio_rng_device_unrealize;
+     vdc->get_features = get_features;
++    vdc->set_status = virtio_rng_set_status;
+ }
+ 
+ static const TypeInfo virtio_rng_info = {
+-- 
+1.8.3.1
+

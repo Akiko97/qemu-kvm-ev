@@ -1,0 +1,71 @@
+From ae3fa9b069ad0e99fda95a34b18c68effe576f85 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:51:13 +0200
+Subject: [PATCH 46/53] vl: Create block backends before setting machine
+ properties
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-25-armbru@redhat.com>
+Patchwork-id: 87985
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 24/31] vl: Create block backends before setting machine properties
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+qemu-system-FOO's main() acts on command line arguments in its own
+idiosyncratic order.  There's not much method to its madness.
+Whenever we find a case where one kind of command line argument needs
+to refer to something created for another kind later, we rejigger the
+order.
+
+Block devices get created long after machine properties get processed.
+Therefore, block device machine properties can be created, but not
+set.  No such properties exist.  But the next commit will create some.
+Time to rejigger again: create block devices earlier.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-Id: <20190308131445.17502-8-armbru@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit cda4aa9a5a08777cf13e164c0543bd4888b8adce)
+[Trivial conflict in vl.c due to lack of commit 2d5a3a8b02a]
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ vl.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/vl.c b/vl.c
+index e0e60fb..15e87a4 100644
+--- a/vl.c
++++ b/vl.c
+@@ -4465,6 +4465,13 @@ int main(int argc, char **argv, char **envp)
+         exit(0);
+     }
+ 
++    /*
++     * Note: we need to create block backends before
++     * machine_set_property(), so machine properties can refer to
++     * them.
++     */
++    configure_blockdev(&bdo_queue, machine_class, snapshot);
++
+     machine_opts = qemu_get_machine_opts();
+     if (qemu_opt_foreach(machine_opts, machine_set_property, current_machine,
+                          NULL)) {
+@@ -4590,8 +4597,6 @@ int main(int argc, char **argv, char **envp)
+     ram_mig_init();
+     dirty_bitmap_mig_init();
+ 
+-    configure_blockdev(&bdo_queue, machine_class, snapshot);
+-
+     if (qemu_opts_foreach(qemu_find_opts("mon"),
+                           mon_init_func, NULL, NULL)) {
+         exit(1);
+-- 
+1.8.3.1
+

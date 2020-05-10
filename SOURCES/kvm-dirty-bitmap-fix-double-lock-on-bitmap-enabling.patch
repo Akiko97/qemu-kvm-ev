@@ -1,0 +1,74 @@
+From a37c990a113d5e205d928e629c96d3a82c00d920 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 18 Jul 2018 22:54:43 +0200
+Subject: [PATCH 58/89] dirty-bitmap: fix double lock on bitmap enabling
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180718225511.14878-8-jsnow@redhat.com>
+Patchwork-id: 81403
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 07/35] dirty-bitmap: fix double lock on bitmap enabling
+Bugzilla: 1207657
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+
+Bitmap lock/unlock were added to bdrv_enable_dirty_bitmap in
+8b1402ce80d, but some places were not updated correspondingly, which
+leads to trying to take this lock twice, which is dead-lock. Fix this.
+
+Actually, iotest 199 (about dirty bitmap postcopy migration) is broken
+now, and this fixes it.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20180625165745.25259-3-vsementsov@virtuozzo.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 58f72b965e9e1820d246329461216c4d13140122)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/dirty-bitmap.c           | 3 ++-
+ migration/block-dirty-bitmap.c | 4 ++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/block/dirty-bitmap.c b/block/dirty-bitmap.c
+index 4d6ae8b..f580c1a 100644
+--- a/block/dirty-bitmap.c
++++ b/block/dirty-bitmap.c
+@@ -259,8 +259,9 @@ void bdrv_enable_dirty_bitmap_locked(BdrvDirtyBitmap *bitmap)
+ /* Called with BQL taken. */
+ void bdrv_dirty_bitmap_enable_successor(BdrvDirtyBitmap *bitmap)
+ {
++    assert(bitmap->mutex == bitmap->successor->mutex);
+     qemu_mutex_lock(bitmap->mutex);
+-    bdrv_enable_dirty_bitmap(bitmap->successor);
++    bdrv_enable_dirty_bitmap_locked(bitmap->successor);
+     qemu_mutex_unlock(bitmap->mutex);
+ }
+ 
+diff --git a/migration/block-dirty-bitmap.c b/migration/block-dirty-bitmap.c
+index 2c541c9..fefbc6a 100644
+--- a/migration/block-dirty-bitmap.c
++++ b/migration/block-dirty-bitmap.c
+@@ -511,7 +511,7 @@ void dirty_bitmap_mig_before_vm_start(void)
+         DirtyBitmapLoadBitmapState *b = item->data;
+ 
+         if (b->migrated) {
+-            bdrv_enable_dirty_bitmap(b->bitmap);
++            bdrv_enable_dirty_bitmap_locked(b->bitmap);
+         } else {
+             bdrv_dirty_bitmap_enable_successor(b->bitmap);
+         }
+@@ -547,7 +547,7 @@ static void dirty_bitmap_load_complete(QEMUFile *f, DirtyBitmapLoadState *s)
+         if (enabled_bitmaps == NULL) {
+             /* in postcopy */
+             bdrv_reclaim_dirty_bitmap_locked(s->bs, s->bitmap, &error_abort);
+-            bdrv_enable_dirty_bitmap(s->bitmap);
++            bdrv_enable_dirty_bitmap_locked(s->bitmap);
+         } else {
+             /* target not started, successor must be empty */
+             int64_t count = bdrv_get_dirty_count(s->bitmap);
+-- 
+1.8.3.1
+

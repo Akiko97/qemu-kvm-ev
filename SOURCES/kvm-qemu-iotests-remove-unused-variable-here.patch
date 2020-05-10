@@ -1,0 +1,2242 @@
+From 7a29e3639569a4fd765bf293b40caa465786fddc Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Fri, 22 Mar 2019 03:22:26 +0100
+Subject: [PATCH 059/163] qemu-iotests: remove unused variable 'here'
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190322032241.8111-14-jsnow@redhat.com>
+Patchwork-id: 85101
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 13/28] qemu-iotests: remove unused variable 'here'
+Bugzilla: 1691563
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Mao Zhongyi <maozhongyi@cmss.chinamobile.com>
+
+Running
+git grep '\$here' tests/qemu-iotests
+
+has 0 hits, which means we are setting a variable that has
+no use.  It appears that commit e8f8624d removed the last
+use.  So execute the following cmd to remove all of
+the 'here=...' lines as dead code.
+
+sed -i '/^here=/d' $(git grep -l '^here=' tests/qemu-iotests)
+
+Cc: kwolf@redhat.com
+Cc: mreitz@redhat.com
+Cc: eblake@redhat.com
+Suggested-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Mao Zhongyi <maozhongyi@cmss.chinamobile.com>
+Message-Id: <20181024094051.4470-3-maozhongyi@cmss.chinamobile.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+[eblake: touch up commit message, reorder series, rebase to master]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit bf22957309369cf6f642e715ff6c470671920e7e)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ tests/qemu-iotests/001 | 1 -
+ tests/qemu-iotests/002 | 1 -
+ tests/qemu-iotests/003 | 1 -
+ tests/qemu-iotests/004 | 1 -
+ tests/qemu-iotests/005 | 1 -
+ tests/qemu-iotests/007 | 1 -
+ tests/qemu-iotests/008 | 1 -
+ tests/qemu-iotests/009 | 1 -
+ tests/qemu-iotests/010 | 1 -
+ tests/qemu-iotests/011 | 1 -
+ tests/qemu-iotests/012 | 1 -
+ tests/qemu-iotests/013 | 1 -
+ tests/qemu-iotests/014 | 1 -
+ tests/qemu-iotests/015 | 1 -
+ tests/qemu-iotests/017 | 1 -
+ tests/qemu-iotests/018 | 1 -
+ tests/qemu-iotests/019 | 1 -
+ tests/qemu-iotests/020 | 1 -
+ tests/qemu-iotests/021 | 1 -
+ tests/qemu-iotests/022 | 1 -
+ tests/qemu-iotests/023 | 1 -
+ tests/qemu-iotests/024 | 1 -
+ tests/qemu-iotests/025 | 1 -
+ tests/qemu-iotests/026 | 1 -
+ tests/qemu-iotests/027 | 1 -
+ tests/qemu-iotests/028 | 1 -
+ tests/qemu-iotests/029 | 1 -
+ tests/qemu-iotests/031 | 1 -
+ tests/qemu-iotests/032 | 1 -
+ tests/qemu-iotests/033 | 1 -
+ tests/qemu-iotests/034 | 1 -
+ tests/qemu-iotests/035 | 1 -
+ tests/qemu-iotests/036 | 1 -
+ tests/qemu-iotests/037 | 1 -
+ tests/qemu-iotests/038 | 1 -
+ tests/qemu-iotests/039 | 1 -
+ tests/qemu-iotests/042 | 1 -
+ tests/qemu-iotests/043 | 1 -
+ tests/qemu-iotests/046 | 1 -
+ tests/qemu-iotests/047 | 1 -
+ tests/qemu-iotests/049 | 1 -
+ tests/qemu-iotests/050 | 1 -
+ tests/qemu-iotests/051 | 1 -
+ tests/qemu-iotests/052 | 1 -
+ tests/qemu-iotests/053 | 1 -
+ tests/qemu-iotests/054 | 1 -
+ tests/qemu-iotests/058 | 1 -
+ tests/qemu-iotests/059 | 1 -
+ tests/qemu-iotests/060 | 1 -
+ tests/qemu-iotests/061 | 1 -
+ tests/qemu-iotests/062 | 1 -
+ tests/qemu-iotests/063 | 1 -
+ tests/qemu-iotests/064 | 1 -
+ tests/qemu-iotests/066 | 1 -
+ tests/qemu-iotests/067 | 1 -
+ tests/qemu-iotests/068 | 1 -
+ tests/qemu-iotests/069 | 1 -
+ tests/qemu-iotests/070 | 1 -
+ tests/qemu-iotests/071 | 1 -
+ tests/qemu-iotests/072 | 1 -
+ tests/qemu-iotests/073 | 1 -
+ tests/qemu-iotests/075 | 1 -
+ tests/qemu-iotests/076 | 1 -
+ tests/qemu-iotests/077 | 1 -
+ tests/qemu-iotests/078 | 1 -
+ tests/qemu-iotests/079 | 1 -
+ tests/qemu-iotests/080 | 1 -
+ tests/qemu-iotests/081 | 1 -
+ tests/qemu-iotests/082 | 1 -
+ tests/qemu-iotests/083 | 1 -
+ tests/qemu-iotests/084 | 1 -
+ tests/qemu-iotests/085 | 1 -
+ tests/qemu-iotests/086 | 1 -
+ tests/qemu-iotests/087 | 1 -
+ tests/qemu-iotests/088 | 1 -
+ tests/qemu-iotests/089 | 1 -
+ tests/qemu-iotests/090 | 1 -
+ tests/qemu-iotests/091 | 1 -
+ tests/qemu-iotests/092 | 1 -
+ tests/qemu-iotests/094 | 1 -
+ tests/qemu-iotests/095 | 1 -
+ tests/qemu-iotests/097 | 1 -
+ tests/qemu-iotests/098 | 1 -
+ tests/qemu-iotests/099 | 1 -
+ tests/qemu-iotests/101 | 1 -
+ tests/qemu-iotests/102 | 1 -
+ tests/qemu-iotests/103 | 1 -
+ tests/qemu-iotests/104 | 1 -
+ tests/qemu-iotests/105 | 1 -
+ tests/qemu-iotests/106 | 1 -
+ tests/qemu-iotests/107 | 1 -
+ tests/qemu-iotests/108 | 1 -
+ tests/qemu-iotests/109 | 1 -
+ tests/qemu-iotests/110 | 1 -
+ tests/qemu-iotests/111 | 1 -
+ tests/qemu-iotests/112 | 1 -
+ tests/qemu-iotests/113 | 1 -
+ tests/qemu-iotests/114 | 1 -
+ tests/qemu-iotests/115 | 1 -
+ tests/qemu-iotests/116 | 1 -
+ tests/qemu-iotests/117 | 1 -
+ tests/qemu-iotests/119 | 1 -
+ tests/qemu-iotests/120 | 1 -
+ tests/qemu-iotests/121 | 1 -
+ tests/qemu-iotests/122 | 1 -
+ tests/qemu-iotests/123 | 1 -
+ tests/qemu-iotests/125 | 1 -
+ tests/qemu-iotests/126 | 1 -
+ tests/qemu-iotests/127 | 1 -
+ tests/qemu-iotests/128 | 1 -
+ tests/qemu-iotests/130 | 1 -
+ tests/qemu-iotests/131 | 1 -
+ tests/qemu-iotests/133 | 1 -
+ tests/qemu-iotests/134 | 1 -
+ tests/qemu-iotests/135 | 1 -
+ tests/qemu-iotests/137 | 1 -
+ tests/qemu-iotests/138 | 1 -
+ tests/qemu-iotests/140 | 1 -
+ tests/qemu-iotests/141 | 1 -
+ tests/qemu-iotests/142 | 1 -
+ tests/qemu-iotests/143 | 1 -
+ tests/qemu-iotests/144 | 1 -
+ tests/qemu-iotests/145 | 1 -
+ tests/qemu-iotests/146 | 1 -
+ tests/qemu-iotests/150 | 1 -
+ tests/qemu-iotests/153 | 1 -
+ tests/qemu-iotests/154 | 1 -
+ tests/qemu-iotests/156 | 1 -
+ tests/qemu-iotests/157 | 1 -
+ tests/qemu-iotests/158 | 1 -
+ tests/qemu-iotests/159 | 1 -
+ tests/qemu-iotests/160 | 1 -
+ tests/qemu-iotests/162 | 1 -
+ tests/qemu-iotests/170 | 1 -
+ tests/qemu-iotests/171 | 1 -
+ tests/qemu-iotests/172 | 1 -
+ tests/qemu-iotests/173 | 1 -
+ tests/qemu-iotests/174 | 1 -
+ tests/qemu-iotests/175 | 1 -
+ tests/qemu-iotests/176 | 1 -
+ tests/qemu-iotests/177 | 1 -
+ tests/qemu-iotests/178 | 1 -
+ tests/qemu-iotests/179 | 1 -
+ tests/qemu-iotests/181 | 1 -
+ tests/qemu-iotests/182 | 1 -
+ tests/qemu-iotests/183 | 1 -
+ tests/qemu-iotests/184 | 1 -
+ tests/qemu-iotests/185 | 1 -
+ tests/qemu-iotests/186 | 1 -
+ tests/qemu-iotests/187 | 1 -
+ tests/qemu-iotests/188 | 1 -
+ tests/qemu-iotests/189 | 1 -
+ tests/qemu-iotests/190 | 1 -
+ tests/qemu-iotests/191 | 1 -
+ tests/qemu-iotests/192 | 1 -
+ tests/qemu-iotests/195 | 1 -
+ tests/qemu-iotests/197 | 1 -
+ tests/qemu-iotests/198 | 1 -
+ tests/qemu-iotests/200 | 1 -
+ tests/qemu-iotests/204 | 1 -
+ tests/qemu-iotests/214 | 1 -
+ tests/qemu-iotests/215 | 1 -
+ tests/qemu-iotests/221 | 1 -
+ tests/qemu-iotests/223 | 1 -
+ tests/qemu-iotests/226 | 1 -
+ tests/qemu-iotests/227 | 1 -
+ tests/qemu-iotests/229 | 1 -
+ tests/qemu-iotests/231 | 1 -
+ tests/qemu-iotests/232 | 1 -
+ 169 files changed, 169 deletions(-)
+
+diff --git a/tests/qemu-iotests/001 b/tests/qemu-iotests/001
+index ffd14e2..55dcbb7 100755
+--- a/tests/qemu-iotests/001
++++ b/tests/qemu-iotests/001
+@@ -24,7 +24,6 @@ owner=hch@lst.de
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/002 b/tests/qemu-iotests/002
+index d4f8e91..74572b4 100755
+--- a/tests/qemu-iotests/002
++++ b/tests/qemu-iotests/002
+@@ -24,7 +24,6 @@ owner=hch@lst.de
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/003 b/tests/qemu-iotests/003
+index 19889b9..bf25955 100755
+--- a/tests/qemu-iotests/003
++++ b/tests/qemu-iotests/003
+@@ -24,7 +24,6 @@ owner=hch@lst.de
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/004 b/tests/qemu-iotests/004
+index 6f2aa3d..841b15d 100755
+--- a/tests/qemu-iotests/004
++++ b/tests/qemu-iotests/004
+@@ -24,7 +24,6 @@ owner=hch@lst.de
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/005 b/tests/qemu-iotests/005
+index 4447377..8aa4283 100755
+--- a/tests/qemu-iotests/005
++++ b/tests/qemu-iotests/005
+@@ -27,7 +27,6 @@ owner=hch@lst.de
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/007 b/tests/qemu-iotests/007
+index fa543ee..b983022 100755
+--- a/tests/qemu-iotests/007
++++ b/tests/qemu-iotests/007
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/008 b/tests/qemu-iotests/008
+index 8e89d74..8dfa10b 100755
+--- a/tests/qemu-iotests/008
++++ b/tests/qemu-iotests/008
+@@ -24,7 +24,6 @@ owner=hch@lst.de
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/009 b/tests/qemu-iotests/009
+index 16e4475..73ae09d 100755
+--- a/tests/qemu-iotests/009
++++ b/tests/qemu-iotests/009
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/010 b/tests/qemu-iotests/010
+index 151dac2..751aca9 100755
+--- a/tests/qemu-iotests/010
++++ b/tests/qemu-iotests/010
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/011 b/tests/qemu-iotests/011
+index f8d044e..3590956 100755
+--- a/tests/qemu-iotests/011
++++ b/tests/qemu-iotests/011
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/012 b/tests/qemu-iotests/012
+index 01a770d..de9a5fb 100755
+--- a/tests/qemu-iotests/012
++++ b/tests/qemu-iotests/012
+@@ -26,7 +26,6 @@ owner=hch@lst.de
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/013 b/tests/qemu-iotests/013
+index d013f87..5e1efce 100755
+--- a/tests/qemu-iotests/013
++++ b/tests/qemu-iotests/013
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/014 b/tests/qemu-iotests/014
+index 2ea79e8..9ade571 100755
+--- a/tests/qemu-iotests/014
++++ b/tests/qemu-iotests/014
+@@ -26,7 +26,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/015 b/tests/qemu-iotests/015
+index aaf9c3f..21f7d42 100755
+--- a/tests/qemu-iotests/015
++++ b/tests/qemu-iotests/015
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/017 b/tests/qemu-iotests/017
+index 4f9302d..1ac6f74 100755
+--- a/tests/qemu-iotests/017
++++ b/tests/qemu-iotests/017
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/018 b/tests/qemu-iotests/018
+index 1d39d35..bba30a1 100755
+--- a/tests/qemu-iotests/018
++++ b/tests/qemu-iotests/018
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/019 b/tests/qemu-iotests/019
+index 24a789a..8f911a7 100755
+--- a/tests/qemu-iotests/019
++++ b/tests/qemu-iotests/019
+@@ -26,7 +26,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/020 b/tests/qemu-iotests/020
+index eac5080..6b972d0 100755
+--- a/tests/qemu-iotests/020
++++ b/tests/qemu-iotests/020
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/021 b/tests/qemu-iotests/021
+index 11e8ed7..c15ebf9 100755
+--- a/tests/qemu-iotests/021
++++ b/tests/qemu-iotests/021
+@@ -24,7 +24,6 @@ owner=hch@lst.de
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/022 b/tests/qemu-iotests/022
+index 2452a9f..44765c7 100755
+--- a/tests/qemu-iotests/022
++++ b/tests/qemu-iotests/022
+@@ -26,7 +26,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/023 b/tests/qemu-iotests/023
+index 497ae1e..c8e1b9a 100755
+--- a/tests/qemu-iotests/023
++++ b/tests/qemu-iotests/023
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/024 b/tests/qemu-iotests/024
+index 4071ed6..428b5c8 100755
+--- a/tests/qemu-iotests/024
++++ b/tests/qemu-iotests/024
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/025 b/tests/qemu-iotests/025
+index 70dd5f1..fcd4d97 100755
+--- a/tests/qemu-iotests/025
++++ b/tests/qemu-iotests/025
+@@ -24,7 +24,6 @@ owner=stefanha@linux.vnet.ibm.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/026 b/tests/qemu-iotests/026
+index 582d254..31276d9 100755
+--- a/tests/qemu-iotests/026
++++ b/tests/qemu-iotests/026
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/027 b/tests/qemu-iotests/027
+index 08593da..2c46ae1 100755
+--- a/tests/qemu-iotests/027
++++ b/tests/qemu-iotests/027
+@@ -24,7 +24,6 @@ owner=stefanha@linux.vnet.ibm.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/028 b/tests/qemu-iotests/028
+index 97a8869..a2a7c93 100755
+--- a/tests/qemu-iotests/028
++++ b/tests/qemu-iotests/028
+@@ -27,7 +27,6 @@ owner=stefanha@linux.vnet.ibm.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/029 b/tests/qemu-iotests/029
+index 30bab24..51fd0d4 100755
+--- a/tests/qemu-iotests/029
++++ b/tests/qemu-iotests/029
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/031 b/tests/qemu-iotests/031
+index 1e08abc..ac0dfae 100755
+--- a/tests/qemu-iotests/031
++++ b/tests/qemu-iotests/031
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/032 b/tests/qemu-iotests/032
+index 24bcb52..3e86bb0 100755
+--- a/tests/qemu-iotests/032
++++ b/tests/qemu-iotests/032
+@@ -26,7 +26,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/033 b/tests/qemu-iotests/033
+index ee8a133..46b9138 100755
+--- a/tests/qemu-iotests/033
++++ b/tests/qemu-iotests/033
+@@ -24,7 +24,6 @@ owner=pbonzini@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/034 b/tests/qemu-iotests/034
+index 1b28bda..62812cd 100755
+--- a/tests/qemu-iotests/034
++++ b/tests/qemu-iotests/034
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/035 b/tests/qemu-iotests/035
+index efc38e4..a5716ca 100755
+--- a/tests/qemu-iotests/035
++++ b/tests/qemu-iotests/035
+@@ -25,7 +25,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/036 b/tests/qemu-iotests/036
+index ce638d6..4e76602 100755
+--- a/tests/qemu-iotests/036
++++ b/tests/qemu-iotests/036
+@@ -27,7 +27,6 @@ owner=stefanha@linux.vnet.ibm.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/037 b/tests/qemu-iotests/037
+index c476b82..2e43b19 100755
+--- a/tests/qemu-iotests/037
++++ b/tests/qemu-iotests/037
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/038 b/tests/qemu-iotests/038
+index d99a150..4e03976 100755
+--- a/tests/qemu-iotests/038
++++ b/tests/qemu-iotests/038
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/039 b/tests/qemu-iotests/039
+index 1f48339..b3c344c 100755
+--- a/tests/qemu-iotests/039
++++ b/tests/qemu-iotests/039
+@@ -27,7 +27,6 @@ owner=stefanha@linux.vnet.ibm.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/042 b/tests/qemu-iotests/042
+index a53e7cb..beaa339 100755
+--- a/tests/qemu-iotests/042
++++ b/tests/qemu-iotests/042
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/043 b/tests/qemu-iotests/043
+index 1c6c22d..fc9005b 100755
+--- a/tests/qemu-iotests/043
++++ b/tests/qemu-iotests/043
+@@ -24,7 +24,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/046 b/tests/qemu-iotests/046
+index f2ebecf..01c0de6 100755
+--- a/tests/qemu-iotests/046
++++ b/tests/qemu-iotests/046
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/047 b/tests/qemu-iotests/047
+index 1b8f3d4..c168373 100755
+--- a/tests/qemu-iotests/047
++++ b/tests/qemu-iotests/047
+@@ -25,7 +25,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/049 b/tests/qemu-iotests/049
+index df35b6d..4d0ad5c 100755
+--- a/tests/qemu-iotests/049
++++ b/tests/qemu-iotests/049
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/050 b/tests/qemu-iotests/050
+index 03b4a5d..963a0db 100755
+--- a/tests/qemu-iotests/050
++++ b/tests/qemu-iotests/050
+@@ -24,7 +24,6 @@ owner=pbonzini@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/051 b/tests/qemu-iotests/051
+index 23f9678..4f20265 100755
+--- a/tests/qemu-iotests/051
++++ b/tests/qemu-iotests/051
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/052 b/tests/qemu-iotests/052
+index 842eace..b992adf 100755
+--- a/tests/qemu-iotests/052
++++ b/tests/qemu-iotests/052
+@@ -24,7 +24,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/053 b/tests/qemu-iotests/053
+index 2a04f5f..afa109c 100755
+--- a/tests/qemu-iotests/053
++++ b/tests/qemu-iotests/053
+@@ -24,7 +24,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/054 b/tests/qemu-iotests/054
+index bf47ef9..cf88a7c 100755
+--- a/tests/qemu-iotests/054
++++ b/tests/qemu-iotests/054
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/058 b/tests/qemu-iotests/058
+index 5eb8784..0d741a7 100755
+--- a/tests/qemu-iotests/058
++++ b/tests/qemu-iotests/058
+@@ -26,7 +26,6 @@ owner=xiawenc@linux.vnet.ibm.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ nbd_unix_socket=$TEST_DIR/test_qemu_nbd_socket
+diff --git a/tests/qemu-iotests/059 b/tests/qemu-iotests/059
+index 530bbbe..54d5567 100755
+--- a/tests/qemu-iotests/059
++++ b/tests/qemu-iotests/059
+@@ -24,7 +24,6 @@ owner=famz@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/060 b/tests/qemu-iotests/060
+index 7bdf609..890617b 100755
+--- a/tests/qemu-iotests/060
++++ b/tests/qemu-iotests/060
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/061 b/tests/qemu-iotests/061
+index 911b6f2..1a50163 100755
+--- a/tests/qemu-iotests/061
++++ b/tests/qemu-iotests/061
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/062 b/tests/qemu-iotests/062
+index 051fb9f..985fbef 100755
+--- a/tests/qemu-iotests/062
++++ b/tests/qemu-iotests/062
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/063 b/tests/qemu-iotests/063
+index adc037c..041fb5c 100755
+--- a/tests/qemu-iotests/063
++++ b/tests/qemu-iotests/063
+@@ -25,7 +25,6 @@ owner=alex@alex.org.uk
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/064 b/tests/qemu-iotests/064
+index 5792fbb..f55ff37 100755
+--- a/tests/qemu-iotests/064
++++ b/tests/qemu-iotests/064
+@@ -24,7 +24,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/066 b/tests/qemu-iotests/066
+index 8638217..26c0437 100755
+--- a/tests/qemu-iotests/066
++++ b/tests/qemu-iotests/066
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/067 b/tests/qemu-iotests/067
+index fe259f6..f8d584f 100755
+--- a/tests/qemu-iotests/067
++++ b/tests/qemu-iotests/067
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ # get standard environment, filters and checks
+diff --git a/tests/qemu-iotests/068 b/tests/qemu-iotests/068
+index e7fca6a..f0583d5 100755
+--- a/tests/qemu-iotests/068
++++ b/tests/qemu-iotests/068
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/069 b/tests/qemu-iotests/069
+index 96e55ef..fdee121 100755
+--- a/tests/qemu-iotests/069
++++ b/tests/qemu-iotests/069
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/070 b/tests/qemu-iotests/070
+index 8d08d74..78e0390 100755
+--- a/tests/qemu-iotests/070
++++ b/tests/qemu-iotests/070
+@@ -25,7 +25,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/071 b/tests/qemu-iotests/071
+index 48b4955..6448e9e 100755
+--- a/tests/qemu-iotests/071
++++ b/tests/qemu-iotests/071
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/072 b/tests/qemu-iotests/072
+index aa027c7..08ef29f 100755
+--- a/tests/qemu-iotests/072
++++ b/tests/qemu-iotests/072
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/073 b/tests/qemu-iotests/073
+index 40f85b1..5e7f76c 100755
+--- a/tests/qemu-iotests/073
++++ b/tests/qemu-iotests/073
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/075 b/tests/qemu-iotests/075
+index caa30d4..45b8901 100755
+--- a/tests/qemu-iotests/075
++++ b/tests/qemu-iotests/075
+@@ -24,7 +24,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/076 b/tests/qemu-iotests/076
+index ef9e6a4..3b5ab3f 100755
+--- a/tests/qemu-iotests/076
++++ b/tests/qemu-iotests/076
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/077 b/tests/qemu-iotests/077
+index b3c6fb1..a40f319 100755
+--- a/tests/qemu-iotests/077
++++ b/tests/qemu-iotests/077
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/078 b/tests/qemu-iotests/078
+index a106c26..68d0ea8 100755
+--- a/tests/qemu-iotests/078
++++ b/tests/qemu-iotests/078
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/079 b/tests/qemu-iotests/079
+index b2e3f74..fca2f77 100755
+--- a/tests/qemu-iotests/079
++++ b/tests/qemu-iotests/079
+@@ -24,7 +24,6 @@ owner=hutao@cn.fujitsu.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/080 b/tests/qemu-iotests/080
+index 4dbe68e..8d56089 100755
+--- a/tests/qemu-iotests/080
++++ b/tests/qemu-iotests/080
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/081 b/tests/qemu-iotests/081
+index da3fb09..c5d4616 100755
+--- a/tests/qemu-iotests/081
++++ b/tests/qemu-iotests/081
+@@ -24,7 +24,6 @@ owner=benoit@irqsave.net
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/082 b/tests/qemu-iotests/082
+index 3e605d5..14f6631 100755
+--- a/tests/qemu-iotests/082
++++ b/tests/qemu-iotests/082
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/083 b/tests/qemu-iotests/083
+index 3c1adbf..982adec 100755
+--- a/tests/qemu-iotests/083
++++ b/tests/qemu-iotests/083
+@@ -24,7 +24,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/084 b/tests/qemu-iotests/084
+index 04f2aa9..e131fa9 100755
+--- a/tests/qemu-iotests/084
++++ b/tests/qemu-iotests/084
+@@ -25,7 +25,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/085 b/tests/qemu-iotests/085
+index 5c7668c..2ef8407 100755
+--- a/tests/qemu-iotests/085
++++ b/tests/qemu-iotests/085
+@@ -29,7 +29,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ snapshot_virt0="snapshot-v0.qcow2"
+diff --git a/tests/qemu-iotests/086 b/tests/qemu-iotests/086
+index cd4494a..f9e4722 100755
+--- a/tests/qemu-iotests/086
++++ b/tests/qemu-iotests/086
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/087 b/tests/qemu-iotests/087
+index 2561a14..109cdf5 100755
+--- a/tests/qemu-iotests/087
++++ b/tests/qemu-iotests/087
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ # get standard environment, filters and checks
+diff --git a/tests/qemu-iotests/088 b/tests/qemu-iotests/088
+index b8076f2..c5e9ab4 100755
+--- a/tests/qemu-iotests/088
++++ b/tests/qemu-iotests/088
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/089 b/tests/qemu-iotests/089
+index aa1ba4a..3165d79 100755
+--- a/tests/qemu-iotests/089
++++ b/tests/qemu-iotests/089
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/090 b/tests/qemu-iotests/090
+index 7380503..1450993 100755
+--- a/tests/qemu-iotests/090
++++ b/tests/qemu-iotests/090
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/091 b/tests/qemu-iotests/091
+index 10ac4a8..2f2f98e 100755
+--- a/tests/qemu-iotests/091
++++ b/tests/qemu-iotests/091
+@@ -26,7 +26,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1    # failure is the default!
+ 
+ MIG_FIFO="${TEST_DIR}/migrate"
+diff --git a/tests/qemu-iotests/092 b/tests/qemu-iotests/092
+index 5bbdd07..8e318f1 100755
+--- a/tests/qemu-iotests/092
++++ b/tests/qemu-iotests/092
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/094 b/tests/qemu-iotests/094
+index 9aa01e3..7adc9b9 100755
+--- a/tests/qemu-iotests/094
++++ b/tests/qemu-iotests/094
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/095 b/tests/qemu-iotests/095
+index 72ecc22..9fc47f6 100755
+--- a/tests/qemu-iotests/095
++++ b/tests/qemu-iotests/095
+@@ -27,7 +27,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/097 b/tests/qemu-iotests/097
+index e22670c..7234b16 100755
+--- a/tests/qemu-iotests/097
++++ b/tests/qemu-iotests/097
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/098 b/tests/qemu-iotests/098
+index b002e96..c7977da 100755
+--- a/tests/qemu-iotests/098
++++ b/tests/qemu-iotests/098
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/099 b/tests/qemu-iotests/099
+index caaf58e..4a6275d 100755
+--- a/tests/qemu-iotests/099
++++ b/tests/qemu-iotests/099
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/101 b/tests/qemu-iotests/101
+index ea53f8b..3001ba3 100755
+--- a/tests/qemu-iotests/101
++++ b/tests/qemu-iotests/101
+@@ -24,7 +24,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/102 b/tests/qemu-iotests/102
+index 04b3f28..29a6a94 100755
+--- a/tests/qemu-iotests/102
++++ b/tests/qemu-iotests/102
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq=$(basename $0)
+ echo "QA output created by $seq"
+ 
+-here=$PWD
+ status=1    # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/103 b/tests/qemu-iotests/103
+index 2841318..66f8167 100755
+--- a/tests/qemu-iotests/103
++++ b/tests/qemu-iotests/103
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq=$(basename $0)
+ echo "QA output created by $seq"
+ 
+-here=$PWD
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/104 b/tests/qemu-iotests/104
+index 726d467..34bb0d2 100755
+--- a/tests/qemu-iotests/104
++++ b/tests/qemu-iotests/104
+@@ -24,7 +24,6 @@ owner=hutao@cn.fujitsu.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ trap "exit \$status" 0 1 2 3 15
+diff --git a/tests/qemu-iotests/105 b/tests/qemu-iotests/105
+index 3db4ce3..943bda2 100755
+--- a/tests/qemu-iotests/105
++++ b/tests/qemu-iotests/105
+@@ -24,7 +24,6 @@ owner=famz@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/106 b/tests/qemu-iotests/106
+index 5e51f88..4129fee 100755
+--- a/tests/qemu-iotests/106
++++ b/tests/qemu-iotests/106
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq=$(basename $0)
+ echo "QA output created by $seq"
+ 
+-here=$PWD
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/107 b/tests/qemu-iotests/107
+index d7222dc..5d70ad2 100755
+--- a/tests/qemu-iotests/107
++++ b/tests/qemu-iotests/107
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/108 b/tests/qemu-iotests/108
+index 2355d98..58e8ad7 100755
+--- a/tests/qemu-iotests/108
++++ b/tests/qemu-iotests/108
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/109 b/tests/qemu-iotests/109
+index acbd079..90bdae4 100755
+--- a/tests/qemu-iotests/109
++++ b/tests/qemu-iotests/109
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/110 b/tests/qemu-iotests/110
+index 9de7369..b64b3b2 100755
+--- a/tests/qemu-iotests/110
++++ b/tests/qemu-iotests/110
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/111 b/tests/qemu-iotests/111
+index a1c152d..e15e66a 100755
+--- a/tests/qemu-iotests/111
++++ b/tests/qemu-iotests/111
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/112 b/tests/qemu-iotests/112
+index 28eb9aa..fba2965 100755
+--- a/tests/qemu-iotests/112
++++ b/tests/qemu-iotests/112
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/113 b/tests/qemu-iotests/113
+index 4e09810..d8d78c4 100755
+--- a/tests/qemu-iotests/113
++++ b/tests/qemu-iotests/113
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/114 b/tests/qemu-iotests/114
+index 5b7dc54..e17fb51 100755
+--- a/tests/qemu-iotests/114
++++ b/tests/qemu-iotests/114
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/115 b/tests/qemu-iotests/115
+index 665c2ea..0581e03 100755
+--- a/tests/qemu-iotests/115
++++ b/tests/qemu-iotests/115
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/116 b/tests/qemu-iotests/116
+index df0172f..f8a27b9 100755
+--- a/tests/qemu-iotests/116
++++ b/tests/qemu-iotests/116
+@@ -27,7 +27,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/117 b/tests/qemu-iotests/117
+index 6c83461..e533e23 100755
+--- a/tests/qemu-iotests/117
++++ b/tests/qemu-iotests/117
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/119 b/tests/qemu-iotests/119
+index 4f34fb4..32810d5 100755
+--- a/tests/qemu-iotests/119
++++ b/tests/qemu-iotests/119
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/120 b/tests/qemu-iotests/120
+index f40b97d..76afdf4 100755
+--- a/tests/qemu-iotests/120
++++ b/tests/qemu-iotests/120
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/121 b/tests/qemu-iotests/121
+index 6d6f55a..d2885c7 100755
+--- a/tests/qemu-iotests/121
++++ b/tests/qemu-iotests/121
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/122 b/tests/qemu-iotests/122
+index d8c8ad7..eab3399 100755
+--- a/tests/qemu-iotests/122
++++ b/tests/qemu-iotests/122
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/123 b/tests/qemu-iotests/123
+index b18e3fc..168b985 100755
+--- a/tests/qemu-iotests/123
++++ b/tests/qemu-iotests/123
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/125 b/tests/qemu-iotests/125
+index c20c715..778c874 100755
+--- a/tests/qemu-iotests/125
++++ b/tests/qemu-iotests/125
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq=$(basename $0)
+ echo "QA output created by $seq"
+ 
+-here=$PWD
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/126 b/tests/qemu-iotests/126
+index a2d4d6c..9114838 100755
+--- a/tests/qemu-iotests/126
++++ b/tests/qemu-iotests/126
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ # get standard environment, filters and checks
+diff --git a/tests/qemu-iotests/127 b/tests/qemu-iotests/127
+index 9e0d7d3..c9139ed 100755
+--- a/tests/qemu-iotests/127
++++ b/tests/qemu-iotests/127
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq=$(basename $0)
+ echo "QA output created by $seq"
+ 
+-here=$PWD
+ status=1    # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/128 b/tests/qemu-iotests/128
+index 0976a18..925f5c7 100755
+--- a/tests/qemu-iotests/128
++++ b/tests/qemu-iotests/128
+@@ -24,7 +24,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ devname="eiodev$$"
+diff --git a/tests/qemu-iotests/130 b/tests/qemu-iotests/130
+index 2c4b94d..f2f2706 100755
+--- a/tests/qemu-iotests/130
++++ b/tests/qemu-iotests/130
+@@ -26,7 +26,6 @@ owner=kwolf@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/131 b/tests/qemu-iotests/131
+index 94a9ae7..58c25f7 100755
+--- a/tests/qemu-iotests/131
++++ b/tests/qemu-iotests/131
+@@ -24,7 +24,6 @@ owner=den@openvz.org
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/133 b/tests/qemu-iotests/133
+index af6b3e1..a9a47a3 100755
+--- a/tests/qemu-iotests/133
++++ b/tests/qemu-iotests/133
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/134 b/tests/qemu-iotests/134
+index 9914415..cacabcd 100755
+--- a/tests/qemu-iotests/134
++++ b/tests/qemu-iotests/134
+@@ -24,7 +24,6 @@ owner=berrange@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/135 b/tests/qemu-iotests/135
+index ce60831..a18a0c7 100755
+--- a/tests/qemu-iotests/135
++++ b/tests/qemu-iotests/135
+@@ -24,7 +24,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/137 b/tests/qemu-iotests/137
+index 19e8597..09cd445 100755
+--- a/tests/qemu-iotests/137
++++ b/tests/qemu-iotests/137
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/138 b/tests/qemu-iotests/138
+index 21650d8..eccbcae 100755
+--- a/tests/qemu-iotests/138
++++ b/tests/qemu-iotests/138
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/140 b/tests/qemu-iotests/140
+index a8fc951..d4623b5 100755
+--- a/tests/qemu-iotests/140
++++ b/tests/qemu-iotests/140
+@@ -28,7 +28,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/141 b/tests/qemu-iotests/141
+index 4246d38..e2408c7 100755
+--- a/tests/qemu-iotests/141
++++ b/tests/qemu-iotests/141
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/142 b/tests/qemu-iotests/142
+index 1639c83..c7c360d 100755
+--- a/tests/qemu-iotests/142
++++ b/tests/qemu-iotests/142
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/143 b/tests/qemu-iotests/143
+index 5ff1944..d6302cc 100755
+--- a/tests/qemu-iotests/143
++++ b/tests/qemu-iotests/143
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/144 b/tests/qemu-iotests/144
+index 4b91571..118c099 100755
+--- a/tests/qemu-iotests/144
++++ b/tests/qemu-iotests/144
+@@ -26,7 +26,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ TMP_SNAP1=${TEST_DIR}/tmp.qcow2
+diff --git a/tests/qemu-iotests/145 b/tests/qemu-iotests/145
+index c371b3c..6ce8a46 100755
+--- a/tests/qemu-iotests/145
++++ b/tests/qemu-iotests/145
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/146 b/tests/qemu-iotests/146
+index 043711b..3f61351 100755
+--- a/tests/qemu-iotests/146
++++ b/tests/qemu-iotests/146
+@@ -24,7 +24,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1    # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/150 b/tests/qemu-iotests/150
+index ee8f637..955b877 100755
+--- a/tests/qemu-iotests/150
++++ b/tests/qemu-iotests/150
+@@ -24,7 +24,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/153 b/tests/qemu-iotests/153
+index 0daeb1b..00092b8 100755
+--- a/tests/qemu-iotests/153
++++ b/tests/qemu-iotests/153
+@@ -24,7 +24,6 @@ owner=famz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ tmp=/tmp/$$
+ status=1	# failure is the default!
+ 
+diff --git a/tests/qemu-iotests/154 b/tests/qemu-iotests/154
+index fde03b0..4a4abf0 100755
+--- a/tests/qemu-iotests/154
++++ b/tests/qemu-iotests/154
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/156 b/tests/qemu-iotests/156
+index 0a9a098..f97f96f 100755
+--- a/tests/qemu-iotests/156
++++ b/tests/qemu-iotests/156
+@@ -32,7 +32,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/157 b/tests/qemu-iotests/157
+index 2bf02be..c3231b7 100755
+--- a/tests/qemu-iotests/157
++++ b/tests/qemu-iotests/157
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/158 b/tests/qemu-iotests/158
+index 24ac600..d277ddc 100755
+--- a/tests/qemu-iotests/158
++++ b/tests/qemu-iotests/158
+@@ -24,7 +24,6 @@ owner=berrange@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/159 b/tests/qemu-iotests/159
+index 9b0e1ec..e74b273 100755
+--- a/tests/qemu-iotests/159
++++ b/tests/qemu-iotests/159
+@@ -23,7 +23,6 @@ owner=fullmanet@gmail.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/160 b/tests/qemu-iotests/160
+index 5c910e5..92fff45 100755
+--- a/tests/qemu-iotests/160
++++ b/tests/qemu-iotests/160
+@@ -23,7 +23,6 @@ owner=fullmanet@gmail.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/162 b/tests/qemu-iotests/162
+index 477a806..ef02d84 100755
+--- a/tests/qemu-iotests/162
++++ b/tests/qemu-iotests/162
+@@ -25,7 +25,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/170 b/tests/qemu-iotests/170
+index b79359f..861eabf 100755
+--- a/tests/qemu-iotests/170
++++ b/tests/qemu-iotests/170
+@@ -23,7 +23,6 @@ owner=fullmanet@gmail.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/171 b/tests/qemu-iotests/171
+index bcfaaf1..5b46069 100755
+--- a/tests/qemu-iotests/171
++++ b/tests/qemu-iotests/171
+@@ -25,7 +25,6 @@ owner=tgolembi@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/172 b/tests/qemu-iotests/172
+index 02c5f79..c5ee33e 100755
+--- a/tests/qemu-iotests/172
++++ b/tests/qemu-iotests/172
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/173 b/tests/qemu-iotests/173
+index bdaa092..1fe8c5d 100755
+--- a/tests/qemu-iotests/173
++++ b/tests/qemu-iotests/173
+@@ -24,7 +24,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1    # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/174 b/tests/qemu-iotests/174
+index 552879d..d8bb05c 100755
+--- a/tests/qemu-iotests/174
++++ b/tests/qemu-iotests/174
+@@ -24,7 +24,6 @@ owner=nirsof@gmail.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/175 b/tests/qemu-iotests/175
+index ca56e82..ebbeb6e 100755
+--- a/tests/qemu-iotests/175
++++ b/tests/qemu-iotests/175
+@@ -24,7 +24,6 @@ owner=nirsof@gmail.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/176 b/tests/qemu-iotests/176
+index 32baa11..c091d0b 100755
+--- a/tests/qemu-iotests/176
++++ b/tests/qemu-iotests/176
+@@ -29,7 +29,6 @@ owner=mreitz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/177 b/tests/qemu-iotests/177
+index 396986d..7bf8e1d 100755
+--- a/tests/qemu-iotests/177
++++ b/tests/qemu-iotests/177
+@@ -24,7 +24,6 @@ owner=eblake@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/178 b/tests/qemu-iotests/178
+index 6af52c6..3f4b4a4 100755
+--- a/tests/qemu-iotests/178
++++ b/tests/qemu-iotests/178
+@@ -24,7 +24,6 @@ owner=stefanha@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1    # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/179 b/tests/qemu-iotests/179
+index 115944a..3040631 100755
+--- a/tests/qemu-iotests/179
++++ b/tests/qemu-iotests/179
+@@ -24,7 +24,6 @@ owner=eblake@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/181 b/tests/qemu-iotests/181
+index 5e767c6..e0ae965 100755
+--- a/tests/qemu-iotests/181
++++ b/tests/qemu-iotests/181
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ MIG_SOCKET="${TEST_DIR}/migrate"
+diff --git a/tests/qemu-iotests/182 b/tests/qemu-iotests/182
+index 3b7689c..9e078c5 100755
+--- a/tests/qemu-iotests/182
++++ b/tests/qemu-iotests/182
+@@ -24,7 +24,6 @@ owner=famz@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ tmp=/tmp/$$
+ status=1	# failure is the default!
+ 
+diff --git a/tests/qemu-iotests/183 b/tests/qemu-iotests/183
+index c49e1ad..ebb5e30 100755
+--- a/tests/qemu-iotests/183
++++ b/tests/qemu-iotests/183
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1 # failure is the default!
+ 
+ MIG_SOCKET="${TEST_DIR}/migrate"
+diff --git a/tests/qemu-iotests/184 b/tests/qemu-iotests/184
+index 2b68284..2f3259d 100755
+--- a/tests/qemu-iotests/184
++++ b/tests/qemu-iotests/184
+@@ -24,7 +24,6 @@ owner="Manos Pitsidianakis"
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ trap "exit \$status" 0 1 2 3 15
+diff --git a/tests/qemu-iotests/185 b/tests/qemu-iotests/185
+index 567ba67..dacfcb5 100755
+--- a/tests/qemu-iotests/185
++++ b/tests/qemu-iotests/185
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1 # failure is the default!
+ 
+ MIG_SOCKET="${TEST_DIR}/migrate"
+diff --git a/tests/qemu-iotests/186 b/tests/qemu-iotests/186
+index 0aa4395..29681bf 100755
+--- a/tests/qemu-iotests/186
++++ b/tests/qemu-iotests/186
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/187 b/tests/qemu-iotests/187
+index 7bb7833..1feddca 100755
+--- a/tests/qemu-iotests/187
++++ b/tests/qemu-iotests/187
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/188 b/tests/qemu-iotests/188
+index 83ed03e..af40e49 100755
+--- a/tests/qemu-iotests/188
++++ b/tests/qemu-iotests/188
+@@ -24,7 +24,6 @@ owner=berrange@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/189 b/tests/qemu-iotests/189
+index e695475..222bec1 100755
+--- a/tests/qemu-iotests/189
++++ b/tests/qemu-iotests/189
+@@ -24,7 +24,6 @@ owner=berrange@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/190 b/tests/qemu-iotests/190
+index 8f808fe..95ba06d 100755
+--- a/tests/qemu-iotests/190
++++ b/tests/qemu-iotests/190
+@@ -24,7 +24,6 @@ owner=eblake@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1    # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/191 b/tests/qemu-iotests/191
+index b3629ff..ff0fdec 100755
+--- a/tests/qemu-iotests/191
++++ b/tests/qemu-iotests/191
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1 # failure is the default!
+ 
+ MIG_SOCKET="${TEST_DIR}/migrate"
+diff --git a/tests/qemu-iotests/192 b/tests/qemu-iotests/192
+index 595f0d7..415c706 100755
+--- a/tests/qemu-iotests/192
++++ b/tests/qemu-iotests/192
+@@ -25,7 +25,6 @@ owner=famz@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/195 b/tests/qemu-iotests/195
+index e7a403d..f56f255 100755
+--- a/tests/qemu-iotests/195
++++ b/tests/qemu-iotests/195
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1 # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/197 b/tests/qemu-iotests/197
+index 0369aa5..8170f5d 100755
+--- a/tests/qemu-iotests/197
++++ b/tests/qemu-iotests/197
+@@ -24,7 +24,6 @@ owner=eblake@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1 # failure is the default!
+ 
+ # get standard environment, filters and checks
+diff --git a/tests/qemu-iotests/198 b/tests/qemu-iotests/198
+index 54eaaf5..4d961f4 100755
+--- a/tests/qemu-iotests/198
++++ b/tests/qemu-iotests/198
+@@ -24,7 +24,6 @@ owner=berrange@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/200 b/tests/qemu-iotests/200
+index ddbdedc..b9ebd5a 100755
+--- a/tests/qemu-iotests/200
++++ b/tests/qemu-iotests/200
+@@ -26,7 +26,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1    # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/204 b/tests/qemu-iotests/204
+index feb69d2..57f3afe 100755
+--- a/tests/qemu-iotests/204
++++ b/tests/qemu-iotests/204
+@@ -24,7 +24,6 @@ owner=eblake@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/214 b/tests/qemu-iotests/214
+index c46ca2a..7a2d539 100755
+--- a/tests/qemu-iotests/214
++++ b/tests/qemu-iotests/214
+@@ -22,7 +22,6 @@
+ seq=$(basename "$0")
+ echo "QA output created by $seq"
+ 
+-here=$PWD
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/215 b/tests/qemu-iotests/215
+index 2e616ed..230fd25 100755
+--- a/tests/qemu-iotests/215
++++ b/tests/qemu-iotests/215
+@@ -21,7 +21,6 @@
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1 # failure is the default!
+ 
+ # get standard environment, filters and checks
+diff --git a/tests/qemu-iotests/221 b/tests/qemu-iotests/221
+index 41c4e4b..06f48f1 100755
+--- a/tests/qemu-iotests/221
++++ b/tests/qemu-iotests/221
+@@ -21,7 +21,6 @@
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1 # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/223 b/tests/qemu-iotests/223
+index d011b3e..29e1951 100755
+--- a/tests/qemu-iotests/223
++++ b/tests/qemu-iotests/223
+@@ -21,7 +21,6 @@
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1 # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/226 b/tests/qemu-iotests/226
+index 0bc227f..687a182 100755
+--- a/tests/qemu-iotests/226
++++ b/tests/qemu-iotests/226
+@@ -25,7 +25,6 @@ owner=jsnow@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1    # failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/227 b/tests/qemu-iotests/227
+index 9a5f7f9..43f2323 100755
+--- a/tests/qemu-iotests/227
++++ b/tests/qemu-iotests/227
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=$(basename $0)
+ echo "QA output created by $seq"
+ 
+-here=$PWD
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/229 b/tests/qemu-iotests/229
+index ff851ec..8660243 100755
+--- a/tests/qemu-iotests/229
++++ b/tests/qemu-iotests/229
+@@ -25,7 +25,6 @@ owner=jcody@redhat.com
+ seq="$(basename $0)"
+ echo "QA output created by $seq"
+ 
+-here="$PWD"
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/231 b/tests/qemu-iotests/231
+index 3e28370..e9f8aaa 100755
+--- a/tests/qemu-iotests/231
++++ b/tests/qemu-iotests/231
+@@ -26,7 +26,6 @@ owner=jcody@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+diff --git a/tests/qemu-iotests/232 b/tests/qemu-iotests/232
+index 2ed39d2..ae63f13 100755
+--- a/tests/qemu-iotests/232
++++ b/tests/qemu-iotests/232
+@@ -24,7 +24,6 @@ owner=kwolf@redhat.com
+ seq=`basename $0`
+ echo "QA output created by $seq"
+ 
+-here=`pwd`
+ status=1	# failure is the default!
+ 
+ _cleanup()
+-- 
+1.8.3.1
+

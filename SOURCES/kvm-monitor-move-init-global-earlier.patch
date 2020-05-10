@@ -1,0 +1,67 @@
+From 6d69ed6b8b79cf43a8e0fa72167e7550fe6a936f Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:50:50 +0200
+Subject: [PATCH 23/53] monitor: move init global earlier
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-2-armbru@redhat.com>
+Patchwork-id: 87989
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 01/31] monitor: move init global earlier
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Peter Xu <peterx@redhat.com>
+
+Before this patch, monitor fd helpers might be called even earlier than
+monitor_init_globals().  This can be problematic.
+
+After previous work, now monitor_init_globals() does not depend on
+accelerator initialization any more.  Call it earlier (before CLI
+parsing; that's where the monitor APIs might be called) to make sure it
+is called before any of the monitor APIs.
+
+Suggested-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Message-Id: <20180608035511.7439-7-peterx@redhat.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+(cherry picked from commit d32749deb61513c5456901f20e19887e1bc3d7f3)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ vl.c | 7 +------
+ 1 file changed, 1 insertion(+), 6 deletions(-)
+
+diff --git a/vl.c b/vl.c
+index 92a98ab..a22da93 100644
+--- a/vl.c
++++ b/vl.c
+@@ -3157,6 +3157,7 @@ int main(int argc, char **argv, char **envp)
+ 
+     runstate_init();
+     postcopy_infrastructure_init();
++    monitor_init_globals();
+ 
+     if (qcrypto_init(&err) < 0) {
+         error_reportf_err(err, "cannot initialize crypto: ");
+@@ -4591,12 +4592,6 @@ int main(int argc, char **argv, char **envp)
+     default_drive(default_floppy, snapshot, IF_FLOPPY, 0, FD_OPTS);
+     default_drive(default_sdcard, snapshot, IF_SD, 0, SD_OPTS);
+ 
+-    /*
+-     * Note: qtest_enabled() (which is used in monitor_qapi_event_init())
+-     * depends on configure_accelerator() above.
+-     */
+-    monitor_init_globals();
+-
+     if (qemu_opts_foreach(qemu_find_opts("mon"),
+                           mon_init_func, NULL, NULL)) {
+         exit(1);
+-- 
+1.8.3.1
+

@@ -1,0 +1,52 @@
+From 7eca8ae696c2f3be102eef0a0e1bd0e6f24129cb Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 17:00:17 +0100
+Subject: [PATCH 16/23] qcow2: Avoid duplication in setting the refcount cache
+ size
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219170023.27826-8-kwolf@redhat.com>
+Patchwork-id: 84547
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 07/13] qcow2: Avoid duplication in setting the refcount cache size
+Bugzilla: 1656913
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Leonid Bloch <lbloch@janustech.com>
+
+The refcount cache size does not need to be set to its minimum value in
+read_cache_sizes(), as it is set to at least its minimum value in
+qcow2_update_options_prepare().
+
+Signed-off-by: Leonid Bloch <lbloch@janustech.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 657ada52abb85140e56949f522ecec527b256450)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 3859112..f3b2860 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -830,10 +830,9 @@ static void read_cache_sizes(BlockDriverState *bs, QemuOpts *opts,
+                                  (uint64_t)DEFAULT_L2_CACHE_CLUSTERS
+                                  * s->cluster_size);
+         }
+-        if (!refcount_cache_size_set) {
+-            *refcount_cache_size = min_refcount_cache;
+-        }
+     }
++    /* l2_cache_size and refcount_cache_size are ensured to have at least
++     * their minimum values in qcow2_update_options_prepare() */
+ 
+     if (*l2_cache_entry_size < (1 << MIN_CLUSTER_BITS) ||
+         *l2_cache_entry_size > s->cluster_size ||
+-- 
+1.8.3.1
+

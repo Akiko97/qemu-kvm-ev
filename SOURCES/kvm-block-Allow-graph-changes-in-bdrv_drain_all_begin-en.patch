@@ -1,0 +1,266 @@
+From 78fde43fee8eaaa0fd1222844961614f576ebd7c Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 14 Sep 2018 10:55:17 +0200
+Subject: [PATCH 26/49] block: Allow graph changes in bdrv_drain_all_begin/end
+ sections
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180914105540.18077-20-kwolf@redhat.com>
+Patchwork-id: 82171
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 19/42] block: Allow graph changes in bdrv_drain_all_begin/end sections
+Bugzilla: 1601212
+RH-Acked-by: John Snow <jsnow@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+bdrv_drain_all_*() used bdrv_next() to iterate over all root nodes and
+did a subtree drain for each of them. This works fine as long as the
+graph is static, but sadly, reality looks different.
+
+If the graph changes so that root nodes are added or removed, we would
+have to compensate for this. bdrv_next() returns each root node only
+once even if it's the root node for multiple BlockBackends or for a
+monitor-owned block driver tree, which would only complicate things.
+
+The much easier and more obviously correct way is to fundamentally
+change the way the functions work: Iterate over all BlockDriverStates,
+no matter who owns them, and drain them individually. Compensation is
+only necessary when a new BDS is created inside a drain_all section.
+Removal of a BDS doesn't require any action because it's gone afterwards
+anyway.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 0f12264e7a41458179ad10276a7c33c72024861a)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block.c                   | 34 ++++++++++++++++++++++++---
+ block/io.c                | 60 ++++++++++++++++++++++++++++++++++++-----------
+ include/block/block.h     |  1 +
+ include/block/block_int.h |  1 +
+ 4 files changed, 79 insertions(+), 17 deletions(-)
+
+diff --git a/block.c b/block.c
+index 519be6e..eea9c6f 100644
+--- a/block.c
++++ b/block.c
+@@ -333,6 +333,10 @@ BlockDriverState *bdrv_new(void)
+ 
+     qemu_co_queue_init(&bs->flush_queue);
+ 
++    for (i = 0; i < bdrv_drain_all_count; i++) {
++        bdrv_drained_begin(bs);
++    }
++
+     QTAILQ_INSERT_TAIL(&all_bdrv_states, bs, bs_list);
+ 
+     return bs;
+@@ -1170,7 +1174,7 @@ static int bdrv_open_driver(BlockDriverState *bs, BlockDriver *drv,
+                             int open_flags, Error **errp)
+ {
+     Error *local_err = NULL;
+-    int ret;
++    int i, ret;
+ 
+     bdrv_assign_node_name(bs, node_name, &local_err);
+     if (local_err) {
+@@ -1218,6 +1222,12 @@ static int bdrv_open_driver(BlockDriverState *bs, BlockDriver *drv,
+     assert(bdrv_min_mem_align(bs) != 0);
+     assert(is_power_of_2(bs->bl.request_alignment));
+ 
++    for (i = 0; i < bs->quiesce_counter; i++) {
++        if (drv->bdrv_co_drain_begin) {
++            drv->bdrv_co_drain_begin(bs);
++        }
++    }
++
+     return 0;
+ open_failed:
+     bs->drv = NULL;
+@@ -2039,7 +2049,12 @@ static void bdrv_replace_child_noperm(BdrvChild *child,
+             child->role->detach(child);
+         }
+         if (old_bs->quiesce_counter && child->role->drained_end) {
+-            for (i = 0; i < old_bs->quiesce_counter; i++) {
++            int num = old_bs->quiesce_counter;
++            if (child->role->parent_is_bds) {
++                num -= bdrv_drain_all_count;
++            }
++            assert(num >= 0);
++            for (i = 0; i < num; i++) {
+                 child->role->drained_end(child);
+             }
+         }
+@@ -2051,7 +2066,12 @@ static void bdrv_replace_child_noperm(BdrvChild *child,
+     if (new_bs) {
+         QLIST_INSERT_HEAD(&new_bs->parents, child, next_parent);
+         if (new_bs->quiesce_counter && child->role->drained_begin) {
+-            for (i = 0; i < new_bs->quiesce_counter; i++) {
++            int num = new_bs->quiesce_counter;
++            if (child->role->parent_is_bds) {
++                num -= bdrv_drain_all_count;
++            }
++            assert(num >= 0);
++            for (i = 0; i < num; i++) {
+                 child->role->drained_begin(child);
+             }
+         }
+@@ -3993,6 +4013,14 @@ BlockDriverState *bdrv_next_node(BlockDriverState *bs)
+     return QTAILQ_NEXT(bs, node_list);
+ }
+ 
++BlockDriverState *bdrv_next_all_states(BlockDriverState *bs)
++{
++    if (!bs) {
++        return QTAILQ_FIRST(&all_bdrv_states);
++    }
++    return QTAILQ_NEXT(bs, bs_list);
++}
++
+ const char *bdrv_get_node_name(const BlockDriverState *bs)
+ {
+     return bs->node_name;
+diff --git a/block/io.c b/block/io.c
+index 0021fefd..38ae299 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -38,6 +38,8 @@
+ /* Maximum bounce buffer for copy-on-read and write zeroes, in bytes */
+ #define MAX_BOUNCE_BUFFER (32768 << BDRV_SECTOR_BITS)
+ 
++static AioWait drain_all_aio_wait;
++
+ static int coroutine_fn bdrv_co_do_pwrite_zeroes(BlockDriverState *bs,
+     int64_t offset, int bytes, BdrvRequestFlags flags);
+ 
+@@ -471,6 +473,29 @@ static void bdrv_drain_assert_idle(BlockDriverState *bs)
+     }
+ }
+ 
++unsigned int bdrv_drain_all_count = 0;
++
++static bool bdrv_drain_all_poll(void)
++{
++    BlockDriverState *bs = NULL;
++    bool result = false;
++
++    /* Execute pending BHs first (may modify the graph) and check everything
++     * else only after the BHs have executed. */
++    while (aio_poll(qemu_get_aio_context(), false));
++
++    /* bdrv_drain_poll() can't make changes to the graph and we are holding the
++     * main AioContext lock, so iterating bdrv_next_all_states() is safe. */
++    while ((bs = bdrv_next_all_states(bs))) {
++        AioContext *aio_context = bdrv_get_aio_context(bs);
++        aio_context_acquire(aio_context);
++        result |= bdrv_drain_poll(bs, false, NULL, true);
++        aio_context_release(aio_context);
++    }
++
++    return result;
++}
++
+ /*
+  * Wait for pending requests to complete across all BlockDriverStates
+  *
+@@ -485,45 +510,51 @@ static void bdrv_drain_assert_idle(BlockDriverState *bs)
+  */
+ void bdrv_drain_all_begin(void)
+ {
+-    BlockDriverState *bs;
+-    BdrvNextIterator it;
++    BlockDriverState *bs = NULL;
+ 
+     if (qemu_in_coroutine()) {
+-        bdrv_co_yield_to_drain(NULL, true, false, NULL, false, true);
++        bdrv_co_yield_to_drain(NULL, true, false, NULL, true, true);
+         return;
+     }
+ 
+-    /* BDRV_POLL_WHILE() for a node can only be called from its own I/O thread
+-     * or the main loop AioContext. We potentially use BDRV_POLL_WHILE() on
+-     * nodes in several different AioContexts, so make sure we're in the main
+-     * context. */
++    /* AIO_WAIT_WHILE() with a NULL context can only be called from the main
++     * loop AioContext, so make sure we're in the main context. */
+     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
++    assert(bdrv_drain_all_count < INT_MAX);
++    bdrv_drain_all_count++;
+ 
+-    for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
++    /* Quiesce all nodes, without polling in-flight requests yet. The graph
++     * cannot change during this loop. */
++    while ((bs = bdrv_next_all_states(bs))) {
+         AioContext *aio_context = bdrv_get_aio_context(bs);
+ 
+         aio_context_acquire(aio_context);
+-        bdrv_do_drained_begin(bs, true, NULL, false, true);
++        bdrv_do_drained_begin(bs, false, NULL, true, false);
+         aio_context_release(aio_context);
+     }
+ 
+-    for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
++    /* Now poll the in-flight requests */
++    AIO_WAIT_WHILE(&drain_all_aio_wait, NULL, bdrv_drain_all_poll());
++
++    while ((bs = bdrv_next_all_states(bs))) {
+         bdrv_drain_assert_idle(bs);
+     }
+ }
+ 
+ void bdrv_drain_all_end(void)
+ {
+-    BlockDriverState *bs;
+-    BdrvNextIterator it;
++    BlockDriverState *bs = NULL;
+ 
+-    for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
++    while ((bs = bdrv_next_all_states(bs))) {
+         AioContext *aio_context = bdrv_get_aio_context(bs);
+ 
+         aio_context_acquire(aio_context);
+-        bdrv_do_drained_end(bs, true, NULL, false);
++        bdrv_do_drained_end(bs, false, NULL, true);
+         aio_context_release(aio_context);
+     }
++
++    assert(bdrv_drain_all_count > 0);
++    bdrv_drain_all_count--;
+ }
+ 
+ void bdrv_drain_all(void)
+@@ -658,6 +689,7 @@ void bdrv_inc_in_flight(BlockDriverState *bs)
+ void bdrv_wakeup(BlockDriverState *bs)
+ {
+     aio_wait_kick(bdrv_get_aio_wait(bs));
++    aio_wait_kick(&drain_all_aio_wait);
+ }
+ 
+ void bdrv_dec_in_flight(BlockDriverState *bs)
+diff --git a/include/block/block.h b/include/block/block.h
+index 6e91803..f9079ac 100644
+--- a/include/block/block.h
++++ b/include/block/block.h
+@@ -449,6 +449,7 @@ BlockDriverState *bdrv_lookup_bs(const char *device,
+                                  Error **errp);
+ bool bdrv_chain_contains(BlockDriverState *top, BlockDriverState *base);
+ BlockDriverState *bdrv_next_node(BlockDriverState *bs);
++BlockDriverState *bdrv_next_all_states(BlockDriverState *bs);
+ 
+ typedef struct BdrvNextIterator {
+     enum {
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index 0ad8a76..9757d5e 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -845,6 +845,7 @@ int coroutine_fn bdrv_co_pwritev(BdrvChild *child,
+     int64_t offset, unsigned int bytes, QEMUIOVector *qiov,
+     BdrvRequestFlags flags);
+ 
++extern unsigned int bdrv_drain_all_count;
+ void bdrv_apply_subtree_drain(BdrvChild *child, BlockDriverState *new_parent);
+ void bdrv_unapply_subtree_drain(BdrvChild *child, BlockDriverState *old_parent);
+ 
+-- 
+1.8.3.1
+

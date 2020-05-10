@@ -1,0 +1,78 @@
+From d4fe1e7fd6002d201088870c1e019b607c168454 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Thu, 11 May 2017 20:53:51 +0200
+Subject: blockdev: ignore aio=native for empty drives
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20170511205351.6337-2-jsnow@redhat.com>
+Patchwork-id: 75070
+O-Subject: [RHV-7.4 qemu-kvm-rhev PATCH 1/1] blockdev: ignore aio=native for empty drives
+Bugzilla: 1402645
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+
+This is a bit of a gross one; Upstream QEMU changed the way it handles
+cache options with regards to removable media, associating options more
+with the medium instead of the device. As part of that, it became
+impossible to specify cache options on empty drives.
+
+In the future, one would use blockdev-add instead to choose cache options
+per-medium instead of per-device, but we're not there yet in libvirt so
+we added a workaround downstream to simply ignore cache options on empty
+CDROMs under the premise of "It actually never worked anyway."
+
+As fallout from this decision, it is now no longer possible to specify
+aio=native on empty CDROM devices either, as that requires the use of a
+cache option that you can no longer specify. As a bad, gross, disgusting
+workaround, simply ignore aio=native on empty drives until such time that
+libvirt stops providing such configurations.
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+(cherry picked from commit cda174ad842c9a61bc275315bf3155139ba19bc0)
+(cherry picked from commit a72f1c0f7b02ea571ec2ce35dfbe8c17c4dfa6d9)
+(cherry picked from commit 313ffb6aba9419fe620b898c9b4a5ab4b0bff205)
+(cherry picked from commit fa1666d4f59412a324067a1bd9b4fed7ca8c71f2)
+(cherry picked from commit 62a7f6391872a32c3fdcbce988e2b7b760fca0c9)
+---
+ blockdev.c | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index cf10108..60b37dc 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -486,6 +486,21 @@ static bool __redhat_com_has_bs_opts(QDict *bs_opts)
+     return s != n;
+ }
+ 
++/**
++ * libvirt expects to be able to pass io driver options (aio=native) for CDROM
++ * drives without inserted media. While this has worked historically, given the
++ * above workaround and lack of a supported alternative in current versions of
++ * libvirt, certain options such as aio=native cannot be supported as it
++ * requires the use of an accompanying cache option, which we also ignore.
++ * Until libvirt learns how to supply cache options to inserted media, ignore
++ * the aio= preference on empty CDROMs with the understanding that un-tuned
++ * performance is preferable to being unable to use the CDROM at all.
++ */
++static int __redhat_com_filter_flags(int flags)
++{
++    return flags & ~BDRV_O_NATIVE_AIO;
++}
++
+ /* Takes the ownership of bs_opts */
+ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
+                                    Error **errp)
+@@ -598,7 +613,7 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
+ 
+         blk = blk_new(0, BLK_PERM_ALL);
+         blk_rs = blk_get_root_state(blk);
+-        blk_rs->open_flags    = bdrv_flags;
++        blk_rs->open_flags    = __redhat_com_filter_flags(bdrv_flags);
+         blk_rs->read_only     = read_only;
+         blk_rs->detect_zeroes = detect_zeroes;
+ 
+-- 
+1.8.3.1
+

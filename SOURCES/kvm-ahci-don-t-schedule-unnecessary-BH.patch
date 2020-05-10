@@ -1,0 +1,46 @@
+From 80d7419e93a1195b46c6c917b4533ca440c12c82 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 10 Jul 2018 23:06:16 +0200
+Subject: [PATCH 33/89] ahci: don't schedule unnecessary BH
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20180710230616.11000-4-jsnow@redhat.com>
+Patchwork-id: 81292
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 3/3] ahci: don't schedule unnecessary BH
+Bugzilla: 1584914
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+The comment gives us a hint. *Maybe* we still have something to
+process. Well, why not check?
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Jeff Cody <jcody@redhat.com>
+Message-id: 20180531004323.4611-4-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 42af312adef8afdae11d5f83d12a404b178dbda4)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ide/ahci.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/hw/ide/ahci.c b/hw/ide/ahci.c
+index a9558e4..380366b 100644
+--- a/hw/ide/ahci.c
++++ b/hw/ide/ahci.c
+@@ -1427,8 +1427,7 @@ static void ahci_cmd_done(IDEDMA *dma)
+     /* update d2h status */
+     ahci_write_fis_d2h(ad);
+ 
+-    if (!ad->check_bh) {
+-        /* maybe we still have something to process, check later */
++    if (ad->port_regs.cmd_issue && !ad->check_bh) {
+         ad->check_bh = qemu_bh_new(ahci_check_cmd_bh, ad);
+         qemu_bh_schedule(ad->check_bh);
+     }
+-- 
+1.8.3.1
+

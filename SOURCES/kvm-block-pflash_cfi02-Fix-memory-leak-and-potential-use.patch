@@ -1,0 +1,97 @@
+From 689898009c6930b8a9ce598e85678bfc0f131594 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 17 May 2019 06:50:51 +0200
+Subject: [PATCH 24/53] block/pflash_cfi02: Fix memory leak and potential
+ use-after-free
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190517065120.12028-3-armbru@redhat.com>
+Patchwork-id: 87984
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH v3 02/31] block/pflash_cfi02: Fix memory leak and potential use-after-free
+Bugzilla: 1624009
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Stephen Checkoway <stephen.checkoway@oberlin.edu>
+
+Don't dynamically allocate the pflash's timer. But do use timer_del in
+an unrealize function to make sure that the timer can't fire after the
+pflash_t has been freed.
+
+Signed-off-by: Stephen Checkoway <stephen.checkoway@oberlin.edu>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Wei Yang <richardw.yang@linux.intel.com>
+Message-Id: <20190219153727.62279-1-stephen.checkoway@oberlin.edu>
+Signed-off-by: Laurent Vivier <laurent@vivier.eu>
+(cherry picked from commit d80cf1eb2e87df3a9bfb226bcc7fb3a1aa858817)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/block/pflash_cfi02.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/hw/block/pflash_cfi02.c b/hw/block/pflash_cfi02.c
+index 75d1ae1..cbc3d4d 100644
+--- a/hw/block/pflash_cfi02.c
++++ b/hw/block/pflash_cfi02.c
+@@ -84,7 +84,7 @@ struct pflash_t {
+     uint16_t unlock_addr0;
+     uint16_t unlock_addr1;
+     uint8_t cfi_table[0x52];
+-    QEMUTimer *timer;
++    QEMUTimer timer;
+     /* The device replicates the flash memory across its memory space.  Emulate
+      * that by having a container (.mem) filled with an array of aliases
+      * (.mem_mappings) pointing to the flash memory (.orig_mem).
+@@ -431,7 +431,7 @@ static void pflash_write (pflash_t *pfl, hwaddr offset,
+             }
+             pfl->status = 0x00;
+             /* Let's wait 5 seconds before chip erase is done */
+-            timer_mod(pfl->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
++            timer_mod(&pfl->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                       (NANOSECONDS_PER_SECOND * 5));
+             break;
+         case 0x30:
+@@ -446,7 +446,7 @@ static void pflash_write (pflash_t *pfl, hwaddr offset,
+             }
+             pfl->status = 0x00;
+             /* Let's wait 1/2 second before sector erase is done */
+-            timer_mod(pfl->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
++            timer_mod(&pfl->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                       (NANOSECONDS_PER_SECOND / 2));
+             break;
+         default:
+@@ -658,7 +658,7 @@ static void pflash_cfi02_realize(DeviceState *dev, Error **errp)
+     pfl->rom_mode = 1;
+     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &pfl->mem);
+ 
+-    pfl->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, pflash_timer, pfl);
++    timer_init_ns(&pfl->timer, QEMU_CLOCK_VIRTUAL, pflash_timer, pfl);
+     pfl->wcycle = 0;
+     pfl->cmd = 0;
+     pfl->status = 0;
+@@ -757,11 +757,18 @@ static Property pflash_cfi02_properties[] = {
+     DEFINE_PROP_END_OF_LIST(),
+ };
+ 
++static void pflash_cfi02_unrealize(DeviceState *dev, Error **errp)
++{
++    pflash_t *pfl = CFI_PFLASH02(dev);
++    timer_del(&pfl->timer);
++}
++
+ static void pflash_cfi02_class_init(ObjectClass *klass, void *data)
+ {
+     DeviceClass *dc = DEVICE_CLASS(klass);
+ 
+     dc->realize = pflash_cfi02_realize;
++    dc->unrealize = pflash_cfi02_unrealize;
+     dc->props = pflash_cfi02_properties;
+     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
+ }
+-- 
+1.8.3.1
+

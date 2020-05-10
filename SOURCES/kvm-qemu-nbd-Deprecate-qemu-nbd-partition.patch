@@ -1,0 +1,129 @@
+From f9d66802239e15434d7d0c01a8bc11afb2708a75 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Wed, 27 Mar 2019 17:22:56 +0100
+Subject: [PATCH 118/163] qemu-nbd: Deprecate qemu-nbd --partition
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20190327172308.31077-44-jsnow@redhat.com>
+Patchwork-id: 85223
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 43/55] qemu-nbd: Deprecate qemu-nbd --partition
+Bugzilla: 1691009
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Eric Blake <eblake@redhat.com>
+
+The existing qemu-nbd --partition code claims to handle logical
+partitions up to 8, since its introduction in 2008 (commit 7a5ca86).
+However, the implementation is bogus (actual MBR logical partitions
+form a sort of linked list, with one partition per extended table
+entry, rather than four logical partitions in a single extended
+table), making the code unlikely to work for anything beyond -P5 on
+actual guest images. What's more, the code does not support GPT
+partitions, which are becoming more popular, and maintaining device
+subsetting in both NBD and the raw device is unnecessary duplication
+of effort (even if it is not too difficult).
+
+Note that obtaining the offsets of a partition (MBR or GPT) can be
+learned by using 'qemu-nbd -c /dev/nbd0 file.qcow2 && sfdisk --dump
+/dev/nbd0', but by the time you've done that, you might as well
+just mount /dev/nbd0p1 that the kernel creates for you instead of
+bothering with qemu exporting a subset.  Or, keeping to just
+user-space code, use nbdkit's partition filter, which has already
+known both GPT and primary MBR partitions for a while, and was
+just recently enhanced to support arbitrary logical MBR parititions.
+
+Start the clock on the deprecation cycle, with examples of how
+to accomplish device subsetting without using -P.
+
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20190125234837.2272-1-eblake@redhat.com>
+Reviewed-by: Richard W.M. Jones <rjones@redhat.com>
+Reviewed-by: Stefano Garzarella <sgarzare@redhat.com>
+(cherry picked from commit 0ae2d54645eb2888af6dc7f701bc02ca18e4e656)
+Signed-off-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ qemu-doc.texi | 33 +++++++++++++++++++++++++++++++++
+ qemu-nbd.c    |  2 ++
+ qemu-nbd.texi |  6 ++++--
+ 3 files changed, 39 insertions(+), 2 deletions(-)
+
+diff --git a/qemu-doc.texi b/qemu-doc.texi
+index 88358be..2acbec5 100644
+--- a/qemu-doc.texi
++++ b/qemu-doc.texi
+@@ -2987,6 +2987,39 @@ The ``xlnx-zcu102'' machine has the same features and capabilites in QEMU.
+ In order to prevent QEMU from automatically opening an image's backing
+ chain, use ``"backing": null'' instead.
+ 
++@section Related binaries
++
++@subsection qemu-nbd --partition (since 4.0.0)
++
++The ``qemu-nbd --partition $digit'' code (also spelled @option{-P})
++can only handle MBR partitions, and has never correctly handled
++logical partitions beyond partition 5.  If you know the offset and
++length of the partition (perhaps by using @code{sfdisk} within the
++guest), you can achieve the effect of exporting just that subset of
++the disk by use of the @option{--image-opts} option with a raw
++blockdev using the @code{offset} and @code{size} parameters layered on
++top of any other existing blockdev. For example, if partition 1 is
++100MiB long starting at 1MiB, the old command:
++
++@code{qemu-nbd -t -P 1 -f qcow2 file.qcow2}
++
++can be rewritten as:
++
++@code{qemu-nbd -t --image-opts driver=raw,offset=1M,size=100M,file.driver=qcow2,file.backing.driver=file,file.backing.filename=file.qcow2}
++
++Alternatively, the @code{nbdkit} project provides a more powerful
++partition filter on top of its nbd plugin, which can be used to select
++an arbitrary MBR or GPT partition on top of any other full-image NBD
++export.  Using this to rewrite the above example results in:
++
++@code{qemu-nbd -t -k /tmp/sock -f qcow2 file.qcow2 &}
++@code{nbdkit -f --filter=partition nbd socket=/tmp/sock partition=1}
++
++Note that if you are exposing the export via /dev/nbd0, it is easier
++to just export the entire image and then mount only /dev/nbd0p1 than
++it is to reinvoke @command{qemu-nbd -c /dev/nbd0} limited to just a
++subset of the image.
++
+ @node License
+ @appendix License
+ 
+diff --git a/qemu-nbd.c b/qemu-nbd.c
+index 1f7b2a0..00c07fd 100644
+--- a/qemu-nbd.c
++++ b/qemu-nbd.c
+@@ -787,6 +787,8 @@ int main(int argc, char **argv)
+             flags &= ~BDRV_O_RDWR;
+             break;
+         case 'P':
++            warn_report("The '-P' option is deprecated; use --image-opts with "
++                        "a raw device wrapper for subset exports instead");
+             if (qemu_strtoi(optarg, NULL, 0, &partition) < 0 ||
+                 partition < 1 || partition > 8) {
+                 error_report("Invalid partition '%s'", optarg);
+diff --git a/qemu-nbd.texi b/qemu-nbd.texi
+index 386bece..d0c5182 100644
+--- a/qemu-nbd.texi
++++ b/qemu-nbd.texi
+@@ -56,8 +56,10 @@ auto-detecting.
+ @item -r, --read-only
+ Export the disk as read-only.
+ @item -P, --partition=@var{num}
+-Only expose MBR partition @var{num}.  Understands physical partitions
+-1-4 and logical partitions 5-8.
++Deprecated: Only expose MBR partition @var{num}.  Understands physical
++partitions 1-4 and logical partition 5. New code should instead use
++@option{--image-opts} with the raw driver wrapping a subset of the
++original image.
+ @item -B, --bitmap=@var{name}
+ If @var{filename} has a qcow2 persistent bitmap @var{name}, expose
+ that bitmap via the ``qemu:dirty-bitmap:@var{name}'' context
+-- 
+1.8.3.1
+

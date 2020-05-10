@@ -1,0 +1,117 @@
+From f482ed4845d33ce74a990ee935475dfbabf1df70 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Fri, 10 May 2019 13:28:25 +0200
+Subject: [PATCH 22/53] virtio-scsi: Forbid devices with different iothreads
+ sharing a blockdev
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20190510132825.29833-4-armbru@redhat.com>
+Patchwork-id: 87266
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 3/3] virtio-scsi: Forbid devices with different iothreads sharing a blockdev
+Bugzilla: 1673397 1673402
+RH-Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+From: Alberto Garcia <berto@igalia.com>
+
+This patch forbids attaching a disk to a SCSI device if its using a
+different AioContext. Test case included.
+
+Signed-off-by: Alberto Garcia <berto@igalia.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit eb97813ff5fd5bdffc8ed9f5be5a3a50eae70a2c)
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/scsi/virtio-scsi.c      |  7 +++++++
+ tests/qemu-iotests/240     | 22 ++++++++++++++++++++++
+ tests/qemu-iotests/240.out | 20 ++++++++++++++++++++
+ 3 files changed, 49 insertions(+)
+
+diff --git a/hw/scsi/virtio-scsi.c b/hw/scsi/virtio-scsi.c
+index 85073f6..391500b 100644
+--- a/hw/scsi/virtio-scsi.c
++++ b/hw/scsi/virtio-scsi.c
+@@ -800,9 +800,16 @@ static void virtio_scsi_hotplug(HotplugHandler *hotplug_dev, DeviceState *dev,
+         return;
+     }
+     if (s->ctx && !s->dataplane_fenced) {
++        AioContext *ctx;
+         if (blk_op_is_blocked(sd->conf.blk, BLOCK_OP_TYPE_DATAPLANE, errp)) {
+             return;
+         }
++        ctx = blk_get_aio_context(sd->conf.blk);
++        if (ctx != s->ctx && ctx != qemu_get_aio_context()) {
++            error_setg(errp, "Cannot attach a blockdev that is using "
++                       "a different iothread");
++            return;
++        }
+         virtio_scsi_acquire(s);
+         blk_set_aio_context(sd->conf.blk, s->ctx);
+         virtio_scsi_release(s);
+diff --git a/tests/qemu-iotests/240 b/tests/qemu-iotests/240
+index 5d499c9..65cc3b3 100755
+--- a/tests/qemu-iotests/240
++++ b/tests/qemu-iotests/240
+@@ -101,6 +101,28 @@ run_qemu <<EOF
+ { "execute": "quit"}
+ EOF
+ 
++echo
++echo === Attach two SCSI disks using the same block device but different iothreads ===
++echo
++
++run_qemu <<EOF
++{ "execute": "qmp_capabilities" }
++{ "execute": "blockdev-add", "arguments": {"driver": "null-co", "node-name": "hd0", "read-only": true}}
++{ "execute": "object-add", "arguments": {"qom-type": "iothread", "id": "iothread0"}}
++{ "execute": "object-add", "arguments": {"qom-type": "iothread", "id": "iothread1"}}
++{ "execute": "device_add", "arguments": {"id": "scsi0", "driver": "${virtio_scsi}", "iothread": "iothread0"}}
++{ "execute": "device_add", "arguments": {"id": "scsi1", "driver": "${virtio_scsi}", "iothread": "iothread1"}}
++{ "execute": "device_add", "arguments": {"id": "scsi-hd0", "driver": "scsi-hd", "drive": "hd0", "bus": "scsi0.0"}}
++{ "execute": "device_add", "arguments": {"id": "scsi-hd1", "driver": "scsi-hd", "drive": "hd0", "bus": "scsi1.0"}}
++{ "execute": "device_del", "arguments": {"id": "scsi-hd0"}}
++{ "execute": "device_add", "arguments": {"id": "scsi-hd1", "driver": "scsi-hd", "drive": "hd0", "bus": "scsi1.0"}}
++{ "execute": "device_del", "arguments": {"id": "scsi-hd1"}}
++{ "execute": "device_del", "arguments": {"id": "scsi0"}}
++{ "execute": "device_del", "arguments": {"id": "scsi1"}}
++{ "execute": "blockdev-del", "arguments": {"node-name": "hd0"}}
++{ "execute": "quit"}
++EOF
++
+ # success, all done
+ echo "*** done"
+ rm -f $seq.full
+diff --git a/tests/qemu-iotests/240.out b/tests/qemu-iotests/240.out
+index 701cb5c..d763929 100644
+--- a/tests/qemu-iotests/240.out
++++ b/tests/qemu-iotests/240.out
+@@ -31,4 +31,24 @@ QMP_VERSION
+ {"return": {}}
+ {"return": {}}
+ {"return": {}}
++
++=== Attach two SCSI disks using the same block device but different iothreads ===
++
++Testing:
++QMP_VERSION
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"error": {"class": "GenericError", "desc": "Cannot attach a blockdev that is using a different iothread"}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
++{"return": {}}
+ *** done
+-- 
+1.8.3.1
+

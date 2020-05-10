@@ -1,0 +1,90 @@
+From 08e7b4d1dc3f71818fec2ebd5f189142011969a9 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Thu, 12 Jul 2018 16:06:19 +0200
+Subject: [PATCH 41/89] block: fix QEMU crash with scsi-hd and drive_del
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180712160619.30712-2-kwolf@redhat.com>
+Patchwork-id: 81334
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH 1/1] block: fix QEMU crash with scsi-hd and drive_del
+Bugzilla: 1599515
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: Greg Kurz <groug@kaod.org>
+
+Removing a drive with drive_del while it is being used to run an I/O
+intensive workload can cause QEMU to crash.
+
+An AIO flush can yield at some point:
+
+blk_aio_flush_entry()
+ blk_co_flush(blk)
+  bdrv_co_flush(blk->root->bs)
+   ...
+    qemu_coroutine_yield()
+
+and let the HMP command to run, free blk->root and give control
+back to the AIO flush:
+
+    hmp_drive_del()
+     blk_remove_bs()
+      bdrv_root_unref_child(blk->root)
+       child_bs = blk->root->bs
+       bdrv_detach_child(blk->root)
+        bdrv_replace_child(blk->root, NULL)
+         blk->root->bs = NULL
+        g_free(blk->root) <============== blk->root becomes stale
+       bdrv_unref(child_bs)
+        bdrv_delete(child_bs)
+         bdrv_close()
+          bdrv_drained_begin()
+           bdrv_do_drained_begin()
+            bdrv_drain_recurse()
+             aio_poll()
+              ...
+              qemu_coroutine_switch()
+
+and the AIO flush completion ends up dereferencing blk->root:
+
+  blk_aio_complete()
+   scsi_aio_complete()
+    blk_get_aio_context(blk)
+     bs = blk_bs(blk)
+ ie, bs = blk->root ? blk->root->bs : NULL
+            ^^^^^
+            stale
+
+The problem is that we should avoid making block driver graph
+changes while we have in-flight requests. Let's drain all I/O
+for this BB before calling bdrv_root_unref_child().
+
+Signed-off-by: Greg Kurz <groug@kaod.org>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit f45280cbf66d8e58224f6a253d0ae2aa72cc6280)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/block-backend.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 56ae535..a469fc6 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -768,6 +768,11 @@ void blk_remove_bs(BlockBackend *blk)
+ 
+     blk_update_root_state(blk);
+ 
++    /* bdrv_root_unref_child() will cause blk->root to become stale and may
++     * switch to a completion coroutine later on. Let's drain all I/O here
++     * to avoid that and a potential QEMU crash.
++     */
++    blk_drain(blk);
+     bdrv_root_unref_child(blk->root);
+     blk->root = NULL;
+ }
+-- 
+1.8.3.1
+

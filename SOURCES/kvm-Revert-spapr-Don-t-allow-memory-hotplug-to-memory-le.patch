@@ -1,0 +1,69 @@
+From 55cc729e37b945bcbb9135fe5553d1bb9a293424 Mon Sep 17 00:00:00 2001
+From: Serhii Popovych <spopovyc@redhat.com>
+Date: Wed, 2 May 2018 18:52:28 +0200
+Subject: [PATCH 05/13] Revert "spapr: Don't allow memory hotplug to memory
+ less nodes"
+
+RH-Author: Serhii Popovych <spopovyc@redhat.com>
+Message-id: <1525287148-92715-3-git-send-email-spopovyc@redhat.com>
+Patchwork-id: 80012
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/2] Revert "spapr: Don't allow memory hotplug to memory less nodes"
+Bugzilla: 1570525
+RH-Acked-by: David Gibson <dgibson@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+
+This reverts commit b556854bd8524c26b8be98ab1bfdf0826831e793.
+
+Leave change @node type from uint32_t to to int from reverted commit
+because node < 0 is always false.
+
+Note that implementing capability or some trick to detect if guest
+kernel does not support hot-add to memory: this returns previous
+behavour where memory added to first non-empty node.
+
+Signed-off-by: Serhii Popovych <spopovyc@redhat.com>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+(cherry picked from commit e47f1d2786c3d01a7894a493aafe0efa6b64453c)
+Signed-off-by: Serhii Popovych <spopovyc@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/spapr.c | 22 ----------------------
+ 1 file changed, 22 deletions(-)
+
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index c9561e1..6f005a0 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -3501,28 +3501,6 @@ static void spapr_machine_device_plug(HotplugHandler *hotplug_dev,
+             return;
+         }
+ 
+-        /*
+-         * Currently PowerPC kernel doesn't allow hot-adding memory to
+-         * memory-less node, but instead will silently add the memory
+-         * to the first node that has some memory. This causes two
+-         * unexpected behaviours for the user.
+-         *
+-         * - Memory gets hotplugged to a different node than what the user
+-         *   specified.
+-         * - Since pc-dimm subsystem in QEMU still thinks that memory belongs
+-         *   to memory-less node, a reboot will set things accordingly
+-         *   and the previously hotplugged memory now ends in the right node.
+-         *   This appears as if some memory moved from one node to another.
+-         *
+-         * So until kernel starts supporting memory hotplug to memory-less
+-         * nodes, just prevent such attempts upfront in QEMU.
+-         */
+-        if (nb_numa_nodes && !numa_info[node].node_mem) {
+-            error_setg(errp, "Can't hotplug memory to memory-less node %d",
+-                       node);
+-            return;
+-        }
+-
+         spapr_memory_plug(hotplug_dev, dev, node, errp);
+     } else if (object_dynamic_cast(OBJECT(dev), TYPE_SPAPR_CPU_CORE)) {
+         spapr_core_plug(hotplug_dev, dev, errp);
+-- 
+1.8.3.1
+

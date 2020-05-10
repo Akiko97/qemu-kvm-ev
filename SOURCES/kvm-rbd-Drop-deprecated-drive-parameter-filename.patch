@@ -1,0 +1,59 @@
+From 61a2510cbf901b95759402df893e63be02b510d1 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Mon, 18 Jun 2018 08:43:13 +0200
+Subject: [PATCH 06/54] rbd: Drop deprecated -drive parameter "filename"
+
+RH-Author: Markus Armbruster <armbru@redhat.com>
+Message-id: <20180618084330.30009-7-armbru@redhat.com>
+Patchwork-id: 80735
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 06/23] rbd: Drop deprecated -drive parameter "filename"
+Bugzilla: 1557995
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Kevin Wolf <kwolf@redhat.com>
+
+Parameter "filename" is deprecated since commit 91589d9e5ca, v2.10.0.
+Time to get rid of it.
+
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit bb9f762ff35459e34630d731a5a91c02602150d1)
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/rbd.c | 16 ----------------
+ 1 file changed, 16 deletions(-)
+
+diff --git a/block/rbd.c b/block/rbd.c
+index a14b42f..2842c0e 100644
+--- a/block/rbd.c
++++ b/block/rbd.c
+@@ -625,25 +625,9 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
+     QObject *crumpled = NULL;
+     const QDictEntry *e;
+     Error *local_err = NULL;
+-    const char *filename;
+     char *keypairs, *secretid;
+     int r;
+ 
+-    /* If we are given a filename, parse the filename, with precedence given to
+-     * filename encoded options */
+-    filename = qdict_get_try_str(options, "filename");
+-    if (filename) {
+-        warn_report("'filename' option specified. "
+-                    "This is an unsupported option, and may be deprecated "
+-                    "in the future");
+-        qemu_rbd_parse_filename(filename, options, &local_err);
+-        qdict_del(options, "filename");
+-        if (local_err) {
+-            error_propagate(errp, local_err);
+-            return -EINVAL;
+-        }
+-    }
+-
+     keypairs = g_strdup(qdict_get_try_str(options, "=keyvalue-pairs"));
+     if (keypairs) {
+         qdict_del(options, "=keyvalue-pairs");
+-- 
+1.8.3.1
+

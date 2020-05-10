@@ -1,0 +1,110 @@
+From 28b619943c16c8015899b0808d844fbcea586487 Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Tue, 3 Jul 2018 17:23:49 +0200
+Subject: [PATCH 04/89] i386: Initialize cache information for EPYC family
+ processors
+
+RH-Author: Eduardo Habkost <ehabkost@redhat.com>
+Message-id: <20180703172356.21038-4-ehabkost@redhat.com>
+Patchwork-id: 81214
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH v3 03/10] i386: Initialize cache information for EPYC family processors
+Bugzilla: 1481253
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Babu Moger <babu.moger@amd.com>
+
+Initialize pre-determined cache information for EPYC processors.
+
+Signed-off-by: Babu Moger <babu.moger@amd.com>
+Tested-by: Geoffrey McRae <geoff@hostfission.com>
+Message-Id: <20180510204148.11687-5-babu.moger@amd.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit fe52acd2a054b97765963a42037f2f886545e30c)
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ target/i386/cpu.c | 52 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 52 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 7e81e08..23eb47d 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1108,6 +1108,56 @@ struct X86CPUDefinition {
+     CPUCaches *cache_info;
+ };
+ 
++static CPUCaches epyc_cache_info = {
++    .l1d_cache = {
++        .type = DCACHE,
++        .level = 1,
++        .size = 32 * KiB,
++        .line_size = 64,
++        .associativity = 8,
++        .partitions = 1,
++        .sets = 64,
++        .lines_per_tag = 1,
++        .self_init = 1,
++        .no_invd_sharing = true,
++    },
++    .l1i_cache = {
++        .type = ICACHE,
++        .level = 1,
++        .size = 64 * KiB,
++        .line_size = 64,
++        .associativity = 4,
++        .partitions = 1,
++        .sets = 256,
++        .lines_per_tag = 1,
++        .self_init = 1,
++        .no_invd_sharing = true,
++    },
++    .l2_cache = {
++        .type = UNIFIED_CACHE,
++        .level = 2,
++        .size = 512 * KiB,
++        .line_size = 64,
++        .associativity = 8,
++        .partitions = 1,
++        .sets = 1024,
++        .lines_per_tag = 1,
++    },
++    .l3_cache = {
++        .type = UNIFIED_CACHE,
++        .level = 3,
++        .size = 8 * MiB,
++        .line_size = 64,
++        .associativity = 16,
++        .partitions = 1,
++        .sets = 8192,
++        .lines_per_tag = 1,
++        .self_init = true,
++        .inclusive = true,
++        .complex_indexing = true,
++    },
++};
++
+ static X86CPUDefinition builtin_x86_defs[] = {
+     {
+         /* qemu64 is the default CPU model for all *-rhel7.* machine-types.
+@@ -2327,6 +2377,7 @@ static X86CPUDefinition builtin_x86_defs[] = {
+             CPUID_6_EAX_ARAT,
+         .xlevel = 0x8000000A,
+         .model_id = "AMD EPYC Processor",
++        .cache_info = &epyc_cache_info,
+     },
+     {
+         .name = "EPYC-IBPB",
+@@ -2373,6 +2424,7 @@ static X86CPUDefinition builtin_x86_defs[] = {
+             CPUID_6_EAX_ARAT,
+         .xlevel = 0x8000000A,
+         .model_id = "AMD EPYC Processor (with IBPB)",
++        .cache_info = &epyc_cache_info,
+     },
+ };
+ 
+-- 
+1.8.3.1
+

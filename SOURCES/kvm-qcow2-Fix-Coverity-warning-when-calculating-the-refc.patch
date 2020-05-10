@@ -1,0 +1,75 @@
+From 5a43aa56f4a0435e9e36884088673513444b8129 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 19 Feb 2019 17:00:13 +0100
+Subject: [PATCH 12/23] qcow2: Fix Coverity warning when calculating the
+ refcount cache size
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20190219170023.27826-4-kwolf@redhat.com>
+Patchwork-id: 84543
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 03/13] qcow2: Fix Coverity warning when calculating the refcount cache size
+Bugzilla: 1656913
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+From: Alberto Garcia <berto@igalia.com>
+
+MIN_REFCOUNT_CACHE_SIZE is 4 and the cluster size is guaranteed to be
+at most 2MB, so the minimum refcount cache size (in bytes) is always
+going to fit in a 32-bit integer.
+
+Coverity doesn't know that, and since we're storing the result in a
+uint64_t (*refcount_cache_size) it thinks that we need the 64 bits and
+that we probably want to do a 64-bit multiplication to prevent the
+result from being truncated.
+
+This is a false positive in this case, but it's a fair warning.
+We could do a 64-bit multiplication to get rid of it, but since we
+know that a 32-bit variable is enough to store this value let's simply
+reuse min_refcount_cache, make it a normal int and stop doing casts.
+
+Reported-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Alberto Garcia <berto@igalia.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 7af5eea9b34ffb7a9a9fc25ba71998a02b76e159)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/qcow2.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 4b65e4c..a0f7234 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -775,6 +775,7 @@ static void read_cache_sizes(BlockDriverState *bs, QemuOpts *opts,
+     BDRVQcow2State *s = bs->opaque;
+     uint64_t combined_cache_size;
+     bool l2_cache_size_set, refcount_cache_size_set, combined_cache_size_set;
++    int min_refcount_cache = MIN_REFCOUNT_CACHE_SIZE * s->cluster_size;
+ 
+     combined_cache_size_set = qemu_opt_get(opts, QCOW2_OPT_CACHE_SIZE);
+     l2_cache_size_set = qemu_opt_get(opts, QCOW2_OPT_L2_CACHE_SIZE);
+@@ -811,8 +812,6 @@ static void read_cache_sizes(BlockDriverState *bs, QemuOpts *opts,
+         } else {
+             uint64_t virtual_disk_size = bs->total_sectors * BDRV_SECTOR_SIZE;
+             uint64_t max_l2_cache = virtual_disk_size / (s->cluster_size / 8);
+-            uint64_t min_refcount_cache =
+-                (uint64_t) MIN_REFCOUNT_CACHE_SIZE * s->cluster_size;
+ 
+             /* Assign as much memory as possible to the L2 cache, and
+              * use the remainder for the refcount cache */
+@@ -832,7 +831,7 @@ static void read_cache_sizes(BlockDriverState *bs, QemuOpts *opts,
+                                  * s->cluster_size);
+         }
+         if (!refcount_cache_size_set) {
+-            *refcount_cache_size = MIN_REFCOUNT_CACHE_SIZE * s->cluster_size;
++            *refcount_cache_size = min_refcount_cache;
+         }
+     }
+ 
+-- 
+1.8.3.1
+

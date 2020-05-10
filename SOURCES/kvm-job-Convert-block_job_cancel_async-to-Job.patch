@@ -1,0 +1,159 @@
+From c1d6c990e959598f6a1269756b481e4e4230ded8 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 26 Jun 2018 09:48:17 +0200
+Subject: [PATCH 48/89] job: Convert block_job_cancel_async() to Job
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20180626094856.6924-35-kwolf@redhat.com>
+Patchwork-id: 81072
+O-Subject: [RHV-7.6 qemu-kvm-rhev PATCH v2 34/73] job: Convert block_job_cancel_async() to Job
+Bugzilla: 1513543
+RH-Acked-by: Jeffrey Cody <jcody@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+
+block_job_cancel_async() did two things that were still block job
+specific:
+
+* Setting job->force. This field makes sense on the Job level, so we can
+  just move it. While at it, rename it to job->force_cancel to make its
+  purpose more obvious.
+
+* Resetting the I/O status. This can't be moved because generic Jobs
+  don't have an I/O status. What the function really implements is a
+  user resume, except without entering the coroutine. Consequently, it
+  makes sense to call the .user_resume driver callback here which
+  already resets the I/O status.
+
+  The old block_job_cancel_async() has two separate if statements that
+  check job->iostatus != BLOCK_DEVICE_IO_STATUS_OK and job->user_paused.
+  However, the former condition always implies the latter (as is
+  asserted in block_job_iostatus_reset()), so changing the explicit call
+  of block_job_iostatus_reset() on the former condition with the
+  .user_resume callback on the latter condition is equivalent and
+  doesn't need to access any BlockJob specific state.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 004e95df98266da33e08c9f1731aca71b6d6d7c4)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ block/mirror.c           |  4 ++--
+ blockjob.c               | 25 +++++++++++++------------
+ include/block/blockjob.h |  6 ------
+ include/qemu/job.h       |  6 ++++++
+ 4 files changed, 21 insertions(+), 20 deletions(-)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index e9a90ea..c3951d1 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -871,7 +871,7 @@ static void coroutine_fn mirror_run(void *opaque)
+         trace_mirror_before_sleep(s, cnt, s->synced, delay_ns);
+         job_sleep_ns(&s->common.job, delay_ns);
+         if (job_is_cancelled(&s->common.job) &&
+-            (!s->synced || s->common.force))
++            (!s->synced || s->common.job.force_cancel))
+         {
+             break;
+         }
+@@ -884,7 +884,7 @@ immediate_exit:
+          * or it was cancelled prematurely so that we do not guarantee that
+          * the target is a copy of the source.
+          */
+-        assert(ret < 0 || ((s->common.force || !s->synced) &&
++        assert(ret < 0 || ((s->common.job.force_cancel || !s->synced) &&
+                job_is_cancelled(&s->common.job)));
+         assert(need_drain);
+         mirror_wait_for_all_io(s);
+diff --git a/blockjob.c b/blockjob.c
+index 34c57da..4cac367 100644
+--- a/blockjob.c
++++ b/blockjob.c
+@@ -270,19 +270,20 @@ static int block_job_prepare(BlockJob *job)
+     return job->job.ret;
+ }
+ 
+-static void block_job_cancel_async(BlockJob *job, bool force)
++static void job_cancel_async(Job *job, bool force)
+ {
+-    if (job->iostatus != BLOCK_DEVICE_IO_STATUS_OK) {
+-        block_job_iostatus_reset(job);
+-    }
+-    if (job->job.user_paused) {
+-        /* Do not call block_job_enter here, the caller will handle it.  */
+-        job->job.user_paused = false;
+-        job->job.pause_count--;
++    if (job->user_paused) {
++        /* Do not call job_enter here, the caller will handle it.  */
++        job->user_paused = false;
++        if (job->driver->user_resume) {
++            job->driver->user_resume(job);
++        }
++        assert(job->pause_count > 0);
++        job->pause_count--;
+     }
+-    job->job.cancelled = true;
++    job->cancelled = true;
+     /* To prevent 'force == false' overriding a previous 'force == true' */
+-    job->force |= force;
++    job->force_cancel |= force;
+ }
+ 
+ static int block_job_txn_apply(BlockJobTxn *txn, int fn(BlockJob *), bool lock)
+@@ -367,7 +368,7 @@ static void block_job_completed_txn_abort(BlockJob *job)
+      * on the caller, so leave it. */
+     QLIST_FOREACH(other_job, &txn->jobs, txn_list) {
+         if (other_job != job) {
+-            block_job_cancel_async(other_job, false);
++            job_cancel_async(&other_job->job, false);
+         }
+     }
+     while (!QLIST_EMPTY(&txn->jobs)) {
+@@ -527,7 +528,7 @@ void block_job_cancel(BlockJob *job, bool force)
+         job_do_dismiss(&job->job);
+         return;
+     }
+-    block_job_cancel_async(job, force);
++    job_cancel_async(&job->job, force);
+     if (!job_started(&job->job)) {
+         block_job_completed(job, -ECANCELED);
+     } else if (job->job.deferred_to_main_loop) {
+diff --git a/include/block/blockjob.h b/include/block/blockjob.h
+index 3f405d1..d975efe 100644
+--- a/include/block/blockjob.h
++++ b/include/block/blockjob.h
+@@ -51,12 +51,6 @@ typedef struct BlockJob {
+     BlockBackend *blk;
+ 
+     /**
+-     * Set to true if the job should abort immediately without waiting
+-     * for data to be in sync.
+-     */
+-    bool force;
+-
+-    /**
+      * Set to true when the job is ready to be completed.
+      */
+     bool ready;
+diff --git a/include/qemu/job.h b/include/qemu/job.h
+index 3e817be..2648c74 100644
+--- a/include/qemu/job.h
++++ b/include/qemu/job.h
+@@ -97,6 +97,12 @@ typedef struct Job {
+      */
+     bool cancelled;
+ 
++    /**
++     * Set to true if the job should abort immediately without waiting
++     * for data to be in sync.
++     */
++    bool force_cancel;
++
+     /** Set to true when the job has deferred work to the main loop. */
+     bool deferred_to_main_loop;
+ 
+-- 
+1.8.3.1
+

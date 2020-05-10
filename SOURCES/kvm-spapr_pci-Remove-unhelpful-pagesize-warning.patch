@@ -1,0 +1,61 @@
+From 95f87089d1bdd881775a5d09c59363f5460f7ce2 Mon Sep 17 00:00:00 2001
+From: David Gibson <dgibson@redhat.com>
+Date: Thu, 14 Jun 2018 01:31:36 +0200
+Subject: [PATCH 5/9] spapr_pci: Remove unhelpful pagesize warning
+
+RH-Author: David Gibson <dgibson@redhat.com>
+Message-id: <20180614013136.3504-1-dgibson@redhat.com>
+Patchwork-id: 80681
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH] spapr_pci: Remove unhelpful pagesize warning
+Bugzilla: 1505664
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Serhii Popovych <spopovyc@redhat.com>
+
+From: David Gibson <david@gibson.dropbear.id.au>
+
+By default, the IOMMU model built into the spapr virtual PCI host bridge
+supports 4kiB and 64kiB IOMMU page sizes.  However this can be overridden
+which may be desirable to allow larger IOMMU page sizes when running a
+guest with hugepage backing and passthrough devices.  For that reason a
+warning was printed when the device wasn't configured to allow the pagesize
+with which guest RAM is backed.
+
+Experience has proven, however, that this message is more confusing than
+useful.  Worse it sometimes makes little sense when the host-available page
+sizes don't match those available on the guest, which can happen with
+a POWER8 guest running on a POWER9 KVM host.
+
+Long term we do want better handling to allow large IOMMU page sizes to be
+used, but for now this parameter and warning don't really accomplish it.
+So, remove the message, pending a better solution.
+
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+
+Signed-off-by: David Gibson <dgibson@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ hw/ppc/spapr_pci.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/hw/ppc/spapr_pci.c b/hw/ppc/spapr_pci.c
+index 39a1498..f936ce6 100644
+--- a/hw/ppc/spapr_pci.c
++++ b/hw/ppc/spapr_pci.c
+@@ -1717,13 +1717,6 @@ static void spapr_phb_realize(DeviceState *dev, Error **errp)
+     }
+ 
+     /* DMA setup */
+-    if (((sphb->page_size_mask & qemu_getrampagesize()) == 0)
+-        && kvm_enabled()) {
+-        warn_report("System page size 0x%lx is not enabled in page_size_mask "
+-                    "(0x%"PRIx64"). Performance may be slow",
+-                    qemu_getrampagesize(), sphb->page_size_mask);
+-    }
+-
+     for (i = 0; i < windows_supported; ++i) {
+         tcet = spapr_tce_new_table(DEVICE(sphb), sphb->dma_liobn[i]);
+         if (!tcet) {
+-- 
+1.8.3.1
+

@@ -1,0 +1,92 @@
+From ed076b2838fb9c9b7e137352e72408d9267fd702 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Wed, 22 Nov 2017 15:41:32 +0100
+Subject: migration: Reenable incoming live-block-migration
+
+RH-Author: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-id: <20171122154132.15363-1-dgilbert@redhat.com>
+Patchwork-id: 77779
+O-Subject: [RHEL-7.5 qemu-kvm-rhev PATCH 1/1] migration: Reenable incoming live-block-migration
+Bugzilla: 1515173
+RH-Acked-by: Laurent Vivier <lvivier@redhat.com>
+RH-Acked-by: Fam Zheng <famz@redhat.com>
+RH-Acked-by: Juan Quintela <quintela@redhat.com>
+
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+
+rhel7 has always disabled outgoing old-style live block migration
+(but in -rhev enabled nbd block migration); however it allows
+incoming old-style live block migration to allow reception of a stream
+from rhel6.
+
+I added --disable-live-block-migration to upstream in ed1701c6a5a,
+however that really did disable it completely.
+
+In the 7.5 world we've inherited the upstream version and lost the
+incoming support.
+
+Reenable incoming support even when outgoing is disabled.
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+(cherry picked from commit e6f62c7eb81f164ad5aef99a4f7ff48200928938)
+(cherry picked from commit d5fb1ed0bc8fe06f7f9ffa50df033f1be6a19335)
+(cherry picked from commit d4f3d9c5f333b1b97e0eea3eff665988d92f7a24)
+(cherry picked from commit 011f4eb1ad9f4a3b358a904348340b010cf54512)
+---
+ include/migration/misc.h | 7 +++----
+ migration/Makefile.objs  | 2 +-
+ migration/block.h        | 6 +++++-
+ 3 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/include/migration/misc.h b/include/migration/misc.h
+index 4ebf24c..10084e0 100644
+--- a/include/migration/misc.h
++++ b/include/migration/misc.h
+@@ -22,11 +22,10 @@ void ram_mig_init(void);
+ 
+ /* migration/block.c */
+ 
+-#ifdef CONFIG_LIVE_BLOCK_MIGRATION
++/* RHEL7 allows incoming block migration even with
++ * --disable-live-block-migration to allow RHEL6->7 migration.
++ */
+ void blk_mig_init(void);
+-#else
+-static inline void blk_mig_init(void) {}
+-#endif
+ 
+ #define SELF_ANNOUNCE_ROUNDS 5
+ 
+diff --git a/migration/Makefile.objs b/migration/Makefile.objs
+index c83ec47..5cb9fc0 100644
+--- a/migration/Makefile.objs
++++ b/migration/Makefile.objs
+@@ -10,6 +10,6 @@ common-obj-y += block-dirty-bitmap.o
+ 
+ common-obj-$(CONFIG_RDMA) += rdma.o
+ 
+-common-obj-$(CONFIG_LIVE_BLOCK_MIGRATION) += block.o
++common-obj-y += block.o
+ 
+ rdma.o-libs := $(RDMA_LIBS)
+diff --git a/migration/block.h b/migration/block.h
+index 3178609..1cc81b0 100644
+--- a/migration/block.h
++++ b/migration/block.h
+@@ -14,7 +14,11 @@
+ #ifndef MIGRATION_BLOCK_H
+ #define MIGRATION_BLOCK_H
+ 
+-#ifdef CONFIG_LIVE_BLOCK_MIGRATION
++/* RHEL7: live block migration is still compiled in even
++ * with --disable-live-block-migration since we must
++ * allow inbound migration from RHEL6.
++ */
++#if 1 /* CONFIG_LIVE_BLOCK_MIGRATION */
+ int blk_mig_active(void);
+ int blk_mig_bulk_active(void);
+ uint64_t blk_mig_bytes_transferred(void);
+-- 
+1.8.3.1
+

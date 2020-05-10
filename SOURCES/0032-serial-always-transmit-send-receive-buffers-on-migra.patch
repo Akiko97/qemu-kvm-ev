@@ -1,0 +1,95 @@
+From c782c6646a2806a95a953bcfdb7c4801edfe65a4 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Thu, 11 Jan 2018 13:56:44 +0100
+Subject: serial: always transmit send/receive buffers on migration
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20180111135644.16253-1-pbonzini@redhat.com>
+Patchwork-id: 78551
+O-Subject: [RHEL7.5 qemu-kvm-rhev PATCH v2] serial: always transmit send/receive buffers on migration
+Bugzilla: 1459945
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+RH-Acked-by: Laszlo Ersek <lersek@redhat.com>
+RH-Acked-by: Miroslav Rezanina <mrezanin@redhat.com>
+
+When subsections were added in qemu 2.3, they were all disabled
+for machine types that require pre-2.3 compatibility.  The commit
+message says "disabling these subsections on older machine types should
+leave it no worse than existing qemu", but actually migrating from
+new QEMU to new QEMU (but with old machine type) will detect an
+inconsistent migration state and fail the migration:
+
+   qemu-system-x86_64: inconsistent state in serial device (tsr not empty, tsr_retry=0
+   qemu-system-x86_64: Failed to load serial:state
+   qemu-system-x86_64: error while loading state for instance 0x0 of device 'serial'
+
+In fact, this shows that migration from new source to old destination
+might have also eaten the data in the FIFO or transmit/receive buffers.
+
+It's actually pretty easy to trigger the failure by connecting a console
+to a hung-up reader (not a *disconnected* reader!).  The fix is to
+handle the subsections the same as we did in the qemu-kvm BZ1452067.
+The data registers are migrated, which may indeed cause some more migrations
+to fail to old qemu-kvm-rhev, but it will fix migration to new qemu-kvm-rhev.
+Some subsections are still keyed on migrate_pre_2_2; from the commit message
+of downstream commit 7d2e8f9662feb64c0b15b6fd53e06e3c56921f27:
+
+    thr_ipending can be reconstructed fairly
+    reliably by serial_post_load.  The others are features that are
+    unlikely to be used in RHEL, respectively receive timeout (Linux
+    does not even have the UART_IIR_CTI symbol in the driver) and
+    physical serial ports connected to a modem
+
+I consider this okay because nobody has yet complained about it for
+qemu-kvm.  It's also safer because the failure avoids serial data loss
+on migration.  This is consistent with the intended use of subsections.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+(cherry picked from commit 10564d0bb819113f925e32b989b24fb26dca45ef)
+(cherry picked from commit 9e1104c955c05c7b850cda3a02f69bf3e931c765)
+(cherry picked from commit 04e1727ca5a6cef2e23d387cef32ad18f4f1b6a7)
+---
+ hw/char/serial.c | 12 ------------
+ 1 file changed, 12 deletions(-)
+
+diff --git a/hw/char/serial.c b/hw/char/serial.c
+index 7647fac..d6d9b18 100644
+--- a/hw/char/serial.c
++++ b/hw/char/serial.c
+@@ -722,10 +722,6 @@ static const VMStateDescription vmstate_serial_thr_ipending = {
+ static bool serial_tsr_needed(void *opaque)
+ {
+     SerialState *s = (SerialState *)opaque;
+-    if (migrate_pre_2_2) {
+-        return false;
+-    }
+-
+     return s->tsr_retry != 0;
+ }
+ 
+@@ -745,10 +741,6 @@ static const VMStateDescription vmstate_serial_tsr = {
+ static bool serial_recv_fifo_needed(void *opaque)
+ {
+     SerialState *s = (SerialState *)opaque;
+-    if (migrate_pre_2_2) {
+-        return false;
+-    }
+-
+     return !fifo8_is_empty(&s->recv_fifo);
+ 
+ }
+@@ -767,10 +759,6 @@ static const VMStateDescription vmstate_serial_recv_fifo = {
+ static bool serial_xmit_fifo_needed(void *opaque)
+ {
+     SerialState *s = (SerialState *)opaque;
+-    if (migrate_pre_2_2) {
+-        return false;
+-    }
+-
+     return !fifo8_is_empty(&s->xmit_fifo);
+ }
+ 
+-- 
+1.8.3.1
+

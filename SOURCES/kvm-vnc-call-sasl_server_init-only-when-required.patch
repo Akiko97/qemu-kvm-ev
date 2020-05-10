@@ -1,0 +1,84 @@
+From cf93ce54ee801dca9d9da7dd10557b8772418520 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Thu, 22 Nov 2018 18:34:50 +0100
+Subject: [PATCH 01/34] vnc: call sasl_server_init() only when required
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-id: <20181122183450.719-2-marcandre.lureau@redhat.com>
+Patchwork-id: 83099
+O-Subject: [RHEL-7.7 qemu-kvm-rhev PATCH 1/1] vnc: call sasl_server_init() only when required
+Bugzilla: 1614302
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Markus Armbruster <armbru@redhat.com>
+
+VNC server is calling sasl_server_init() during startup of QEMU, even
+if SASL auth has not been enabled.
+
+This may create undesirable warnings like "Could not find keytab file:
+/etc/qemu/krb5.tab" when the user didn't configure SASL on host and
+started VNC server.
+
+Instead, only initialize SASL when needed. Note that HMP/QMP "change
+vnc" calls vnc_display_open() again, which will initialize SASL if
+needed.
+
+Fix assignment in if condition, while touching this code.
+
+Related to:
+https://bugzilla.redhat.com/show_bug.cgi?id=1609327
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-id: 20180907063634.359-1-marcandre.lureau@redhat.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+
+(cherry picked from commit b5dc0d7d565048fcf2767060261d8385805aced1)
+
+[ Fix minor confict due to "qemu" vs "qemu-kvm" string difference ]
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ ui/vnc.c | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/ui/vnc.c b/ui/vnc.c
+index 0c3011b..86c6762 100644
+--- a/ui/vnc.c
++++ b/ui/vnc.c
+@@ -3869,9 +3869,6 @@ void vnc_display_open(const char *id, Error **errp)
+     bool reverse = false;
+     const char *credid;
+     bool sasl = false;
+-#ifdef CONFIG_VNC_SASL
+-    int saslErr;
+-#endif
+     int acl = 0;
+     int lock_key_sync = 1;
+     int key_delay_ms;
+@@ -4045,10 +4042,14 @@ void vnc_display_open(const char *id, Error **errp)
+     trace_vnc_auth_init(vd, 1, vd->ws_auth, vd->ws_subauth);
+ 
+ #ifdef CONFIG_VNC_SASL
+-    if ((saslErr = sasl_server_init(NULL, "qemu-kvm")) != SASL_OK) {
+-        error_setg(errp, "Failed to initialize SASL auth: %s",
+-                   sasl_errstring(saslErr, NULL, NULL));
+-        goto fail;
++    if (sasl) {
++        int saslErr = sasl_server_init(NULL, "qemu-kvm");
++
++        if (saslErr != SASL_OK) {
++            error_setg(errp, "Failed to initialize SASL auth: %s",
++                       sasl_errstring(saslErr, NULL, NULL));
++            goto fail;
++        }
+     }
+ #endif
+     vd->lock_key_sync = lock_key_sync;
+-- 
+1.8.3.1
+

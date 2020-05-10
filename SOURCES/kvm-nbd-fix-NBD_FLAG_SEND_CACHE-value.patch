@@ -1,0 +1,96 @@
+From 5d77bd2fe5220f026648c9e2f49e65ff45c5475d Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 9 Oct 2018 22:14:32 +0200
+Subject: [PATCH 02/22] nbd: fix NBD_FLAG_SEND_CACHE value
+
+RH-Author: John Snow <jsnow@redhat.com>
+Message-id: <20181009221432.18359-3-jsnow@redhat.com>
+Patchwork-id: 82509
+O-Subject: [RHEL-7.6 qemu-kvm-rhev PATCH 2/2] nbd: fix NBD_FLAG_SEND_CACHE value
+Bugzilla: 1636148
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Thomas Huth <thuth@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+From: "Denis V. Lunev" <den@openvz.org>
+
+Commit bc37b06a5 added NBD_CMD_CACHE support, but used the wrong value
+for NBD_FLAG_SEND_CACHE flag for negotiation. That commit picked bit 8,
+which had already been assigned by the NBD specification to mean
+NBD_FLAG_CAN_MULTI_CONN, and which was already implemented in the
+Linux kernel as a part of stable userspace-kernel API since 4.10:
+
+"bit 8, NBD_FLAG_CAN_MULTI_CONN: Indicates that the server operates
+entirely without cache, or that the cache it uses is shared among all
+connections to the given device. In particular, if this flag is
+present, then the effects of NBD_CMD_FLUSH and NBD_CMD_FLAG_FUA
+MUST be visible across all connections when the server sends its reply
+to that command to the client. In the absense of this flag, clients
+SHOULD NOT multiplex their commands over more than one connection to
+the export.
+...
+bit 10, NBD_FLAG_SEND_CACHE: documents that the server understands
+NBD_CMD_CACHE; however, note that server implementations exist
+which support the command without advertising this bit, and
+conversely that this bit does not guarantee that the command will
+succeed or have an impact."
+
+Consequences:
+- a client trying to use NBD_CMD_CACHE per the NBD spec will not
+see the feature as available from a qemu 3.0 server (not fatal,
+clients already have to be prepared for caching to not exist)
+- a client accidentally coded to the qemu 3.0 bit value instead
+of following the spec may interpret NBD_CMD_CACHE as being available
+when it is not (probably not fatal, the spec says the server should
+gracefully fail unknown commands, and that clients of NBD_CMD_CACHE
+should be prepared for failure even when the feature is advertised);
+such clients are unlikely (perhaps only in unreleased Virtuozzo code),
+and will disappear over time
+- a client prepared to use multiple connections based on
+NBD_FLAG_CAN_MULTI_CONN may cause data corruption when it assumes
+that caching is consistent when in reality qemu 3.0 did not have
+a consistent cache. Partially mitigated by using read-only
+connections (where nothing needs to be flushed, so caching is
+indeed consistent) or when using qemu-nbd with the default -e 1
+(at most one client at a time); visible only when using -e 2 or
+more for a writable export.
+
+Thus the commit fixes negotiation flag in QEMU according to the
+specification.
+
+Signed-off-by: Denis V. Lunev <den@openvz.org>
+CC: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+CC: Valery Vdovin <valery.vdovin@acronis.com>
+CC: Eric Blake <eblake@redhat.com>
+CC: Paolo Bonzini <pbonzini@redhat.com>
+CC: qemu-stable@nongnu.org
+Message-Id: <20181004100313.4253-1-den@openvz.org>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+[eblake: enhance commit message, add defines for unimplemented flags]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+(cherry picked from commit df91328adab8490367776d2b21b35d790a606120)
+Signed-off-by: John Snow <jsnow@redhat.com>
+
+Signed-off-by: Miroslav Rezanina <mrezanin@redhat.com>
+---
+ include/block/nbd.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/include/block/nbd.h b/include/block/nbd.h
+index 4638c83..a53b0cf 100644
+--- a/include/block/nbd.h
++++ b/include/block/nbd.h
+@@ -135,7 +135,9 @@ typedef struct NBDExtent {
+ #define NBD_FLAG_SEND_TRIM         (1 << 5) /* Send TRIM (discard) */
+ #define NBD_FLAG_SEND_WRITE_ZEROES (1 << 6) /* Send WRITE_ZEROES */
+ #define NBD_FLAG_SEND_DF           (1 << 7) /* Send DF (Do not Fragment) */
+-#define NBD_FLAG_SEND_CACHE        (1 << 8) /* Send CACHE (prefetch) */
++#define NBD_FLAG_CAN_MULTI_CONN    (1 << 8) /* Multi-client cache consistent */
++#define NBD_FLAG_SEND_RESIZE       (1 << 9) /* Send resize */
++#define NBD_FLAG_SEND_CACHE        (1 << 10) /* Send CACHE (prefetch) */
+ 
+ /* New-style handshake (global) flags, sent from server to client, and
+    control what will happen during handshake phase. */
+-- 
+1.8.3.1
+
